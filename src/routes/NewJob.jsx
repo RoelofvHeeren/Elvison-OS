@@ -3,6 +3,23 @@ import { useNavigate } from 'react-router-dom'
 import { UploadCloud, Loader2 } from 'lucide-react'
 import { startJob } from '../utils/api'
 
+const CHATKIT_SRC = 'https://cdn.jsdelivr.net/npm/@openai/chatkit@1.1.0/dist/chatkit.js'
+let chatkitLoadPromise = null
+
+const ensureChatKit = () => {
+  if (window.ChatKit) return Promise.resolve(true)
+  if (chatkitLoadPromise) return chatkitLoadPromise
+  chatkitLoadPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script')
+    script.src = CHATKIT_SRC
+    script.async = true
+    script.onload = () => resolve(true)
+    script.onerror = (err) => reject(err)
+    document.head.appendChild(script)
+  })
+  return chatkitLoadPromise
+}
+
 const NewJob = () => {
   const [prompt, setPrompt] = useState('')
   const [loading, setLoading] = useState(false)
@@ -49,8 +66,9 @@ const NewJob = () => {
     setStatus('Loading chat widget...')
 
     let chatInstance
-    const interval = setInterval(() => {
-      if (window.ChatKit && !chatInstance) {
+
+    ensureChatKit()
+      .then(() => {
         try {
           chatInstance = new window.ChatKit({
             workflowId,
@@ -59,23 +77,17 @@ const NewJob = () => {
           })
           chatInstance.mount('#chatkit')
           setStatus('')
-          clearInterval(interval)
         } catch (err) {
           console.error('ChatKit init error', err)
           setStatus('Unable to load ChatKit widget.')
-          clearInterval(interval)
         }
-      }
-    }, 100)
-
-    const timeout = setTimeout(() => {
-      if (!chatInstance) setStatus('ChatKit script not available.')
-      clearInterval(interval)
-    }, 5000)
+      })
+      .catch((err) => {
+        console.error('ChatKit script load error', err)
+        setStatus('ChatKit script not available.')
+      })
 
     return () => {
-      clearInterval(interval)
-      clearTimeout(timeout)
       chatInstance?.unmount?.()
     }
   }, [])
