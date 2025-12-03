@@ -41,20 +41,37 @@ const NewJob = () => {
 
     if (!domainPublicKey || !workflowId || !workflowVersion) return
 
+    // simple status helper so we know if the widget failed to mount
+    const statusEl = document.getElementById('chatkit-status')
+    const setStatus = (msg) => {
+      if (statusEl) statusEl.textContent = msg || ''
+    }
+    setStatus('Loading chat widget...')
+
     let chatInstance
     const interval = setInterval(() => {
       if (window.ChatKit && !chatInstance) {
-        chatInstance = new window.ChatKit({
-          workflowId,
-          workflowVersion,
-          domainPublicKey,
-        })
-        chatInstance.mount('#chatkit')
-        clearInterval(interval)
+        try {
+          chatInstance = new window.ChatKit({
+            workflowId,
+            workflowVersion,
+            domainPublicKey,
+          })
+          chatInstance.mount('#chatkit')
+          setStatus('')
+          clearInterval(interval)
+        } catch (err) {
+          console.error('ChatKit init error', err)
+          setStatus('Unable to load ChatKit widget.')
+          clearInterval(interval)
+        }
       }
     }, 100)
 
-    const timeout = setTimeout(() => clearInterval(interval), 5000)
+    const timeout = setTimeout(() => {
+      if (!chatInstance) setStatus('ChatKit script not available.')
+      clearInterval(interval)
+    }, 5000)
 
     return () => {
       clearInterval(interval)
@@ -122,6 +139,7 @@ const NewJob = () => {
             <p className="text-sm text-muted">Use the embedded widget to trigger the workflow.</p>
           </div>
         </div>
+        <p id="chatkit-status" className="text-xs text-muted"></p>
         <div
           id="chatkit"
           className="mt-2 min-h-[320px] rounded-2xl border border-outline/80 bg-white/70"
