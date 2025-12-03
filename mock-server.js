@@ -553,7 +553,7 @@ if (process.env.NODE_ENV === 'production') {
   if (fs.existsSync(distPath)) {
     app.use(express.static(distPath))
     // Wildcard route for SPA; Express 5 needs a named splat
-    app.get('/:path(*)', (req, res) => {
+    app.get('/:path*', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'))
     })
   } else {
