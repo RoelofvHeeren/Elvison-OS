@@ -1,24 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { UploadCloud, Loader2 } from 'lucide-react'
 import { startJob } from '../utils/api'
-
-const CHATKIT_SRC = 'https://cdn.jsdelivr.net/npm/@openai/chatkit@1.1.0/dist/chatkit.js'
-let chatkitLoadPromise = null
-
-const ensureChatKit = () => {
-  if (window.ChatKit) return Promise.resolve(true)
-  if (chatkitLoadPromise) return chatkitLoadPromise
-  chatkitLoadPromise = new Promise((resolve, reject) => {
-    const script = document.createElement('script')
-    script.src = CHATKIT_SRC
-    script.async = true
-    script.onload = () => resolve(true)
-    script.onerror = (err) => reject(err)
-    document.head.appendChild(script)
-  })
-  return chatkitLoadPromise
-}
+import ChatKitWidget from '../components/ChatKitWidget'
 
 const NewJob = () => {
   const [prompt, setPrompt] = useState('')
@@ -50,47 +34,6 @@ const NewJob = () => {
       setLoading(false)
     }
   }
-
-  useEffect(() => {
-    const domainPublicKey = import.meta.env.VITE_CHATKIT_DOMAIN_PUBLIC_KEY
-    const workflowId = import.meta.env.VITE_WORKFLOW_ID
-    const workflowVersion = import.meta.env.VITE_WORKFLOW_VERSION
-
-    if (!domainPublicKey || !workflowId || !workflowVersion) return
-
-    // simple status helper so we know if the widget failed to mount
-    const statusEl = document.getElementById('chatkit-status')
-    const setStatus = (msg) => {
-      if (statusEl) statusEl.textContent = msg || ''
-    }
-    setStatus('Loading chat widget...')
-
-    let chatInstance
-
-    ensureChatKit()
-      .then(() => {
-        try {
-          chatInstance = new window.ChatKit({
-            workflowId,
-            workflowVersion,
-            domainPublicKey,
-          })
-          chatInstance.mount('#chatkit')
-          setStatus('')
-        } catch (err) {
-          console.error('ChatKit init error', err)
-          setStatus('Unable to load ChatKit widget.')
-        }
-      })
-      .catch((err) => {
-        console.error('ChatKit script load error', err)
-        setStatus('ChatKit script not available.')
-      })
-
-    return () => {
-      chatInstance?.unmount?.()
-    }
-  }, [])
 
   return (
     <div className="flex flex-col gap-6">
@@ -151,11 +94,7 @@ const NewJob = () => {
             <p className="text-sm text-muted">Use the embedded widget to trigger the workflow.</p>
           </div>
         </div>
-        <p id="chatkit-status" className="text-xs text-muted"></p>
-        <div
-          id="chatkit"
-          className="mt-2 min-h-[320px] rounded-2xl border border-outline/80 bg-white/70"
-        />
+        <ChatKitWidget />
       </div>
     </div>
   )

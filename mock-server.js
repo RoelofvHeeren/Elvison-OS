@@ -21,6 +21,8 @@ app.use(express.json())
 
 const WORKFLOW_ID = process.env.WORKFLOW_ID
 const WORKFLOW_VERSION = process.env.WORKFLOW_VERSION
+const CHATKIT_WORKFLOW_ID = process.env.WORKFLOW_ID
+const CHATKIT_WORKFLOW_VERSION = process.env.WORKFLOW_VERSION
 const SHEET_MCP_BASE = 'https://final-sheet-mcp-production.up.railway.app'
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY
 const CONNECTION_STORE = new Map()
@@ -470,6 +472,50 @@ const handleDisconnect = (req, res) => {
 app.post('/api/auth/disconnect', handleDisconnect)
 app.get('/api/auth/disconnect', handleDisconnect)
 app.all('/api/auth/disconnect', handleDisconnect)
+
+// POST /api/chatkit/session - create a ChatKit session and return client_secret
+app.post('/api/chatkit/session', async (req, res) => {
+  if (!OPENAI_API_KEY) {
+    return res.status(500).json({ error: 'Missing OPENAI_API_KEY' })
+  }
+  if (!CHATKIT_WORKFLOW_ID || !CHATKIT_WORKFLOW_VERSION) {
+    return res.status(500).json({ error: 'ChatKit workflow id/version not configured' })
+  }
+
+  const deviceId =
+    req.body?.deviceId ||
+    crypto.randomUUID?.() ||
+    `device-${Math.random().toString(36).slice(2, 10)}`
+
+  try {
+    const payload = {
+      workflow: { id: CHATKIT_WORKFLOW_ID, version: CHATKIT_WORKFLOW_VERSION },
+      user: deviceId,
+    }
+    const response = await fetch('https://api.openai.com/v1/chatkit/sessions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+        'OpenAI-Beta': 'chatkit_beta=v1',
+      },
+        body: JSON.stringify(payload),
+    })
+
+    if (!response.ok) {
+      const detail = await response.text().catch(() => '')
+      return res
+        .status(response.status)
+        .json({ error: 'ChatKit session request failed', detail: detail?.slice(0, 4000) })
+    }
+
+    const data = await response.json()
+    return res.json({ client_secret: data?.client_secret, deviceId })
+  } catch (err) {
+    console.error('ChatKit session error', err)
+    res.status(500).json({ error: 'ChatKit session error', detail: err?.message })
+  }
+})
 
 // POST /api/connections/test using Google Sheets API + workflow ping
 app.post('/api/connections/test', async (req, res) => {
