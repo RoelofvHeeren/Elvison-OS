@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { UploadCloud, Loader2 } from 'lucide-react'
 import { startJob } from '../utils/api'
@@ -33,6 +33,35 @@ const NewJob = () => {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    const domainPublicKey = import.meta.env.VITE_CHATKIT_DOMAIN_PUBLIC_KEY
+    const workflowId = import.meta.env.VITE_WORKFLOW_ID
+    const workflowVersion = import.meta.env.VITE_WORKFLOW_VERSION
+
+    if (!domainPublicKey || !workflowId || !workflowVersion) return
+
+    let chatInstance
+    const interval = setInterval(() => {
+      if (window.ChatKit && !chatInstance) {
+        chatInstance = new window.ChatKit({
+          workflowId,
+          workflowVersion,
+          domainPublicKey,
+        })
+        chatInstance.mount('#chatkit')
+        clearInterval(interval)
+      }
+    }, 100)
+
+    const timeout = setTimeout(() => clearInterval(interval), 5000)
+
+    return () => {
+      clearInterval(interval)
+      clearTimeout(timeout)
+      chatInstance?.unmount?.()
+    }
+  }, [])
 
   return (
     <div className="flex flex-col gap-6">
@@ -84,6 +113,20 @@ const NewJob = () => {
           </button>
         </div>
       </form>
+
+      <div className="glass-panel space-y-2 px-5 py-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs uppercase tracking-[0.3em] text-muted">ChatKit</p>
+            <h2 className="text-xl font-semibold text-primary">Chat with the Agent Flow</h2>
+            <p className="text-sm text-muted">Use the embedded widget to trigger the workflow.</p>
+          </div>
+        </div>
+        <div
+          id="chatkit"
+          className="mt-2 min-h-[320px] rounded-2xl border border-outline/80 bg-white/70"
+        />
+      </div>
     </div>
   )
 }

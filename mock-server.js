@@ -30,7 +30,7 @@ console.log('Available client keys:', Object.keys(client))
 
 async function workflowHealthCheck() {
   try {
-    const run = await client.workflows.runs.create({
+    const run = await client.beta.workflows.runs.create({
       workflow_id: 'wf_69257604d1c081908d6258389947f9de0365b387e2a1c674',
       version: '20',
       input: { input_as_text: 'health check' },
@@ -151,7 +151,7 @@ const proxyOpenAI = async (req, res) => {
 
 async function startJob(input_as_text) {
   try {
-    const run = await client.workflows.runs.create({
+    const run = await client.beta.workflows.runs.create({
       workflow_id: 'wf_69257604d1c081908d6258389947f9de0365b387e2a1c674',
       version: '20',
       input: { input_as_text },
@@ -248,7 +248,7 @@ app.get('/api/job-status/:jobId', async (req, res) => {
   const jobId = req.params.jobId
 
   try {
-    const statusRes = await client.workflows.runs.retrieve(jobId)
+    const statusRes = await client.beta.workflows.runs.retrieve(jobId)
     res.json(statusRes || {})
   } catch (err) {
     console.error('Job status fetch error:', err?.response?.data || err?.message)
@@ -488,7 +488,7 @@ app.post('/api/connections/test', async (req, res) => {
   }
 
   try {
-    const testRun = await client.workflows.runs.create({
+    const testRun = await client.beta.workflows.runs.create({
       workflow_id: normalized.agentWorkflowId,
       version: normalized.agentWorkflowVersion,
       input: { input_as_text: 'connection test' },
