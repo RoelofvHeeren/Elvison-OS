@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-panel text-ink antialiased;
+  }
+
+  ::selection {
+    @apply bg-mint text-primaryDark;
+  }
+}
+
+@layer components {
+  .glass-panel {
+    @apply rounded-3xl border border-outline/70 bg-white/70 backdrop-blur-lg shadow-soft;
+  }
+
+  .chip {
+    @apply inline-flex items-center gap-2 rounded-2xl border border-outline/80 bg-white/60 px-3 py-2 text-ink transition-all duration-200 hover:-translate-y-[1px] hover:border-primary/50 hover:bg-mint/60;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-3 text-sm font-semibold text-white shadow-brand transition-all duration-200 hover:-translate-y-[1px] hover:bg-primaryDark;
+  }
+}
