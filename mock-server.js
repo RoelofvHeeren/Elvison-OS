@@ -7,7 +7,7 @@ import express from 'express'
 import cors from 'cors'
 import crypto from 'crypto'
 import axios from 'axios'
-import OpenAI from 'openai'
+import OpenAI from "openai"
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
@@ -25,37 +25,20 @@ const SHEET_MCP_BASE = 'https://final-sheet-mcp-production.up.railway.app'
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY
 const CONNECTION_STORE = new Map()
 const TOKEN_STORE = new Map()
-const openaiClient = new OpenAI({ apiKey: OPENAI_API_KEY })
-console.log('client.workflows =', openaiClient.workflows ? 'available' : 'missing')
+const client = new OpenAI({ apiKey: OPENAI_API_KEY })
+console.log('Available client keys:', Object.keys(client))
 
-const ensureWorkflowClient = (apiKey) => {
-  const client = apiKey ? new OpenAI({ apiKey }) : openaiClient
-  if (!client.workflows || !client.workflows.runs) {
-    client.workflows = {
-      runs: {
-        create: async (params, options = {}) => {
-          const headers = {
-            Authorization: `Bearer ${apiKey || OPENAI_API_KEY}`,
-            'Content-Type': 'application/json',
-            'OpenAI-Beta': 'workflows=v1',
-            ...(options.headers || {}),
-          }
-          const resp = await axios.post('https://api.openai.com/v1/workflows/runs', params, { headers })
-          return resp.data
-        },
-        retrieve: async (runId, options = {}) => {
-          const headers = {
-            Authorization: `Bearer ${apiKey || OPENAI_API_KEY}`,
-            'OpenAI-Beta': 'workflows=v1',
-            ...(options.headers || {}),
-          }
-          const resp = await axios.get(`https://api.openai.com/v1/workflows/runs/${runId}`, { headers })
-          return resp.data
-        },
-      },
-    }
+async function workflowHealthCheck() {
+  try {
+    const run = await client.workflows.runs.create({
+      workflow_id: 'wf_69257604d1c081908d6258389947f9de0365b387e2a1c674',
+      version: '20',
+      input: { input_as_text: 'health check' },
+    })
+    console.log('Health check OK', run.id)
+  } catch (err) {
+    console.error('Health check error:', err.response?.data || err.message)
   }
-  return client
 }
 
 const normalizeSheetId = (sheetUrlOrId = '') => {
@@ -150,7 +133,7 @@ const proxyOpenAI = async (req, res) => {
         ...req.headers,
         authorization: `Bearer ${OPENAI_API_KEY}`,
         'content-type': 'application/json',
-        'openai-beta': req.headers['openai-beta'] || 'workflows=v1',
+        'OpenAI-Beta': req.headers['OpenAI-Beta'] || 'workflows=v1',
       },
       data: req.body,
       responseType: 'stream',
@@ -166,19 +149,18 @@ const proxyOpenAI = async (req, res) => {
   }
 }
 
-// Helpers to call workflows via SDK
-const createWorkflowRun = async ({ workflowId, workflowVersion, prompt, apiKey }) => {
-  const client = ensureWorkflowClient(apiKey)
-  return client.workflows.runs.create({
-    workflow_id: workflowId,
-    version: workflowVersion,
-    input: { input_as_text: prompt },
-  })
-}
-
-const retrieveWorkflowRun = async ({ runId, apiKey }) => {
-  const client = ensureWorkflowClient(apiKey)
-  return client.workflows.runs.retrieve(runId)
+async function startJob(input_as_text) {
+  try {
+    const run = await client.workflows.runs.create({
+      workflow_id: 'wf_69257604d1c081908d6258389947f9de0365b387e2a1c674',
+      version: '20',
+      input: { input_as_text },
+    })
+    return run
+  } catch (err) {
+    console.error('Start job exception:', err.response?.data || err.message)
+    throw err
+  }
 }
 
 const proxyMcp = (baseUrl) => async (req, res) => {
@@ -208,11 +190,7 @@ const proxyMcp = (baseUrl) => async (req, res) => {
 // GET /api/health - lightweight workflow ping (run creation with test input)
 app.get('/api/health', async (req, res) => {
   try {
-    await createWorkflowRun({
-      workflowId: WORKFLOW_ID,
-      workflowVersion: WORKFLOW_VERSION,
-      prompt: 'health check',
-    })
+    await workflowHealthCheck()
     res.json({ agent: 'ok' })
   } catch (err) {
     console.error('Health check error:', err?.response?.data || err?.message)
@@ -256,24 +234,9 @@ app.post('/api/start-job', async (req, res) => {
   if (!prompt) {
     return res.status(400).json({ error: 'Prompt is required' })
   }
-
-  const active = getActiveConnection()
-  const workflowId = req.body?.workflowId || active.agentWorkflowId || WORKFLOW_ID
-  const workflowVersion = req.body?.workflowVersion || active.agentWorkflowVersion || WORKFLOW_VERSION
-  const apiKey = req.body?.openaiApiKey || active.openaiApiKey || OPENAI_API_KEY
-
-  if (!workflowId || !workflowVersion || !apiKey) {
-    return res.status(400).json({ error: 'Workflow ID, version, and OpenAI key are required' })
-  }
-
   try {
-    const runRes = await createWorkflowRun({
-      workflowId,
-      workflowVersion,
-      prompt,
-      apiKey,
-    })
-    res.json({ job_id: runRes?.id })
+    const run = await startJob(prompt)
+    res.json({ job_id: run?.id })
   } catch (err) {
     console.error('Start job exception:', err?.response?.data || err?.message)
     res.status(500).json({ error: 'Failed to start job', detail: err?.response?.data || err?.message })
@@ -285,7 +248,7 @@ app.get('/api/job-status/:jobId', async (req, res) => {
   const jobId = req.params.jobId
 
   try {
-    const statusRes = await retrieveWorkflowRun({ runId: jobId })
+    const statusRes = await client.workflows.runs.retrieve(jobId)
     res.json(statusRes || {})
   } catch (err) {
     console.error('Job status fetch error:', err?.response?.data || err?.message)
@@ -300,11 +263,7 @@ app.post('/api/run-leadgen', async (req, res) => {
     if (!inputText) {
       return res.status(400).json({ error: 'input_as_text (prompt) is required' })
     }
-    const run = await createWorkflowRun({
-      workflowId: WORKFLOW_ID,
-      workflowVersion: WORKFLOW_VERSION,
-      prompt: inputText,
-    })
+    const run = await startJob(inputText)
     res.json({ run })
   } catch (err) {
     console.error('Start job error:', err?.response?.data || err?.message)
@@ -529,10 +488,10 @@ app.post('/api/connections/test', async (req, res) => {
   }
 
   try {
-    const testRun = await createWorkflowRun({
-      workflowId: normalized.agentWorkflowId,
-      workflowVersion: normalized.agentWorkflowVersion,
-      prompt: 'connection test',
+    const testRun = await client.workflows.runs.create({
+      workflow_id: normalized.agentWorkflowId,
+      version: normalized.agentWorkflowVersion,
+      input: { input_as_text: 'connection test' },
     })
     const runId = testRun?.id
     response.workflowStatus = runId ? 'ok' : 'error'
