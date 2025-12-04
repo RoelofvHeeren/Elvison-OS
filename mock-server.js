@@ -110,6 +110,30 @@ const synthesizeOauthJson = () => {
   )
 }
 
+const ensureRedirectUris = (oauthPath) => {
+  try {
+    const raw = fs.readFileSync(oauthPath, 'utf-8')
+    const parsed = JSON.parse(raw)
+    const installed = parsed.installed || parsed.web
+    if (!installed) return
+    const defaults = [
+      'http://localhost:3000/oauth2callback',
+      'http://127.0.0.1:3000/oauth2callback',
+      process.env.GSHEETS_REDIRECT_URI,
+    ].filter(Boolean)
+    const redirects = new Set([...(installed.redirect_uris || []), ...defaults])
+    installed.redirect_uris = Array.from(redirects)
+    if (!parsed.installed && parsed.web) {
+      parsed.web.redirect_uris = installed.redirect_uris
+    } else {
+      parsed.installed = installed
+    }
+    fs.writeFileSync(oauthPath, JSON.stringify(parsed, null, 2))
+  } catch (err) {
+    console.warn('Unable to normalize redirect URIs in OAuth file', err?.message)
+  }
+}
+
 const migrateLegacyCredentials = (targetPath) => {
   const legacyPath = path.join(__dirname, 'dist', '.gsheets-server-credentials.json')
   if (fs.existsSync(legacyPath) && !fs.existsSync(targetPath)) {
@@ -137,6 +161,9 @@ const ensureGoogleSheetsFiles = () => {
       ensureDirExists(path.dirname(oauthPath))
       fs.writeFileSync(oauthPath, synthesized)
     }
+  }
+  if (fs.existsSync(oauthPath)) {
+    ensureRedirectUris(oauthPath)
   }
   if (!fs.existsSync(oauthPath)) {
     const err = new Error(
