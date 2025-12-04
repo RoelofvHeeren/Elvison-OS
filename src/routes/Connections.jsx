@@ -261,6 +261,10 @@ const Connections = () => {
       ? 'Google Sheets MCP Connected'
       : 'Google Sheets MCP not started yet.')
   const mcpStatusOk = mcpStatus.state === 'connected'
+  const openGoogleAuth = () => {
+    const url = `${apiBase}/api/auth/google`
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }
 
   return (
     <div className="space-y-6">
@@ -315,8 +319,17 @@ const Connections = () => {
             {activatingMcp && <Loader2 className="h-4 w-4 animate-spin" />}
             Activate Google Sheets MCP
           </button>
-          <div className="rounded-2xl border border-outline/80 bg-white/70 px-4 py-3 text-sm text-muted">
-            {mcpStatusLabel}
+          <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-outline/80 bg-white/70 px-4 py-3 text-sm text-muted">
+            <span>{mcpStatusLabel}</span>
+            {(mcpStatus.state === 'auth' || mcpStatus.state === 'reauth') && (
+              <button
+                type="button"
+                onClick={openGoogleAuth}
+                className="rounded-xl border border-primary/30 bg-mint/60 px-3 py-1 text-xs font-semibold text-primary hover:bg-mint"
+              >
+                Open Google auth
+              </button>
+            )}
           </div>
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
