@@ -160,38 +160,56 @@ const ensureFinalSheetBinary = () => {
   const binDir = path.join(__dirname, 'node_modules', '.bin')
   const binPath = path.join(binDir, 'final-sheet-mcp')
   const googleBinPath = path.join(binDir, 'google-sheets-mcp')
+  const cacheDir = path.join(HOME_CONFIG_DIR, 'final-sheet-mcp')
+  const cacheDist = path.join(cacheDir, 'dist', 'index.js')
 
-  if (fs.existsSync(distEntry) && fs.existsSync(binPath)) {
+  const makeBinScript = (targetDist) => {
+    ensureDirExists(binDir)
+    const script = [
+      '#!/usr/bin/env bash',
+      'SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"',
+      `node "${targetDist}" "$@"`,
+    ].join('\n')
+    fs.writeFileSync(binPath, script)
+    fs.writeFileSync(googleBinPath, script)
+    fs.chmodSync(binPath, 0o755)
+    fs.chmodSync(googleBinPath, 0o755)
     return binPath
   }
 
-  try {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'final-sheet-mcp-'))
-    const repoDir = path.join(tempRoot, 'repo')
-    execSync(`git clone https://github.com/RoelofvHeeren/Final-Sheet-MCP.git ${repoDir}`, {
-      stdio: 'inherit',
-    })
-    execSync('npm install', { cwd: repoDir, stdio: 'inherit' })
-    execSync('npm run build', { cwd: repoDir, stdio: 'inherit' })
-
-    ensureDirExists(path.dirname(distEntry))
-    fs.copyFileSync(path.join(repoDir, 'dist', 'index.js'), distEntry)
-  } catch (err) {
-    console.error('Failed to bootstrap final-sheet-mcp binary', err)
-    throw err
+  const usableDist = [distEntry, cacheDist].find((p) => fs.existsSync(p))
+  if (usableDist && fs.existsSync(binPath)) {
+    return binPath
   }
 
-  ensureDirExists(binDir)
-  const script = [
-    '#!/usr/bin/env bash',
-    'SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"',
-    'node "$SCRIPT_DIR/../final-sheet-mcp/dist/index.js" "$@"',
-  ].join('\n')
-  fs.writeFileSync(binPath, script)
-  fs.writeFileSync(googleBinPath, script)
-  fs.chmodSync(binPath, 0o755)
-  fs.chmodSync(googleBinPath, 0o755)
-  return binPath
+  const bootstrap = () => {
+    try {
+      const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'final-sheet-mcp-'))
+      const repoDir = path.join(tempRoot, 'repo')
+      execSync(`git clone https://github.com/RoelofvHeeren/Final-Sheet-MCP.git ${repoDir}`, {
+        stdio: 'inherit',
+      })
+      execSync('npm install', { cwd: repoDir, stdio: 'inherit' })
+      execSync('npm run build', { cwd: repoDir, stdio: 'inherit' })
+
+      ensureDirExists(path.dirname(distEntry))
+      ensureDirExists(path.dirname(cacheDist))
+      fs.copyFileSync(path.join(repoDir, 'dist', 'index.js'), distEntry)
+      fs.copyFileSync(path.join(repoDir, 'dist', 'index.js'), cacheDist)
+      return distEntry
+    } catch (err) {
+      console.error('Failed to bootstrap final-sheet-mcp binary', err)
+      if (fs.existsSync(cacheDist)) {
+        console.warn('Falling back to cached MCP build at', cacheDist)
+        return cacheDist
+      }
+      err.code = 'MCP_BOOTSTRAP_FAILED'
+      throw err
+    }
+  }
+
+  const dist = usableDist || bootstrap()
+  return makeBinScript(dist)
 }
 
 async function workflowHealthCheck() {

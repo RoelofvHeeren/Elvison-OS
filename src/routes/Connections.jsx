@@ -206,7 +206,12 @@ const Connections = () => {
       if (err?.response?.data?.code === 'MISSING_OAUTH' && err?.response?.data?.meta?.oauthPath) {
         setMcpStatus({
           state: 'error',
-          message: `Add gcp-oauth.keys.json to ${err.response.data.meta.oauthPath} or set GSHEETS_OAUTH_JSON, then retry.`,
+        message: `Add gcp-oauth.keys.json to ${err.response.data.meta.oauthPath} or set GSHEETS_OAUTH_JSON, then retry.`,
+        })
+      } else if (err?.response?.data?.code === 'MCP_BOOTSTRAP_FAILED') {
+        setMcpStatus({
+          state: 'error',
+          message: 'Local MCP build failed. Check git/npm availability and retry.',
         })
       }
     } finally {
