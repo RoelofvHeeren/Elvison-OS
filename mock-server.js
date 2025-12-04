@@ -327,7 +327,19 @@ const startSheetMcpServer = async () => {
   try {
     if (oauthPath && binaryDistPath && fs.existsSync(oauthPath)) {
       const targetOauth = path.join(path.dirname(binaryDistPath), 'gcp-oauth.keys.json')
-      fs.copyFileSync(oauthPath, targetOauth)
+      const raw = fs.readFileSync(oauthPath, 'utf-8')
+      const parsed = JSON.parse(raw)
+      const installed = parsed.installed || parsed.web || {}
+      installed.redirect_uris = Array.from(
+        new Set([
+          ...(installed.redirect_uris || []),
+          'http://localhost:3000/oauth2callback',
+          'http://127.0.0.1:3000/oauth2callback',
+          process.env.GSHEETS_REDIRECT_URI,
+        ].filter(Boolean)),
+      )
+      parsed.installed = installed
+      fs.writeFileSync(targetOauth, JSON.stringify(parsed, null, 2))
     }
   } catch (copyErr) {
     console.warn('Failed to copy OAuth file to MCP dist directory', copyErr?.message)
