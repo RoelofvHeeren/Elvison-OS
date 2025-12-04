@@ -174,12 +174,12 @@ const ensureFinalSheetBinary = () => {
     fs.writeFileSync(googleBinPath, script)
     fs.chmodSync(binPath, 0o755)
     fs.chmodSync(googleBinPath, 0o755)
-    return binPath
+    return { binPath, distPath: targetDist }
   }
 
   const usableDist = [distEntry, cacheDist].find((p) => fs.existsSync(p))
   if (usableDist && fs.existsSync(binPath)) {
-    return binPath
+    return { binPath, distPath: usableDist }
   }
 
   const bootstrap = () => {
@@ -294,8 +294,16 @@ const startSheetMcpServer = async () => {
     return sheetMcpProcess
   }
 
-  const binaryPath = ensureFinalSheetBinary()
+  const { binPath: binaryPath, distPath: binaryDistPath } = ensureFinalSheetBinary()
   const { oauthPath, credentialsPath, configDir } = ensureGoogleSheetsFiles()
+  try {
+    if (oauthPath && binaryDistPath && fs.existsSync(oauthPath)) {
+      const targetOauth = path.join(path.dirname(binaryDistPath), 'gcp-oauth.keys.json')
+      fs.copyFileSync(oauthPath, targetOauth)
+    }
+  } catch (copyErr) {
+    console.warn('Failed to copy OAuth file to MCP dist directory', copyErr?.message)
+  }
 
   sheetMcpAuthNotified = false
   const env = {
@@ -317,6 +325,7 @@ const startSheetMcpServer = async () => {
     GSHEETS_OAUTH_PATH: env.GSHEETS_OAUTH_PATH,
     GSHEETS_CREDENTIALS_PATH: env.GSHEETS_CREDENTIALS_PATH,
     BIN: binaryPath,
+    DIST: binaryDistPath,
   })
 
   sheetMcpProcess = spawn('npx', ['final-sheet-mcp'], {
