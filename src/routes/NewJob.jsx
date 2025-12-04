@@ -58,16 +58,6 @@ const NewJob = () => {
           />
         </div>
 
-        <div className="flex items-center justify-center rounded-2xl border border-dashed border-outline/90 bg-panel px-4 py-6 text-muted">
-          <div className="flex items-center gap-3">
-            <UploadCloud className="h-5 w-5" />
-            <div className="text-left">
-              <p className="text-sm font-semibold">Upload a list (coming soon)</p>
-              <p className="text-xs">File upload is disabled in this build.</p>
-            </div>
-          </div>
-        </div>
-
         {error && (
           <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
             {error}

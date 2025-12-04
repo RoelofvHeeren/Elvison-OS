@@ -1,5 +1,10 @@
 import client from '../api/client'
 
+export const GOOGLE_SHEETS_MCP_ENDPOINTS = {
+  sse: 'http://127.0.0.1:3325/sse',
+  messages: 'http://127.0.0.1:3325/messages',
+}
+
 export const fetchLeads = async () => {
   const { data } = await client.get('/api/leads')
   return data
@@ -62,5 +67,10 @@ export const disconnectGoogle = async () => {
 
 export const testConnection = async (payload) => {
   const { data } = await client.post('/api/connections/test', payload)
+  return data
+}
+
+export const activateGoogleSheetsMcp = async () => {
+  const { data } = await client.post('/api/mcp/google-sheets/activate')
   return data
 }

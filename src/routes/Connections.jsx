@@ -13,9 +13,12 @@ import {
   disconnectGoogle,
   fetchAuthStatus,
   fetchConnection,
+  fetchHealth,
   fetchSheets,
   saveConnection,
   startJob,
+  activateGoogleSheetsMcp,
+  GOOGLE_SHEETS_MCP_ENDPOINTS,
 } from '../utils/api'
 
 const defaultForm = {
@@ -36,6 +39,8 @@ const Connections = () => {
   const [loadingSaved, setLoadingSaved] = useState(true)
   const [sheets, setSheets] = useState([])
   const [googleConnected, setGoogleConnected] = useState(false)
+  const [mcpStatus, setMcpStatus] = useState({ state: 'idle', message: '' })
+  const [activatingMcp, setActivatingMcp] = useState(false)
   const apiBase = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
   const [disconnectMessage, setDisconnectMessage] = useState('')
   const [jobPrompt, setJobPrompt] = useState('')
@@ -88,6 +93,29 @@ const Connections = () => {
     loadGoogleStatus()
   }, [])
 
+  useEffect(() => {
+    const loadMcpHealth = async () => {
+      try {
+        const health = await fetchHealth()
+        const sheetStatus = health?.sheet
+        if (sheetStatus === 'ok') {
+          setMcpStatus({ state: 'connected', message: 'Google Sheets MCP Connected' })
+        } else if (sheetStatus === 'reauth') {
+          setMcpStatus({ state: 'reauth', message: 'Re-authenticate Google Sheets MCP' })
+        } else if (sheetStatus === 'stopped') {
+          setMcpStatus({ state: 'stopped', message: 'Google Sheets MCP is offline' })
+        }
+      } catch (err) {
+        setMcpStatus((prev) => ({
+          ...prev,
+          state: prev.state === 'connected' ? 'connected' : 'error',
+          message: prev.state === 'connected' ? prev.message : 'Unable to read MCP health',
+        }))
+      }
+    }
+    loadMcpHealth()
+  }, [])
+
   const validate = () => {
     const required = ['sheetUrlOrId', 'agentWorkflowId', 'agentWorkflowVersion', 'openaiApiKey']
     const nextErrors = required.reduce((acc, key) => {
@@ -112,6 +140,64 @@ const Connections = () => {
       setSaveMessage(message)
     } finally {
       setSaving(false)
+    }
+  }
+
+  const pollMcpHealth = async () => {
+    for (let i = 0; i < 8; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 2000))
+      try {
+        const health = await fetchHealth()
+        if (health?.sheet === 'ok') {
+          setMcpStatus({ state: 'connected', message: 'Google Sheets MCP Connected' })
+          return
+        }
+        if (health?.sheet === 'reauth') {
+          setMcpStatus({ state: 'reauth', message: 'Re-authenticate Google Sheets MCP' })
+          return
+        }
+      } catch (err) {
+        // keep polling silently
+      }
+    }
+  }
+
+  const handleActivateMcp = async () => {
+    setActivatingMcp(true)
+    setMcpStatus({ state: 'activating', message: 'Starting Google Sheets MCP...' })
+    try {
+      const result = await activateGoogleSheetsMcp()
+      if (result?.status === 'auth') {
+        setMcpStatus({
+          state: 'auth',
+          message: 'Google auth popup opened. Complete login to finish activation.',
+        })
+        await pollMcpHealth()
+      } else if (result?.status === 'reauth') {
+        setMcpStatus({
+          state: 'reauth',
+          message: 'Re-authentication required. Click activate again after signing in.',
+        })
+      } else if (result?.status === 'ok') {
+        if (result?.probe?.status === 'reauth') {
+          setMcpStatus({
+            state: 'reauth',
+            message: 'Re-authentication required. Click activate again after signing in.',
+          })
+        } else {
+          setMcpStatus({ state: 'connected', message: 'Google Sheets MCP Connected' })
+        }
+      } else {
+        setMcpStatus({
+          state: 'error',
+          message: result?.error || 'Unable to start the Sheets MCP server.',
+        })
+      }
+    } catch (err) {
+      const message = err?.response?.data?.error || err?.message || 'Unable to start the Sheets MCP server.'
+      setMcpStatus({ state: 'error', message })
+    } finally {
+      setActivatingMcp(false)
     }
   }
 
@@ -151,6 +237,13 @@ const Connections = () => {
     }
   }
 
+  const mcpStatusLabel =
+    mcpStatus.message ||
+    (mcpStatus.state === 'connected'
+      ? 'Google Sheets MCP Connected'
+      : 'Google Sheets MCP not started yet.')
+  const mcpStatusOk = mcpStatus.state === 'connected'
+
   return (
     <div className="space-y-6">
       <div className="glass-panel px-6 py-6">
@@ -166,6 +259,56 @@ const Connections = () => {
           <div className="flex items-center gap-2 rounded-2xl border border-outline/80 bg-white/60 px-4 py-3 text-xs font-semibold text-muted">
             <Plug className="h-4 w-4 text-primary" />
             Workflow test via /api/connections
+          </div>
+        </div>
+      </div>
+
+      <div className="glass-panel space-y-4 px-6 py-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <Plug className="h-5 w-5 text-primary" />
+            <div>
+              <p className="text-sm font-semibold text-ink">Activate Google Sheets MCP</p>
+              <p className="text-xs text-muted">
+                Boots the Final-Sheet-MCP server locally via SSE on 127.0.0.1:3325.
+              </p>
+            </div>
+          </div>
+          <StatusPill
+            label={
+              mcpStatusOk
+                ? 'Google Sheets MCP Connected'
+                : mcpStatus.state === 'auth'
+                  ? 'Waiting for Google login'
+                  : mcpStatus.state === 'reauth'
+                    ? 'Re-auth needed'
+                    : 'MCP inactive'
+            }
+            ok={mcpStatusOk}
+          />
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={handleActivateMcp}
+            disabled={activatingMcp}
+            className="btn-primary disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            {activatingMcp && <Loader2 className="h-4 w-4 animate-spin" />}
+            Activate Google Sheets MCP
+          </button>
+          <div className="rounded-2xl border border-outline/80 bg-white/70 px-4 py-3 text-sm text-muted">
+            {mcpStatusLabel}
+          </div>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="rounded-2xl border border-outline/80 bg-white/80 px-4 py-3">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted">SSE Stream</p>
+            <p className="font-mono text-sm text-ink">{GOOGLE_SHEETS_MCP_ENDPOINTS.sse}</p>
+          </div>
+          <div className="rounded-2xl border border-outline/80 bg-white/80 px-4 py-3">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted">POST /messages</p>
+            <p className="font-mono text-sm text-ink">{GOOGLE_SHEETS_MCP_ENDPOINTS.messages}</p>
           </div>
         </div>
       </div>

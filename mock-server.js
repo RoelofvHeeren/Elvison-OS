@@ -9,11 +9,24 @@ import crypto from 'crypto'
 import axios from 'axios'
 import OpenAI from "openai"
 import fs from 'fs'
+import os from 'os'
 import path from 'path'
+import { EventSource } from 'eventsource'
+import { execSync, spawn } from 'child_process'
 import { fileURLToPath } from 'url'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
+
+const HOME_CONFIG_DIR = process.env.GSHEETS_CONFIG_DIR || path.join(os.homedir(), '.config', 'google-sheets-mcp')
+const DEFAULT_GSHEETS_OAUTH_PATH =
+  process.env.GSHEETS_OAUTH_PATH || path.join(HOME_CONFIG_DIR, 'gcp-oauth.keys.json')
+const DEFAULT_GSHEETS_CREDENTIALS_PATH =
+  process.env.GSHEETS_CREDENTIALS_PATH || path.join(HOME_CONFIG_DIR, 'credentials.json')
+const LOCAL_SHEET_MCP_HOST = '127.0.0.1'
+const LOCAL_SHEET_MCP_PORT = 3325
+const LOCAL_SHEET_MCP_BASE = `http://${LOCAL_SHEET_MCP_HOST}:${LOCAL_SHEET_MCP_PORT}`
+const SHEET_MCP_SSE = `${LOCAL_SHEET_MCP_BASE}/sse`
 
 const app = express()
 app.use(cors())
@@ -23,12 +36,126 @@ const WORKFLOW_ID = process.env.WORKFLOW_ID
 const WORKFLOW_VERSION = process.env.WORKFLOW_VERSION
 const CHATKIT_WORKFLOW_ID = process.env.WORKFLOW_ID
 const CHATKIT_WORKFLOW_VERSION = process.env.WORKFLOW_VERSION
-const SHEET_MCP_BASE = 'https://final-sheet-mcp-production.up.railway.app'
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY
 const CONNECTION_STORE = new Map()
 const TOKEN_STORE = new Map()
 const client = new OpenAI({ apiKey: OPENAI_API_KEY })
 console.log('Available client keys:', Object.keys(client))
+
+let sheetMcpProcess = null
+let sheetMcpAuthNotified = false
+const sheetMcpLogs = []
+
+const sleep = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms))
+
+const logSheetMcpOutput = (source) => (data) => {
+  const text = data?.toString?.() || ''
+  if (!text.trim()) return
+  if (text.includes('Launching auth flow')) {
+    sheetMcpAuthNotified = true
+  }
+  const line = `[sheets-mcp:${source}] ${text.trim()}`
+  console.log(line)
+  sheetMcpLogs.push(line)
+  if (sheetMcpLogs.length > 200) {
+    sheetMcpLogs.shift()
+  }
+}
+
+const ensureDirExists = (dirPath) => {
+  if (!dirPath) return
+  fs.mkdirSync(dirPath, { recursive: true })
+}
+
+const decodeJsonMaybeBase64 = (value = '') => {
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+  if (trimmed.startsWith('{')) return trimmed
+  try {
+    return Buffer.from(trimmed, 'base64').toString('utf-8')
+  } catch (err) {
+    console.error('Failed to decode base64 JSON; falling back to raw value', err?.message)
+    return trimmed
+  }
+}
+
+const writeJsonEnvToPath = (envKey, targetPath) => {
+  const value = process.env[envKey]
+  if (!value) return false
+  ensureDirExists(path.dirname(targetPath))
+  const decoded = decodeJsonMaybeBase64(value)
+  fs.writeFileSync(targetPath, decoded)
+  return true
+}
+
+const migrateLegacyCredentials = (targetPath) => {
+  const legacyPath = path.join(__dirname, 'dist', '.gsheets-server-credentials.json')
+  if (fs.existsSync(legacyPath) && !fs.existsSync(targetPath)) {
+    ensureDirExists(path.dirname(targetPath))
+    fs.copyFileSync(legacyPath, targetPath)
+    try {
+      fs.unlinkSync(legacyPath)
+    } catch (err) {
+      console.warn('Unable to remove legacy credential file', err?.message)
+    }
+    console.log('Migrated legacy Google Sheets credentials to', targetPath)
+  }
+}
+
+const ensureGoogleSheetsFiles = () => {
+  ensureDirExists(HOME_CONFIG_DIR)
+  migrateLegacyCredentials(DEFAULT_GSHEETS_CREDENTIALS_PATH)
+  const oauthPath = process.env.GSHEETS_OAUTH_PATH || DEFAULT_GSHEETS_OAUTH_PATH
+  const credentialsPath = process.env.GSHEETS_CREDENTIALS_PATH || DEFAULT_GSHEETS_CREDENTIALS_PATH
+  writeJsonEnvToPath('GSHEETS_OAUTH_JSON', oauthPath)
+  writeJsonEnvToPath('GSHEETS_CREDENTIALS_JSON', credentialsPath)
+  return { oauthPath, credentialsPath, configDir: HOME_CONFIG_DIR }
+}
+
+const detectAuthErrorFromResponse = (payload) => {
+  const text = typeof payload === 'string' ? payload : JSON.stringify(payload || {})
+  return /invalid_grant|unauthorized|401/i.test(text)
+}
+
+const ensureFinalSheetBinary = () => {
+  const moduleDir = path.join(__dirname, 'node_modules', 'final-sheet-mcp')
+  const distEntry = path.join(moduleDir, 'dist', 'index.js')
+  const binDir = path.join(__dirname, 'node_modules', '.bin')
+  const binPath = path.join(binDir, 'final-sheet-mcp')
+  const googleBinPath = path.join(binDir, 'google-sheets-mcp')
+
+  if (fs.existsSync(distEntry) && fs.existsSync(binPath)) {
+    return binPath
+  }
+
+  try {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'final-sheet-mcp-'))
+    const repoDir = path.join(tempRoot, 'repo')
+    execSync(`git clone https://github.com/RoelofvHeeren/Final-Sheet-MCP.git ${repoDir}`, {
+      stdio: 'inherit',
+    })
+    execSync('npm install', { cwd: repoDir, stdio: 'inherit' })
+    execSync('npm run build', { cwd: repoDir, stdio: 'inherit' })
+
+    ensureDirExists(path.dirname(distEntry))
+    fs.copyFileSync(path.join(repoDir, 'dist', 'index.js'), distEntry)
+  } catch (err) {
+    console.error('Failed to bootstrap final-sheet-mcp binary', err)
+    throw err
+  }
+
+  ensureDirExists(binDir)
+  const script = [
+    '#!/usr/bin/env bash',
+    'SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"',
+    'node "$SCRIPT_DIR/../final-sheet-mcp/dist/index.js" "$@"',
+  ].join('\n')
+  fs.writeFileSync(binPath, script)
+  fs.writeFileSync(googleBinPath, script)
+  fs.chmodSync(binPath, 0o755)
+  fs.chmodSync(googleBinPath, 0o755)
+  return binPath
+}
 
 async function workflowHealthCheck() {
   try {
@@ -95,6 +222,172 @@ const getActiveConnection = () => {
     mcpApiKey: process.env.MCP_API_KEY,
   }
 }
+
+const sheetMcpHealthUrl = `${LOCAL_SHEET_MCP_BASE}/health`
+
+const checkSheetMcpHealth = async () => {
+  try {
+    const response = await axios.get(sheetMcpHealthUrl, { timeout: 2000 })
+    return response.status === 200
+  } catch (err) {
+    return false
+  }
+}
+
+const startSheetMcpServer = async () => {
+  if (sheetMcpProcess?.pid && !sheetMcpProcess.killed) {
+    return sheetMcpProcess
+  }
+
+  const binaryPath = ensureFinalSheetBinary()
+  const { oauthPath, credentialsPath, configDir } = ensureGoogleSheetsFiles()
+
+  sheetMcpAuthNotified = false
+  const env = {
+    ...process.env,
+    MCP_TRANSPORT: 'sse',
+    PORT: `${LOCAL_SHEET_MCP_PORT}`,
+    HOST: LOCAL_SHEET_MCP_HOST,
+    GSHEETS_CONFIG_DIR: configDir,
+    GSHEETS_OAUTH_PATH: oauthPath,
+    GSHEETS_CREDENTIALS_PATH: credentialsPath,
+    PATH: `${path.join(__dirname, 'node_modules', '.bin')}${path.delimiter}${process.env.PATH || ''}`,
+  }
+
+  console.log('Starting Google Sheets MCP server with env:', {
+    MCP_TRANSPORT: env.MCP_TRANSPORT,
+    PORT: env.PORT,
+    HOST: env.HOST,
+    GSHEETS_CONFIG_DIR: env.GSHEETS_CONFIG_DIR,
+    GSHEETS_OAUTH_PATH: env.GSHEETS_OAUTH_PATH,
+    GSHEETS_CREDENTIALS_PATH: env.GSHEETS_CREDENTIALS_PATH,
+    BIN: binaryPath,
+  })
+
+  sheetMcpProcess = spawn('npx', ['final-sheet-mcp'], {
+    env,
+    cwd: __dirname,
+    detached: true,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+
+  sheetMcpProcess.stdout?.on('data', logSheetMcpOutput('stdout'))
+  sheetMcpProcess.stderr?.on('data', logSheetMcpOutput('stderr'))
+  sheetMcpProcess.on('exit', (code, signal) => {
+    console.log(`Sheets MCP server exited (code ${code}, signal ${signal})`)
+    sheetMcpProcess = null
+  })
+  sheetMcpProcess.unref()
+  return sheetMcpProcess
+}
+
+const createMcpSseSession = () =>
+  new Promise((resolve, reject) => {
+    const es = new EventSource(SHEET_MCP_SSE)
+    let resolved = false
+
+    es.addEventListener('endpoint', (event) => {
+      try {
+        const endpointUrl = new URL(event.data, LOCAL_SHEET_MCP_BASE).toString()
+        resolved = true
+        resolve({ es, endpointUrl })
+      } catch (err) {
+        es.close()
+        reject(err)
+      }
+    })
+
+    es.onerror = (err) => {
+      if (!resolved) {
+        reject(err)
+      }
+      es.close()
+    }
+  })
+
+const waitForMcpResponse = (es, messageId, timeoutMs = 12000) =>
+  new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      es.close()
+      reject(new Error('Timed out waiting for MCP response'))
+    }, timeoutMs)
+
+    es.onmessage = (event) => {
+      try {
+        const parsed = JSON.parse(event.data)
+        if (!messageId || parsed.id === messageId) {
+          clearTimeout(timer)
+          es.close()
+          resolve(parsed)
+        }
+      } catch (err) {
+        console.error('Failed to parse MCP message', err)
+      }
+    }
+
+    es.onerror = (err) => {
+      clearTimeout(timer)
+      es.close()
+      reject(err)
+    }
+  })
+
+const callMcpTool = async (toolName, args = {}) => {
+  const session = await createMcpSseSession()
+  const messageId = `mcp-${Date.now()}-${Math.random().toString(16).slice(2)}`
+  const payload = {
+    jsonrpc: '2.0',
+    id: messageId,
+    method: 'tools/call',
+    params: {
+      name: toolName,
+      arguments: args,
+    },
+  }
+
+  const responsePromise = waitForMcpResponse(session.es, messageId)
+  await axios.post(session.endpointUrl, payload, {
+    headers: { 'Content-Type': 'application/json' },
+  })
+  return responsePromise
+}
+
+const runMcpReadinessProbe = async () => {
+  const connection = getActiveConnection()
+  if (!connection?.sheetId) {
+    return { status: 'skipped', reason: 'missing_sheet_id' }
+  }
+
+  const result = { status: 'pending', detail: '' }
+  try {
+    const response = await callMcpTool('list_sheets', { spreadsheetId: connection.sheetId })
+    if (detectAuthErrorFromResponse(response)) {
+      const refresh = await callMcpTool('refresh_auth', {})
+      if (detectAuthErrorFromResponse(refresh)) {
+        result.status = 'reauth'
+        result.detail = 'refresh_auth failed; user re-login required'
+        return result
+      }
+      const retry = await callMcpTool('list_sheets', { spreadsheetId: connection.sheetId })
+      if (detectAuthErrorFromResponse(retry)) {
+        result.status = 'reauth'
+        result.detail = 'Auth still invalid after refresh.'
+        return result
+      }
+      result.status = 'ok'
+      result.detail = 'list_sheets succeeded after refresh.'
+      return result
+    }
+    result.status = 'ok'
+    result.detail = 'list_sheets succeeded.'
+    return result
+  } catch (err) {
+    result.status = 'error'
+    result.detail = err?.message || 'MCP tool call failed'
+    return result
+  }
+}
+
 
 const ensureGoogleAccessToken = async () => {
   const tokens = TOKEN_STORE.get('defaultUserTokens')
@@ -191,13 +484,78 @@ const proxyMcp = (baseUrl) => async (req, res) => {
 
 // GET /api/health - lightweight workflow ping (run creation with test input)
 app.get('/api/health', async (req, res) => {
+  let sheet = 'unknown'
+  let mcpProbe = null
   try {
     await workflowHealthCheck()
-    res.json({ agent: 'ok' })
+    const sheetOk = await checkSheetMcpHealth()
+    sheet = sheetOk ? 'ok' : 'stopped'
+    if (sheetOk) {
+      mcpProbe = await runMcpReadinessProbe()
+      if (mcpProbe?.status === 'reauth' || mcpProbe?.status === 'error') {
+        sheet = mcpProbe.status
+      }
+    }
+    res.json({ agent: 'ok', sheet, mcpProbe })
   } catch (err) {
     console.error('Health check error:', err?.response?.data || err?.message)
-    res.json({ agent: 'error' })
+    res.json({ agent: 'error', sheet })
   }
+})
+
+// POST /api/mcp/google-sheets/activate - start local MCP server via SSE
+app.post('/api/mcp/google-sheets/activate', async (req, res) => {
+  const alreadyHealthy = await checkSheetMcpHealth()
+  if (alreadyHealthy) {
+    const probe = await runMcpReadinessProbe()
+    const status = probe?.status === 'reauth' ? 'reauth' : probe?.status === 'error' ? 'error' : 'ok'
+    return res.status(status === 'error' ? 502 : 200).json({ status, message: 'OK', running: true, probe })
+  }
+
+  try {
+    await startSheetMcpServer()
+  } catch (err) {
+    return res.status(500).json({
+      error: 'Failed to start Google Sheets MCP server',
+      detail: err?.message || err,
+    })
+  }
+
+  const startTime = Date.now()
+  const timeoutMs = 45000
+  let authNotified = false
+
+  while (Date.now() - startTime < timeoutMs) {
+    if (!authNotified && sheetMcpAuthNotified) {
+      authNotified = true
+      return res.status(202).json({
+        status: 'auth',
+        message: 'Launching Google auth flow... complete login in your browser.',
+        authPopup: true,
+      })
+    }
+
+    const healthy = await checkSheetMcpHealth()
+    if (healthy) {
+      const probe = await runMcpReadinessProbe()
+      const status = probe?.status === 'reauth' ? 'reauth' : probe?.status === 'error' ? 'error' : 'ok'
+      return res.json({
+        status,
+        message: 'Sheets MCP server is healthy',
+        running: true,
+        probe,
+        authPopup: sheetMcpAuthNotified,
+      })
+    }
+
+    await sleep(2000)
+  }
+
+  res.status(504).json({
+    error: 'Timed out waiting for Sheets MCP health check',
+    running: false,
+    authPopup: sheetMcpAuthNotified,
+  })
 })
 
 // GET /api/leads using Google Sheets API
@@ -586,8 +944,8 @@ app.get('/api/connections', (req, res) => {
 })
 
 // Sheet MCP proxy routes (used by workflow)
-app.get('/sheet-mcp/sse', proxyMcp(SHEET_MCP_BASE))
-app.all(/^\/sheet-mcp\/.*$/, proxyMcp(SHEET_MCP_BASE))
+app.get('/sheet-mcp/sse', proxyMcp(LOCAL_SHEET_MCP_BASE))
+app.all(/^\/sheet-mcp\/.*$/, proxyMcp(LOCAL_SHEET_MCP_BASE))
 
 // Workflow proxy routes (passthrough to OpenAI)
 app.post('/v1/workflows/runs', proxyOpenAI)
