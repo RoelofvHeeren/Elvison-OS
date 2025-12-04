@@ -1,6 +1,6 @@
 import PropTypes from 'prop-types'
 import { Link, NavLink, useLocation } from 'react-router-dom'
-import { Menu, Sparkles } from 'lucide-react'
+import { Menu, PlugZap, Sparkles } from 'lucide-react'
 
 const linkClass = ({ isActive }) =>
   [
@@ -38,6 +38,10 @@ const Navbar = ({ onToggleSidebar }) => {
           </NavLink>
           <NavLink to="/status" className={linkClass}>
             Status
+          </NavLink>
+          <NavLink to="/connections#activate-mcp" className={linkClass}>
+            <PlugZap className="h-4 w-4" />
+            Activate MCP
           </NavLink>
           <Link
             to="/new-job"

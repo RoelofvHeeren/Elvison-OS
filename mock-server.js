@@ -88,6 +88,28 @@ const writeJsonEnvToPath = (envKey, targetPath) => {
   return true
 }
 
+const synthesizeOauthJson = () => {
+  const clientId = process.env.GSHEETS_CLIENT_ID
+  const clientSecret = process.env.GSHEETS_CLIENT_SECRET
+  const redirectUri = process.env.GSHEETS_REDIRECT_URI || 'http://localhost:3000/oauth2callback'
+  if (!clientId || !clientSecret) return null
+  return JSON.stringify(
+    {
+      installed: {
+        client_id: clientId,
+        client_secret: clientSecret,
+        project_id: 'elvison-local',
+        auth_uri: 'https://accounts.google.com/o/oauth2/auth',
+        token_uri: 'https://oauth2.googleapis.com/token',
+        auth_provider_x509_cert_url: 'https://www.googleapis.com/oauth2/v1/certs',
+        redirect_uris: [redirectUri],
+      },
+    },
+    null,
+    2,
+  )
+}
+
 const migrateLegacyCredentials = (targetPath) => {
   const legacyPath = path.join(__dirname, 'dist', '.gsheets-server-credentials.json')
   if (fs.existsSync(legacyPath) && !fs.existsSync(targetPath)) {
@@ -109,6 +131,21 @@ const ensureGoogleSheetsFiles = () => {
   const credentialsPath = process.env.GSHEETS_CREDENTIALS_PATH || DEFAULT_GSHEETS_CREDENTIALS_PATH
   writeJsonEnvToPath('GSHEETS_OAUTH_JSON', oauthPath)
   writeJsonEnvToPath('GSHEETS_CREDENTIALS_JSON', credentialsPath)
+  if (!fs.existsSync(oauthPath)) {
+    const synthesized = synthesizeOauthJson()
+    if (synthesized) {
+      ensureDirExists(path.dirname(oauthPath))
+      fs.writeFileSync(oauthPath, synthesized)
+    }
+  }
+  if (!fs.existsSync(oauthPath)) {
+    const err = new Error(
+      `Missing Google OAuth client JSON at ${oauthPath}. Add gcp-oauth.keys.json or set GSHEETS_OAUTH_JSON/GSHEETS_OAUTH_PATH.`,
+    )
+    err.code = 'MISSING_OAUTH'
+    err.meta = { oauthPath }
+    throw err
+  }
   return { oauthPath, credentialsPath, configDir: HOME_CONFIG_DIR }
 }
 
@@ -515,9 +552,12 @@ app.post('/api/mcp/google-sheets/activate', async (req, res) => {
   try {
     await startSheetMcpServer()
   } catch (err) {
-    return res.status(500).json({
+    const status = err?.code === 'MISSING_OAUTH' ? 400 : 500
+    return res.status(status).json({
       error: 'Failed to start Google Sheets MCP server',
       detail: err?.message || err,
+      code: err?.code,
+      meta: err?.meta,
     })
   }
 

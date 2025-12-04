@@ -194,8 +194,21 @@ const Connections = () => {
         })
       }
     } catch (err) {
-      const message = err?.response?.data?.error || err?.message || 'Unable to start the Sheets MCP server.'
-      setMcpStatus({ state: 'error', message })
+      const detail =
+        err?.response?.data?.detail ||
+        err?.response?.data?.error ||
+        err?.message ||
+        'Unable to start the Sheets MCP server.'
+      setMcpStatus({
+        state: 'error',
+        message: detail,
+      })
+      if (err?.response?.data?.code === 'MISSING_OAUTH' && err?.response?.data?.meta?.oauthPath) {
+        setMcpStatus({
+          state: 'error',
+          message: `Add gcp-oauth.keys.json to ${err.response.data.meta.oauthPath} or set GSHEETS_OAUTH_JSON, then retry.`,
+        })
+      }
     } finally {
       setActivatingMcp(false)
     }
@@ -263,7 +276,7 @@ const Connections = () => {
         </div>
       </div>
 
-      <div className="glass-panel space-y-4 px-6 py-6">
+      <div id="activate-mcp" className="glass-panel space-y-4 px-6 py-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <Plug className="h-5 w-5 text-primary" />

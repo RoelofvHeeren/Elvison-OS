@@ -44,19 +44,14 @@ const NewJob = () => {
       </div>
 
       <form onSubmit={handleSubmit} className="glass-panel space-y-5 px-5 py-6">
-        <div className="flex flex-col gap-2">
-          <label htmlFor="prompt" className="text-sm font-semibold text-ink">
-            Describe the search
-          </label>
-          <textarea
-            id="prompt"
-            rows={8}
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder="Find 3 top decision makers at growth-stage US fintech firms..."
-            className="w-full rounded-2xl border border-outline/80 bg-white/70 px-4 py-3 text-sm text-ink outline-none transition-all duration-200 focus:border-primary focus:ring-2 focus:ring-mint"
-          />
-        </div>
+        <textarea
+          id="prompt"
+          rows={8}
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          placeholder="Find 3 top decision makers at growth-stage US fintech firms..."
+          className="w-full rounded-2xl border border-outline/80 bg-white/70 px-4 py-3 text-sm text-ink outline-none transition-all duration-200 focus:border-primary focus:ring-2 focus:ring-mint"
+        />
 
         {error && (
           <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
