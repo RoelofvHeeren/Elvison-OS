@@ -157,6 +157,7 @@ const detectAuthErrorFromResponse = (payload) => {
 const ensureFinalSheetBinary = () => {
   const moduleDir = path.join(__dirname, 'node_modules', 'final-sheet-mcp')
   const distEntry = path.join(moduleDir, 'dist', 'index.js')
+  const vendorDist = path.join(__dirname, 'vendor', 'final-sheet-mcp', 'index.js')
   const binDir = path.join(__dirname, 'node_modules', '.bin')
   const binPath = path.join(binDir, 'final-sheet-mcp')
   const googleBinPath = path.join(binDir, 'google-sheets-mcp')
@@ -177,7 +178,7 @@ const ensureFinalSheetBinary = () => {
     return { binPath, distPath: targetDist }
   }
 
-  const usableDist = [distEntry, cacheDist].find((p) => fs.existsSync(p))
+  const usableDist = [distEntry, vendorDist, cacheDist].find((p) => fs.existsSync(p))
   if (usableDist && fs.existsSync(binPath)) {
     return { binPath, distPath: usableDist }
   }
