@@ -786,10 +786,15 @@ app.post('/api/write-leads', (req, res) => {
 // GET /api/sheet/rows
 app.get('/api/sheet/rows', async (req, res) => {
   const active = getActiveConnection()
+  const sheetId = req.query.sheetId || active.sheetId
+  const sheetName = req.query.sheetName || active.sheetName
+  if (!sheetId) {
+    return res.status(400).json({ error: 'sheetId is required for MCP sheet read' })
+  }
   try {
     const response = await callMcpTool(
       'read_all_from_sheet',
-      { spreadsheetId: active.sheetId, sheetName: active.sheetName },
+      { spreadsheetId: sheetId, sheetName },
       getMcpBase(),
     )
     const content = response?.result?.content || response?.content || []
@@ -803,7 +808,7 @@ app.get('/api/sheet/rows', async (req, res) => {
         return res.status(502).json({ error: 'Unable to load sheet rows', detail: text })
       }
     }
-    res.json({ rows: values, sheetName: active.sheetName, sheetId: active.sheetId })
+    res.json({ rows: values, sheetName, sheetId })
   } catch (err) {
     console.error('Sheet rows exception:', err)
     res.status(500).json({ error: 'Unable to load sheet rows' })
@@ -813,7 +818,12 @@ app.get('/api/sheet/rows', async (req, res) => {
 // POST /api/sheet/append
 app.post('/api/sheet/append', async (req, res) => {
   const active = getActiveConnection()
+  const sheetId = req.body?.sheetId || active.sheetId
+  const sheetName = req.body?.sheetName || active.sheetName
   const rows = Array.isArray(req.body?.rows) ? req.body.rows : []
+  if (!sheetId) {
+    return res.status(400).json({ error: 'sheetId is required for MCP sheet append' })
+  }
   if (!rows.length) {
     return res.status(400).json({ error: 'rows array is required' })
   }
@@ -822,7 +832,7 @@ app.post('/api/sheet/append', async (req, res) => {
     const base = getMcpBase()
     const existing = await callMcpTool(
       'read_all_from_sheet',
-      { spreadsheetId: active.sheetId, sheetName: active.sheetName },
+      { spreadsheetId: sheetId, sheetName },
       base,
     )
     const content = existing?.result?.content || existing?.content || []
@@ -839,7 +849,7 @@ app.post('/api/sheet/append', async (req, res) => {
     for (const row of rows) {
       await callMcpTool(
         'insert_row',
-        { spreadsheetId: active.sheetId, sheetName: active.sheetName, rowIndex: nextIndex, values: row },
+        { spreadsheetId: sheetId, sheetName, rowIndex: nextIndex, values: row },
         base,
       )
       nextIndex += 1
