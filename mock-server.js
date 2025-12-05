@@ -28,6 +28,7 @@ const LOCAL_SHEET_MCP_PORT = 3325
 const LOCAL_SHEET_MCP_BASE = `http://${LOCAL_SHEET_MCP_HOST}:${LOCAL_SHEET_MCP_PORT}`
 const SHEET_MCP_SSE = `${LOCAL_SHEET_MCP_BASE}/sse`
 const HOSTED_SHEET_MCP_BASE = process.env.SHEET_MCP_URL?.replace(/\/$/, '')
+const HOSTED_SHEET_MCP_BASE = process.env.SHEET_MCP_URL?.replace(/\/$/, '')
 
 const app = express()
 app.use(cors())
@@ -397,14 +398,16 @@ const startSheetMcpServer = async () => {
   return sheetMcpProcess
 }
 
-const createMcpSseSession = () =>
+const getMcpBase = () => HOSTED_SHEET_MCP_BASE || LOCAL_SHEET_MCP_BASE
+
+const createMcpSseSession = (base = getMcpBase()) =>
   new Promise((resolve, reject) => {
-    const es = new EventSource(SHEET_MCP_SSE)
+    const es = new EventSource(`${base}/sse`)
     let resolved = false
 
     es.addEventListener('endpoint', (event) => {
       try {
-        const endpointUrl = new URL(event.data, LOCAL_SHEET_MCP_BASE).toString()
+        const endpointUrl = new URL(event.data, base).toString()
         resolved = true
         resolve({ es, endpointUrl })
       } catch (err) {
@@ -448,8 +451,8 @@ const waitForMcpResponse = (es, messageId, timeoutMs = 12000) =>
     }
   })
 
-const callMcpTool = async (toolName, args = {}) => {
-  const session = await createMcpSseSession()
+const callMcpTool = async (toolName, args = {}, base = getMcpBase()) => {
+  const session = await createMcpSseSession(base)
   const messageId = `mcp-${Date.now()}-${Math.random().toString(16).slice(2)}`
   const payload = {
     jsonrpc: '2.0',
@@ -473,18 +476,19 @@ const runMcpReadinessProbe = async () => {
   if (!connection?.sheetId) {
     return { status: 'skipped', reason: 'missing_sheet_id' }
   }
+  const base = getMcpBase()
 
   const result = { status: 'pending', detail: '' }
   try {
-    const response = await callMcpTool('list_sheets', { spreadsheetId: connection.sheetId })
+    const response = await callMcpTool('list_sheets', { spreadsheetId: connection.sheetId }, base)
     if (detectAuthErrorFromResponse(response)) {
-      const refresh = await callMcpTool('refresh_auth', {})
+      const refresh = await callMcpTool('refresh_auth', {}, base)
       if (detectAuthErrorFromResponse(refresh)) {
         result.status = 'reauth'
         result.detail = 'refresh_auth failed; user re-login required'
         return result
       }
-      const retry = await callMcpTool('list_sheets', { spreadsheetId: connection.sheetId })
+      const retry = await callMcpTool('list_sheets', { spreadsheetId: connection.sheetId }, base)
       if (detectAuthErrorFromResponse(retry)) {
         result.status = 'reauth'
         result.detail = 'Auth still invalid after refresh.'
@@ -784,24 +788,14 @@ app.post('/api/write-leads', (req, res) => {
 app.get('/api/sheet/rows', async (req, res) => {
   const active = getActiveConnection()
   try {
-    const accessToken = await ensureGoogleAccessToken()
-    if (!accessToken) {
-      return res.status(401).json({ error: 'Not connected to Google' })
-    }
-    const range = `${active.sheetName || 'AI Lead Sheet'}!A1:Z`
-    const apiUrl = `https://sheets.googleapis.com/v4/spreadsheets/${active.sheetId}/values/${encodeURIComponent(range)}`
-    const rowsRes = await fetch(apiUrl, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    })
-    if (!rowsRes.ok) {
-      const text = await rowsRes.text()
-      console.error('Sheet rows fetch error:', rowsRes.status, text)
-      return res.status(502).json({ error: 'Unable to load sheet rows', detail: text })
-    }
-    const data = await rowsRes.json()
-    const values = data?.values || []
+    const response = await callMcpTool(
+      'read_all_from_sheet',
+      { spreadsheetId: active.sheetId, sheetName: active.sheetName },
+      getMcpBase(),
+    )
+    const content = response?.result?.content || response?.content || []
+    const text = content[0]?.text || content[0]?.data || ''
+    const values = text ? JSON.parse(text) : []
     res.json({ rows: values, sheetName: active.sheetName, sheetId: active.sheetId })
   } catch (err) {
     console.error('Sheet rows exception:', err)
@@ -818,31 +812,26 @@ app.post('/api/sheet/append', async (req, res) => {
   }
 
   try {
-    const accessToken = await ensureGoogleAccessToken()
-    if (!accessToken) {
-      return res.status(401).json({ error: 'Not connected to Google' })
-    }
-    const range = `${active.sheetName || 'AI Lead Sheet'}!A1`
-    const apiUrl = `https://sheets.googleapis.com/v4/spreadsheets/${active.sheetId}/values/${encodeURIComponent(
-      range,
-    )}:append?valueInputOption=RAW`
-    const writeRes = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify({ values: rows }),
-    })
+    const base = getMcpBase()
+    const existing = await callMcpTool(
+      'read_all_from_sheet',
+      { spreadsheetId: active.sheetId, sheetName: active.sheetName },
+      base,
+    )
+    const content = existing?.result?.content || existing?.content || []
+    const text = content[0]?.text || content[0]?.data || '[]'
+    const currentRows = JSON.parse(text || '[]')
+    let nextIndex = currentRows.length + 1
 
-    if (!writeRes.ok) {
-      const text = await writeRes.text()
-      console.error('Sheet append error:', writeRes.status, text)
-      return res.status(502).json({ error: 'Unable to append rows', detail: text })
+    for (const row of rows) {
+      await callMcpTool(
+        'insert_row',
+        { spreadsheetId: active.sheetId, sheetName: active.sheetName, rowIndex: nextIndex, values: row },
+        base,
+      )
+      nextIndex += 1
     }
-
-    const data = await writeRes.json().catch(() => ({}))
-    res.json({ ok: true, result: data })
+    res.json({ ok: true, appended: rows.length })
   } catch (err) {
     console.error('Sheet append exception:', err)
     res.status(500).json({ error: 'Unable to append rows' })
