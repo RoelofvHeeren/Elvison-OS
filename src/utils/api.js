@@ -1,8 +1,8 @@
 import client from '../api/client'
 
 export const GOOGLE_SHEETS_MCP_ENDPOINTS = {
-  sse: 'http://127.0.0.1:3325/sse',
-  messages: 'http://127.0.0.1:3325/messages',
+  sse: `${import.meta.env.VITE_SHEET_MCP_BASE || 'http://127.0.0.1:3325'}/sse`,
+  messages: `${import.meta.env.VITE_SHEET_MCP_BASE || 'http://127.0.0.1:3325'}/messages`,
 }
 
 export const fetchLeads = async () => {

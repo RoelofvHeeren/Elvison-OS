@@ -27,6 +27,7 @@ const LOCAL_SHEET_MCP_HOST = '127.0.0.1'
 const LOCAL_SHEET_MCP_PORT = 3325
 const LOCAL_SHEET_MCP_BASE = `http://${LOCAL_SHEET_MCP_HOST}:${LOCAL_SHEET_MCP_PORT}`
 const SHEET_MCP_SSE = `${LOCAL_SHEET_MCP_BASE}/sse`
+const HOSTED_SHEET_MCP_BASE = process.env.SHEET_MCP_URL?.replace(/\/$/, '')
 
 const app = express()
 app.use(cors())
@@ -310,6 +311,14 @@ const getActiveConnection = () => {
 const sheetMcpHealthUrl = `${LOCAL_SHEET_MCP_BASE}/health`
 
 const checkSheetMcpHealth = async () => {
+  if (HOSTED_SHEET_MCP_BASE) {
+    try {
+      const resp = await axios.get(`${HOSTED_SHEET_MCP_BASE.replace(/\/$/, '')}/health`, { timeout: 2000 })
+      return resp.status === 200
+    } catch (err) {
+      return false
+    }
+  }
   try {
     const response = await axios.get(sheetMcpHealthUrl, { timeout: 2000 })
     return response.status === 200
@@ -596,8 +605,8 @@ app.get('/api/health', async (req, res) => {
   try {
     await workflowHealthCheck()
     const sheetOk = await checkSheetMcpHealth()
-    sheet = sheetOk ? 'ok' : 'stopped'
-    if (sheetOk) {
+    sheet = sheetOk ? 'ok' : HOSTED_SHEET_MCP_BASE ? 'hosted' : 'stopped'
+    if (sheetOk && !HOSTED_SHEET_MCP_BASE) {
       mcpProbe = await runMcpReadinessProbe()
       if (mcpProbe?.status === 'reauth' || mcpProbe?.status === 'error') {
         sheet = mcpProbe.status
@@ -612,6 +621,31 @@ app.get('/api/health', async (req, res) => {
 
 // POST /api/mcp/google-sheets/activate - start local MCP server via SSE
 app.post('/api/mcp/google-sheets/activate', async (req, res) => {
+  if (HOSTED_SHEET_MCP_BASE) {
+    const healthUrl = `${HOSTED_SHEET_MCP_BASE}/health`
+    try {
+      const resp = await axios.get(healthUrl, { timeout: 3000 })
+      if (resp.status === 200) {
+        return res.json({
+          status: 'ok',
+          hosted: true,
+          running: true,
+          sse: `${HOSTED_SHEET_MCP_BASE}/sse`,
+          messages: `${HOSTED_SHEET_MCP_BASE}/messages`,
+        })
+      }
+    } catch (err) {
+      // continue and return hosted endpoints anyway
+    }
+    return res.status(202).json({
+      status: 'pending',
+      hosted: true,
+      running: false,
+      sse: `${HOSTED_SHEET_MCP_BASE}/sse`,
+      messages: `${HOSTED_SHEET_MCP_BASE}/messages`,
+    })
+  }
+
   const alreadyHealthy = await checkSheetMcpHealth()
   if (alreadyHealthy) {
     const probe = await runMcpReadinessProbe()
