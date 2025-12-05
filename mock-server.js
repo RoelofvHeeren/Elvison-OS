@@ -173,7 +173,8 @@ const ensureGoogleSheetsFiles = () => {
     err.meta = { oauthPath }
     throw err
   }
-  return { oauthPath, credentialsPath, configDir: HOME_CONFIG_DIR }
+  const oauthJson = fs.readFileSync(oauthPath, 'utf-8')
+  return { oauthPath, credentialsPath, configDir: HOME_CONFIG_DIR, oauthJson }
 }
 
 const detectAuthErrorFromResponse = (payload) => {
@@ -323,12 +324,11 @@ const startSheetMcpServer = async () => {
   }
 
   const { binPath: binaryPath, distPath: binaryDistPath } = ensureFinalSheetBinary()
-  const { oauthPath, credentialsPath, configDir } = ensureGoogleSheetsFiles()
+  const { oauthPath, credentialsPath, configDir, oauthJson } = ensureGoogleSheetsFiles()
   try {
     if (oauthPath && binaryDistPath && fs.existsSync(oauthPath)) {
       const targetOauth = path.join(path.dirname(binaryDistPath), 'gcp-oauth.keys.json')
-      const raw = fs.readFileSync(oauthPath, 'utf-8')
-      const parsed = JSON.parse(raw)
+      const parsed = JSON.parse(oauthJson)
       const installed = parsed.installed || parsed.web || {}
       installed.redirect_uris = Array.from(
         new Set([
@@ -346,7 +346,6 @@ const startSheetMcpServer = async () => {
   }
 
   sheetMcpAuthNotified = false
-  const oauthJson = fs.existsSync(oauthPath) ? fs.readFileSync(oauthPath, 'utf-8') : ''
   const credsJson = fs.existsSync(credentialsPath) ? fs.readFileSync(credentialsPath, 'utf-8') : ''
   const env = {
     ...process.env,
