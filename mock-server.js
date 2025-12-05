@@ -346,6 +346,8 @@ const startSheetMcpServer = async () => {
   }
 
   sheetMcpAuthNotified = false
+  const oauthJson = fs.existsSync(oauthPath) ? fs.readFileSync(oauthPath, 'utf-8') : ''
+  const credsJson = fs.existsSync(credentialsPath) ? fs.readFileSync(credentialsPath, 'utf-8') : ''
   const env = {
     ...process.env,
     MCP_TRANSPORT: 'sse',
@@ -354,6 +356,8 @@ const startSheetMcpServer = async () => {
     GSHEETS_CONFIG_DIR: configDir,
     GSHEETS_OAUTH_PATH: oauthPath,
     GSHEETS_CREDENTIALS_PATH: credentialsPath,
+    ...(oauthJson && { GSHEETS_OAUTH_JSON: oauthJson }),
+    ...(credsJson && { GSHEETS_CREDENTIALS_JSON: credsJson }),
     PATH: `${path.join(__dirname, 'node_modules', '.bin')}${path.delimiter}${process.env.PATH || ''}`,
   }
 
