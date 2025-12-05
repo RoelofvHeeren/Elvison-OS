@@ -28,7 +28,6 @@ const LOCAL_SHEET_MCP_PORT = 3325
 const LOCAL_SHEET_MCP_BASE = `http://${LOCAL_SHEET_MCP_HOST}:${LOCAL_SHEET_MCP_PORT}`
 const SHEET_MCP_SSE = `${LOCAL_SHEET_MCP_BASE}/sse`
 const HOSTED_SHEET_MCP_BASE = process.env.SHEET_MCP_URL?.replace(/\/$/, '')
-const HOSTED_SHEET_MCP_BASE = process.env.SHEET_MCP_URL?.replace(/\/$/, '')
 
 const app = express()
 app.use(cors())
