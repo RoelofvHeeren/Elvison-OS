@@ -794,7 +794,15 @@ app.get('/api/sheet/rows', async (req, res) => {
     )
     const content = response?.result?.content || response?.content || []
     const text = content[0]?.text || content[0]?.data || ''
-    const values = text ? JSON.parse(text) : []
+    let values = []
+    if (text) {
+      try {
+        values = JSON.parse(text)
+      } catch (parseErr) {
+        console.error('Sheet rows parse error:', parseErr?.message, text.slice(0, 200))
+        return res.status(502).json({ error: 'Unable to load sheet rows', detail: text })
+      }
+    }
     res.json({ rows: values, sheetName: active.sheetName, sheetId: active.sheetId })
   } catch (err) {
     console.error('Sheet rows exception:', err)
@@ -819,7 +827,13 @@ app.post('/api/sheet/append', async (req, res) => {
     )
     const content = existing?.result?.content || existing?.content || []
     const text = content[0]?.text || content[0]?.data || '[]'
-    const currentRows = JSON.parse(text || '[]')
+    let currentRows = []
+    try {
+      currentRows = JSON.parse(text || '[]')
+    } catch (parseErr) {
+      console.error('Sheet append parse error:', parseErr?.message, text.slice(0, 200))
+      currentRows = []
+    }
     let nextIndex = currentRows.length + 1
 
     for (const row of rows) {
