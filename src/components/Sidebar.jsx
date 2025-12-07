@@ -22,7 +22,7 @@ const Sidebar = ({ collapsed, onToggle }) => (
       {!collapsed && (
         <div className="flex flex-col">
           <p className="text-[9px] font-bold uppercase tracking-[0.3em] text-muted">Elvison OS</p>
-          <p className="font-serif text-xl italic tracking-tight text-accent">Prada Mode</p>
+          <p className="text-xl font-bold tracking-tight text-accent">Luxury Edition</p>
         </div>
       )}
     </div>

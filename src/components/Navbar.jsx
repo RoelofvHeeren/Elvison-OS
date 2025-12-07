@@ -31,7 +31,7 @@ const Navbar = ({ onToggleSidebar }) => {
               <div className="h-1.5 w-1.5 rounded-full bg-emerald-500"></div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-muted">System Active</p>
             </div>
-            <p className="font-serif text-lg italic text-accent">{pageLabel}</p>
+            <p className="text-lg font-bold text-accent tracking-tight">{pageLabel}</p>
           </div>
         </div>
 
