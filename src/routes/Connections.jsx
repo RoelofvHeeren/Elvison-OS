@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AlertCircle, CheckCircle2, Loader2, Link2, Plug, RefreshCw, ShieldCheck } from 'lucide-react'
-import { fetchHealth, startJob, GOOGLE_SHEETS_MCP_ENDPOINTS } from '../utils/api'
+import { fetchHealth, startJob, GOOGLE_SHEETS_MCP_ENDPOINTS, disconnectGoogle } from '../utils/api'
 
 const SHEET_NAME = 'AI Lead Sheet'
 const SHEET_ID = import.meta.env.VITE_SHEET_ID || '1T50YCAUgqUoT3DhdmjS3v3s866y3RYdAdyxn9nywpdI'
@@ -128,6 +128,18 @@ const Connections = () => {
           >
             <RefreshCw className="h-4 w-4" />
             {loadingHealth ? 'Refreshing status…' : 'Refresh status'}
+          </button>
+          <button
+            type="button"
+            onClick={async () => {
+              if (confirm('Are you sure you want to disconnect Google? You will need to re-authenticate.')) {
+                await disconnectGoogle();
+                window.location.reload();
+              }
+            }}
+            className="inline-flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-700 transition hover:bg-rose-100"
+          >
+            Reset Connection
           </button>
           <span className="text-xs text-muted">{agentStatus}</span>
         </div>

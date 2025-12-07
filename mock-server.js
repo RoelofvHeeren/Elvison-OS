@@ -805,7 +805,7 @@ app.get('/api/sheet/rows', async (req, res) => {
         values = JSON.parse(text)
       } catch (parseErr) {
         console.error('Sheet rows parse error:', parseErr?.message, text.slice(0, 200))
-        return res.status(502).json({ error: 'Unable to load sheet rows', detail: text })
+        return res.status(400).json({ error: 'MCP Error', detail: text })
       }
     }
     res.json({ rows: values, sheetName, sheetId })
@@ -842,6 +842,12 @@ app.post('/api/sheet/append', async (req, res) => {
       currentRows = JSON.parse(text || '[]')
     } catch (parseErr) {
       console.error('Sheet append parse error:', parseErr?.message, text.slice(0, 200))
+      // If we can't parse existing rows, we can't determine next index safely, or maybe we assume empty?
+      // Better to fail than corrupt data? Or proceed?
+      // For now, let's treat as empty if it looks like an error string?
+      if (text.startsWith('Error')) {
+        return res.status(400).json({ error: 'MCP Error', detail: text })
+      }
       currentRows = []
     }
     let nextIndex = currentRows.length + 1
@@ -1013,7 +1019,7 @@ app.post('/api/chatkit/session', async (req, res) => {
         Authorization: `Bearer ${OPENAI_API_KEY}`,
         'OpenAI-Beta': 'chatkit_beta=v1',
       },
-        body: JSON.stringify(payload),
+      body: JSON.stringify(payload),
     })
 
     if (!response.ok) {

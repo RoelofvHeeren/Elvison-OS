@@ -118,17 +118,17 @@ const SheetManager = () => {
   const safeRows = useMemo(() => rows.slice(1, 51), [rows]) // Skip header, show first 50
 
   return (
-    <div className="min-h-screen bg-slate-950 p-6 font-sans text-slate-200 selection:bg-cyan-500/30">
+    <div className="min-h-screen bg-transparent p-6 font-sans text-accent">
       {/* Header */}
       <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-950/50 text-cyan-400 ring-1 ring-cyan-500/20">
-              <FileSpreadsheet className="h-6 w-6" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-white shadow-lg shadow-primary/20">
+              <FileSpreadsheet className="h-5 w-5" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold tracking-tight text-white">Sheet Manager <span className="text-cyan-500">Protocol</span></h1>
-              <p className="text-sm text-slate-500">Direct Uplink to Google Sheets MCP</p>
+              <h1 className="text-2xl font-bold tracking-tight text-accent">Sheet Manager <span className="text-primary">Protocol</span></h1>
+              <p className="text-sm text-muted">Direct Uplink to Google Sheets MCP</p>
             </div>
           </div>
         </div>
@@ -136,7 +136,10 @@ const SheetManager = () => {
         <div className="flex items-center gap-3">
           <button
             onClick={() => setConfigOpen(!configOpen)}
-            className={`flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-all ${configOpen ? 'border-cyan-500/50 bg-cyan-950/30 text-cyan-300' : 'border-slate-800 bg-slate-900/50 hover:border-slate-700'}`}
+            className={`flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-all ${configOpen
+              ? 'border-primary/50 bg-primary/5 text-primary'
+              : 'border-glass-border bg-white hover:border-primary/30 hover:shadow-sharp'
+              }`}
           >
             <Settings className="h-4 w-4" />
             {configOpen ? 'Hide Config' : 'Configure Connection'}
@@ -144,7 +147,7 @@ const SheetManager = () => {
           <button
             onClick={handleRefresh}
             disabled={loading || !config.sheetId}
-            className="flex items-center gap-2 rounded-lg bg-cyan-600 px-4 py-2 text-sm font-bold text-white shadow-lg shadow-cyan-900/20 transition-all hover:bg-cyan-500 hover:shadow-cyan-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-bold text-white shadow-luxury transition-all hover:bg-primary-dim hover:shadow-xl hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             {loading ? 'SYNCING...' : 'REFRESH DATA'}
@@ -154,34 +157,34 @@ const SheetManager = () => {
 
       {/* Configuration Panel */}
       {configOpen && (
-        <div className="mb-6 rounded-2xl border border-dashed border-cyan-500/30 bg-cyan-950/10 p-6 animate-in fade-in slide-in-from-top-4">
-          <h3 className="mb-4 flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-cyan-400">
+        <div className="glass-panel mb-6 p-6 animate-in fade-in slide-in-from-top-4">
+          <h3 className="mb-4 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-primary">
             <Database className="h-4 w-4" />
             Connection Parameters
           </h3>
           <div className="grid gap-4 md:grid-cols-[2fr,1fr,auto]">
             <div className="space-y-1">
-              <label className="text-xs font-semibold text-slate-400">Google Sheet ID</label>
+              <label className="text-xs font-semibold text-muted">Google Sheet ID</label>
               <input
                 value={config.sheetId}
-                onChange={(e) => setConfig(prev => ({ ...prev, sheetId: e.target.value }))}
+                onChange={(e) => setConfig((prev) => ({ ...prev, sheetId: e.target.value }))}
                 placeholder="1T50..."
-                className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-cyan-100 placeholder-slate-600 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                className="w-full rounded-lg border border-glass-border bg-white px-3 py-2 text-sm text-accent placeholder-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary shadow-sharp transition-all"
               />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-semibold text-slate-400">Sheet Name (Tab)</label>
+              <label className="text-xs font-semibold text-muted">Sheet Name (Tab)</label>
               <input
                 value={config.sheetName}
-                onChange={(e) => setConfig(prev => ({ ...prev, sheetName: e.target.value }))}
+                onChange={(e) => setConfig((prev) => ({ ...prev, sheetName: e.target.value }))}
                 placeholder="AI Lead Sheet"
-                className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-cyan-100 placeholder-slate-600 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                className="w-full rounded-lg border border-glass-border bg-white px-3 py-2 text-sm text-accent placeholder-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary shadow-sharp transition-all"
               />
             </div>
             <div className="flex items-end">
               <button
                 onClick={handleSaveConfig}
-                className="flex h-[38px] items-center gap-2 rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-4 text-sm font-semibold text-cyan-400 hover:bg-cyan-500/20"
+                className="flex h-[38px] items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-white shadow-md hover:bg-primary-dim transition-all"
               >
                 <Save className="h-4 w-4" />
                 Update
@@ -220,22 +223,25 @@ const SheetManager = () => {
       <div className="grid gap-6 lg:grid-cols-[1.5fr,1fr]">
 
         {/* Live Data Panel */}
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-1 shadow-2xl backdrop-blur-xl">
-          <div className="flex items-center justify-between border-b border-slate-800 px-5 py-4">
+        <div className="glass-panel p-1">
+          <div className="flex items-center justify-between border-b border-glass-border px-5 py-4">
             <div className="flex items-center gap-2">
-              <Table className="h-4 w-4 text-cyan-500" />
-              <h2 className="text-sm font-bold uppercase tracking-widest text-slate-300">Live Preview</h2>
+              <Table className="h-4 w-4 text-primary" />
+              <h2 className="text-xs font-bold uppercase tracking-widest text-muted">Live Preview</h2>
             </div>
-            <div className="flex items-center gap-2 text-xs font-mono text-cyan-500/60">
-              <span className={`h-2 w-2 rounded-full ${loading ? 'bg-amber-400 animate-pulse' : error ? 'bg-rose-500' : 'bg-cyan-500 shadow-[0_0_8px_rgba(6,182,212,0.6)]'}`}></span>
+            <div className="flex items-center gap-2 text-xs font-mono font-bold text-primary">
+              <span
+                className={`h-2 w-2 rounded-full ${loading ? 'bg-amber-400 animate-pulse' : error ? 'bg-rose-500' : 'bg-emerald-500'
+                  }`}
+              ></span>
               {loading ? 'FETCHING' : error ? 'OFFLINE' : 'LIVE'}
             </div>
           </div>
 
-          <div className="relative overflow-hidden rounded-b-xl bg-slate-950/30 min-h-[400px]">
+          <div className="relative overflow-hidden rounded-b-xl bg-surface/50 min-h-[400px]">
             {loading && (
-              <div className="absolute inset-0 flex items-center justify-center bg-slate-950/80 z-10">
-                <Loader2 className="h-8 w-8 animate-spin text-cyan-500" />
+              <div className="absolute inset-0 flex items-center justify-center bg-white/50 backdrop-blur-sm z-10">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
               </div>
             )}
 
@@ -248,7 +254,7 @@ const SheetManager = () => {
 
             <div className="overflow-auto max-h-[500px]">
               <table className="w-full text-left text-sm">
-                <thead className="bg-slate-900 text-xs font-semibold uppercase text-slate-400 sticky top-0 z-10">
+                <thead className="bg-surface text-[10px] font-bold uppercase tracking-wider text-muted sticky top-0 z-10">
                   <tr>
                     {headers.map((h, i) => (
                       <th key={i} className="whitespace-nowrap px-4 py-3 border-b border-slate-800">{h}</th>
@@ -257,9 +263,9 @@ const SheetManager = () => {
                 </thead>
                 <tbody className="divide-y divide-slate-800/50">
                   {safeRows.map((row, rIdx) => (
-                    <tr key={rIdx} className="group hover:bg-cyan-900/10 transition-colors">
+                    <tr key={rIdx} className="group hover:bg-white transition-colors border-b border-glass-border last:border-0">
                       {headers.map((_, cIdx) => (
-                        <td key={cIdx} className="whitespace-nowrap px-4 py-2.5 text-slate-300 group-hover:text-cyan-100">
+                        <td key={cIdx} className="whitespace-nowrap px-4 py-3 text-accent group-hover:text-primary-dim font-medium text-xs">
                           {row[cIdx] || ''}
                         </td>
                       ))}
@@ -273,15 +279,15 @@ const SheetManager = () => {
 
         {/* Append Control Panel */}
         <div className="space-y-6">
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6 shadow-2xl backdrop-blur-xl">
+          <div className="glass-panel p-6">
             <div className="mb-6 flex items-center gap-2">
-              <Terminal className="h-4 w-4 text-cyan-500" />
-              <h2 className="text-sm font-bold uppercase tracking-widest text-slate-300">Data Injection</h2>
+              <Terminal className="h-4 w-4 text-primary" />
+              <h2 className="text-xs font-bold uppercase tracking-widest text-muted">Data Injection</h2>
             </div>
 
             <div className="space-y-4">
-              <div className="rounded-xl border border-slate-800 bg-black/40 p-4">
-                <label className="mb-3 block text-xs font-semibold uppercase text-slate-500">Single Row Payload</label>
+              <div className="rounded-xl border border-glass-border bg-surface/50 p-4">
+                <label className="mb-3 block text-[10px] font-bold uppercase tracking-wider text-muted">Single Row Payload</label>
                 <div className="flex flex-col gap-2.5">
                   {draftRow.map((val, idx) => (
                     <input
@@ -293,14 +299,14 @@ const SheetManager = () => {
                         setDraftRow(next)
                       }}
                       placeholder={headers[idx] || `Column ${idx + 1}`}
-                      className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white placeholder-slate-600 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 transition-all"
+                      className="rounded-lg border border-glass-border bg-white px-3 py-2 text-sm text-accent placeholder-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary transition-all shadow-sharp"
                     />
                   ))}
                 </div>
                 <button
                   onClick={() => handleAppend([draftRow])}
                   disabled={appendStatus.loading}
-                  className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-slate-800 border border-slate-700 py-2.5 text-sm font-bold text-slate-200 hover:bg-cyan-600 hover:text-white hover:border-cyan-500 hover:shadow-cyan-500/20 transition-all disabled:opacity-50"
+                  className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-surface border border-glass-border py-2.5 text-sm font-bold text-muted hover:bg-primary hover:text-white hover:border-primary hover:shadow-lg transition-all disabled:opacity-50"
                 >
                   {appendStatus.loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileUp className="h-4 w-4" />}
                   APPEND ROW
