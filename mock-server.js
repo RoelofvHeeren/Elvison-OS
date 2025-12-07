@@ -941,8 +941,24 @@ app.get('/api/auth/google/callback', async (req, res) => {
   try {
     const credentialsPath = process.env.GSHEETS_CREDENTIALS_PATH || path.join(HOME_CONFIG_DIR, 'credentials.json')
     ensureDirExists(path.dirname(credentialsPath))
-    fs.writeFileSync(credentialsPath, JSON.stringify(tokenData, null, 2))
-    console.log('Updated credentials.json with new OAuth tokens')
+
+    // Construct valid 'authorized_user' format for google-auth-library
+    if (!tokens.refresh_token) {
+      console.warn('WARNING: No refresh_token received from Google. Offline access will fail.')
+    }
+
+    const credentialsPayload = {
+      type: 'authorized_user',
+      client_id: process.env.GSHEETS_CLIENT_ID,
+      client_secret: process.env.GSHEETS_CLIENT_SECRET,
+      refresh_token: tokens.refresh_token,
+      // Storing the access token too, though library might ignore it in favor of refreshing
+      token: tokens.access_token,
+      expiry_date: Date.now() + ((tokens.expires_in || 3600) * 1000)
+    }
+
+    fs.writeFileSync(credentialsPath, JSON.stringify(credentialsPayload, null, 2))
+    console.log('Updated credentials.json with new OAuth tokens (authorized_user format)')
   } catch (err) {
     console.error('Failed to persist tokens to disk:', err)
   }
