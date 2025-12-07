@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "start": "NODE_ENV=production node mock-server.js",
-    "build": "vite build",
+    "build": "NODE_OPTIONS='--max-old-space-size=4096' vite build",
     "lint": "eslint .",
     "preview": "vite preview"
   },
