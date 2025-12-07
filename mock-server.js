@@ -296,15 +296,9 @@ const validateConnectionPayload = (payload) => {
 }
 
 const getActiveConnection = () => {
-  const saved = CONNECTION_STORE.get('defaultUser')
-  if (saved?.sheetId && saved?.sheetName && saved?.sheetMcpUrl) {
-    return saved
-  }
   return {
-    sheetId: process.env.SHEET_ID,
-    sheetName: 'AI Lead Sheet',
-    sheetMcpUrl: process.env.SHEET_MCP_URL,
-    mcpApiKey: process.env.MCP_API_KEY,
+    sheetId: process.env.SHEET_ID || '1T50YCAUgqUoT3DhdmjS3v3s866y3RYdAdyxn9nywpdI',
+    sheetName: process.env.SHEET_NAME || 'AI Lead Sheet',
   }
 }
 
