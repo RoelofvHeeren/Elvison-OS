@@ -274,7 +274,7 @@ const Connections = () => {
           </button>
         </div>
       </div>
-    </div >
+    </div>
   )
 }
 
