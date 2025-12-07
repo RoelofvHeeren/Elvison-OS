@@ -817,7 +817,7 @@ app.get('/api/sheet/rows', async (req, res) => {
         values = JSON.parse(text)
       } catch (parseErr) {
         console.error('Sheet rows parse error:', parseErr?.message, text.slice(0, 200))
-        return res.status(400).json({ error: 'MCP Error', detail: text })
+        return res.status(400).json({ error: 'MCP Error: ' + text.slice(0, 200), detail: text })
       }
     }
     res.json({ rows: values, sheetName, sheetId })
