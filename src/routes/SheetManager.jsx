@@ -121,30 +121,73 @@ const SheetManager = () => {
         )}
 
         {!loading && !error && (
-          <div className="overflow-x-auto rounded-xl border border-outline/20 bg-white shadow-sm">
-            <table className="w-full">
-              <thead className="bg-surface/50 border-b border-outline/20">
+          <div className="overflow-x-auto rounded-xl border border-glass-border bg-white/40 shadow-sm scrollbar-hide">
+            <table className="min-w-full divide-y divide-glass-border text-left">
+              <thead className="bg-surface/50 text-[9px] font-bold uppercase tracking-[0.2em] text-muted">
                 <tr>
                   {columns.map((col, i) => (
-                    <th key={i} className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-muted">
+                    <th key={i} className="px-5 py-4 whitespace-nowrap">
                       {col || `Column ${String.fromCharCode(65 + i)}`}
                     </th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-outline/10">
+              <tbody className="divide-y divide-glass-border text-xs">
                 {dataRows.length === 0 ? (
                   <tr>
-                    <td colSpan={columns.length} className="px-4 py-8 text-center text-sm text-muted">
+                    <td colSpan={columns.length} className="px-5 py-8 text-center text-sm text-muted">
                       No data found.
                     </td>
                   </tr>
                 ) : (
                   dataRows.map((row, rowIdx) => (
-                    <tr key={rowIdx} className="hover:bg-surface/30 transition">
+                    <tr key={rowIdx} className="hover:bg-surface/40 transition group">
                       {columns.map((_, colIdx) => (
-                        <td key={colIdx} className="px-4 py-3 text-sm text-ink">
-                          {row[colIdx] || '—'}
+                        <td key={colIdx} className="px-5 py-3.5 text-ink whitespace-nowrap">
+                          {(() => {
+                            const params = row[colIdx] || ''
+                            const lower = params.toLowerCase()
+
+                            // Email
+                            if (lower.includes('@') && lower.includes('.')) {
+                              return (
+                                <a href={`mailto:${params}`} className="text-primary hover:underline font-medium">
+                                  {params}
+                                </a>
+                              )
+                            }
+
+                            // LinkedIn
+                            if (lower.includes('linkedin.com')) {
+                              return (
+                                <a
+                                  href={params}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-primary underline decoration-mint decoration-2 underline-offset-2 hover:text-primary-dim"
+                                >
+                                  Profile
+                                </a>
+                              )
+                            }
+
+                            // Website / URL
+                            if (lower.startsWith('http')) {
+                              return (
+                                <a
+                                  href={params}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-primary underline decoration-mint decoration-2 underline-offset-2 hover:text-primary-dim"
+                                >
+                                  Visit
+                                </a>
+                              )
+                            }
+
+                            // Default
+                            return params || '—'
+                          })()}
                         </td>
                       ))}
                     </tr>
