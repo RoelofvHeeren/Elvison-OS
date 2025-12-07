@@ -70,24 +70,22 @@ const CRM = () => {
     <div className="space-y-6">
       <div className="glass-panel flex flex-wrap items-center justify-between gap-4 px-6 py-5">
         <div>
-          <p className="text-xs uppercase tracking-[0.3em] text-muted">LeadFlow</p>
-          <h1 className="text-3xl font-semibold text-primary">Operations Console</h1>
+          <p className="text-xs uppercase tracking-[0.3em] font-bold text-primary">LeadFlow</p>
+          <h1 className="text-3xl font-bold text-accent">Operations Console</h1>
           <p className="text-sm text-muted">Live sync from your AI Lead Sheet.</p>
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-2 rounded-2xl border border-outline/70 bg-panel px-3 py-2 text-xs font-semibold text-muted">
+          <div className="flex items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs font-bold text-primary">
             <span
-              className={`h-2.5 w-2.5 rounded-full ${
-                health.sheet === 'ok' ? 'bg-emerald-500' : 'bg-amber-400'
-              }`}
+              className={`h-2.5 w-2.5 rounded-full ${health.sheet === 'ok' ? 'bg-emerald-500 shadow-sm shadow-emerald-500/50' : 'bg-amber-400'
+                }`}
             />
             Sheet
           </div>
-          <div className="flex items-center gap-2 rounded-2xl border border-outline/70 bg-panel px-3 py-2 text-xs font-semibold text-muted">
+          <div className="flex items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs font-bold text-primary">
             <span
-              className={`h-2.5 w-2.5 rounded-full ${
-                health.agent === 'ok' ? 'bg-emerald-500' : 'bg-amber-400'
-              }`}
+              className={`h-2.5 w-2.5 rounded-full ${health.agent === 'ok' ? 'bg-emerald-500 shadow-sm shadow-emerald-500/50' : 'bg-amber-400'
+                }`}
             />
             Agent
           </div>
@@ -110,27 +108,27 @@ const CRM = () => {
 
       <div className="grid gap-4 lg:grid-cols-[1.2fr,1.2fr,1fr]">
         <div className="glass-panel flex items-center gap-4 px-5 py-4">
-          <CalendarDays className="h-11 w-11 rounded-2xl bg-mint/80 p-2.5 text-primary" />
+          <CalendarDays className="h-11 w-11 rounded-xl bg-primary/10 p-2.5 text-primary border border-primary/20" />
           <div>
-            <p className="text-xs uppercase tracking-[0.25em] text-muted">Latest entry</p>
-            <p className="text-xl font-semibold text-ink">{rows[0]?.date || 'No data yet'}</p>
+            <p className="text-xs uppercase tracking-[0.25em] font-bold text-primary">Latest entry</p>
+            <p className="text-xl font-bold text-accent">{rows[0]?.date || 'No data yet'}</p>
           </div>
         </div>
         <div className="glass-panel flex items-center gap-4 px-5 py-4">
-          <Building2 className="h-11 w-11 rounded-2xl bg-mint/80 p-2.5 text-primary" />
+          <Building2 className="h-11 w-11 rounded-xl bg-primary/10 p-2.5 text-primary border border-primary/20" />
           <div>
-            <p className="text-xs uppercase tracking-[0.25em] text-muted">Total companies</p>
-            <p className="text-xl font-semibold text-ink">
+            <p className="text-xs uppercase tracking-[0.25em] font-bold text-primary">Total companies</p>
+            <p className="text-xl font-bold text-accent">
               {new Set(rows.map((r) => r.company).filter(Boolean)).size}
             </p>
           </div>
         </div>
         <div className="glass-panel flex items-center justify-between px-5 py-4">
           <div>
-            <p className="text-xs uppercase tracking-[0.25em] text-muted">Leads tracked</p>
-            <p className="text-xl font-semibold text-ink">{rows.length}</p>
+            <p className="text-xs uppercase tracking-[0.25em] font-bold text-primary">Leads tracked</p>
+            <p className="text-xl font-bold text-accent">{rows.length}</p>
           </div>
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-white text-sm font-semibold">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-white text-sm font-bold shadow-lg shadow-primary/30">
             {rows.length}
           </div>
         </div>

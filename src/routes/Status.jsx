@@ -74,8 +74,8 @@ const Status = () => {
   return (
     <div className="flex flex-col gap-6">
       <div className="glass-panel px-5 py-5">
-        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-muted">Job status</p>
-        <h1 className="text-3xl font-semibold text-primary">Tracking job {jobId || '—'}</h1>
+        <p className="text-xs font-bold uppercase tracking-[0.3em] text-primary">Job status</p>
+        <h1 className="text-3xl font-bold text-accent">Tracking job {jobId || '—'}</h1>
         <p className="text-sm text-muted">
           Polling Agent Flow every 4 seconds to reflect the latest step.
         </p>

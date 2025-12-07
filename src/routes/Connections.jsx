@@ -110,10 +110,10 @@ const Connections = () => {
   return (
     <div className="space-y-6">
       <div className="glass-panel px-6 py-6">
-        <p className="text-xs uppercase tracking-[0.3em] text-muted">Connections</p>
+        <p className="text-xs uppercase tracking-[0.3em] font-bold text-primary">Connections</p>
         <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-3xl font-semibold text-primary">Connect sheet + agent</h1>
+            <h1 className="text-3xl font-bold text-accent">Connect sheet + agent</h1>
             <p className="text-sm text-muted">
               Google Sheets MCP is already hosted; everything runs through that managed endpoint.
             </p>
@@ -130,7 +130,7 @@ const Connections = () => {
           <div className="flex items-center gap-3">
             <Plug className="h-5 w-5 text-primary" />
             <div>
-              <p className="text-sm font-semibold text-ink">Google Sheets MCP</p>
+              <p className="text-sm font-bold text-accent">Google Sheets MCP</p>
               <p className="text-xs text-muted">
                 Hosted MCP at {GOOGLE_SHEETS_MCP_ENDPOINTS.sse.replace(/\/sse$/, '')}. Credentials and
                 authentication are managed on the hosted service.
@@ -203,7 +203,7 @@ const Connections = () => {
         <div className="flex items-center gap-3">
           <Link2 className="h-5 w-5 text-primary" />
           <div>
-            <p className="text-sm font-semibold text-ink">Google Sheet</p>
+            <p className="text-sm font-bold text-accent">Google Sheet</p>
             <p className="text-xs text-muted">AI Lead Sheet is tracked via the hosted MCP connection.</p>
           </div>
         </div>
@@ -239,7 +239,7 @@ const Connections = () => {
         <div className="flex items-center gap-2">
           <ShieldCheck className="h-5 w-5 text-primary" />
           <div>
-            <p className="text-sm font-semibold text-ink">Trigger workflow</p>
+            <p className="text-sm font-bold text-accent">Trigger workflow</p>
             <p className="text-xs text-muted">Send a prompt to the saved Agent Workflow.</p>
           </div>
         </div>
