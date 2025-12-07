@@ -47,11 +47,10 @@ const Connections = () => {
 
   const StatusPill = ({ label, variant = 'warning' }) => (
     <div
-      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${
-        variant === 'success'
+      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${variant === 'success'
           ? 'border-emerald-200 bg-mint/70 text-primary'
           : 'border-amber-200 bg-amber-50 text-amber-800'
-      }`}
+        }`}
     >
       {variant === 'success' ? <CheckCircle2 className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
       {label}
@@ -99,8 +98,8 @@ const Connections = () => {
               Google Sheets MCP is already hosted; everything runs through that managed endpoint.
             </p>
           </div>
-          <div className="flex items-center gap-2 rounded-2xl border border-outline/80 bg-white/60 px-4 py-3 text-xs font-semibold text-muted">
-            <Plug className="h-4 w-4 text-primary" />
+          <div className="flex items-center gap-2 rounded-lg border border-primary/30 bg-white px-4 py-3 text-xs font-bold uppercase tracking-wider text-primary shadow-neon">
+            <Plug className="h-4 w-4" />
             Workflow test via /api/connections
           </div>
         </div>
@@ -144,13 +143,13 @@ const Connections = () => {
           </div>
         )}
         <div className="grid gap-3 sm:grid-cols-2">
-          <div className="rounded-2xl border border-outline/80 bg-white/80 px-4 py-3">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted">SSE Stream</p>
-            <p className="font-mono text-sm text-ink break-all">{GOOGLE_SHEETS_MCP_ENDPOINTS.sse}</p>
+          <div className="rounded-xl border border-white/20 bg-white px-4 py-3 shadow-sm">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">SSE Stream</p>
+            <p className="font-mono text-sm font-medium text-black break-all">{GOOGLE_SHEETS_MCP_ENDPOINTS.sse}</p>
           </div>
-          <div className="rounded-2xl border border-outline/80 bg-white/80 px-4 py-3">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted">POST /messages</p>
-            <p className="font-mono text-sm text-ink break-all">{GOOGLE_SHEETS_MCP_ENDPOINTS.messages}</p>
+          <div className="rounded-xl border border-white/20 bg-white px-4 py-3 shadow-sm">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">POST /messages</p>
+            <p className="font-mono text-sm font-medium text-black break-all">{GOOGLE_SHEETS_MCP_ENDPOINTS.messages}</p>
           </div>
         </div>
       </div>
@@ -163,27 +162,27 @@ const Connections = () => {
             <p className="text-xs text-muted">AI Lead Sheet is tracked via the hosted MCP connection.</p>
           </div>
         </div>
-        <div className="flex flex-wrap gap-3 text-xs font-semibold text-muted">
-          <span className="rounded-full border border-outline/80 bg-white/70 px-3 py-1 text-ink">
+        <div className="flex flex-wrap gap-3 text-xs font-bold text-gray-400 uppercase tracking-wide">
+          <span className="rounded-lg border border-white/20 bg-white px-3 py-1 text-black shadow-sm">
             Sheet: {SHEET_NAME}
           </span>
-          <span className="rounded-full border border-outline/80 bg-white/70 px-3 py-1">
+          <span className="rounded-lg border border-white/20 bg-white px-3 py-1 text-black shadow-sm">
             ID: {SHEET_ID}
           </span>
-          <span className="rounded-full border border-outline/80 bg-white/70 px-3 py-1">
+          <span className="rounded-lg border border-white/20 bg-white px-3 py-1 text-black shadow-sm">
             Workflow: {WORKFLOW_ID} @ v{WORKFLOW_VERSION}
           </span>
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
-          <div className="rounded-2xl border border-outline/80 bg-white/80 px-4 py-3">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted">Hosted MCP base</p>
-            <p className="font-mono text-sm text-ink break-all">
+          <div className="rounded-xl border border-white/20 bg-white px-4 py-3 shadow-sm">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Hosted MCP base</p>
+            <p className="font-mono text-sm font-medium text-black break-all">
               {GOOGLE_SHEETS_MCP_ENDPOINTS.sse.replace(/\/sse$/, '')}
             </p>
           </div>
-          <div className="rounded-2xl border border-outline/80 bg-white/80 px-4 py-3">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted">Workflow + ChatKit</p>
-            <p className="text-xs text-muted">
+          <div className="rounded-xl border border-white/20 bg-white px-4 py-3 shadow-sm">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Workflow + ChatKit</p>
+            <p className="text-xs text-gray-600">
               The workflow runs with the stored OpenAI key and ChatKit session created on the backend—no
               additional configuration is required here.
             </p>
@@ -204,7 +203,7 @@ const Connections = () => {
           onChange={(e) => setJobPrompt(e.target.value)}
           rows={4}
           placeholder="Describe what to run..."
-          className="w-full rounded-2xl border border-outline/80 bg-white/70 px-3 py-2 text-sm outline-none transition-all focus:border-primary focus:ring-2 focus:ring-mint"
+          className="w-full rounded-xl border border-white/20 bg-white px-4 py-3 text-sm font-medium text-black outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/50 shadow-neon"
         />
         {jobStatus.error && (
           <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">

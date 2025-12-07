@@ -36,7 +36,7 @@ const SheetManager = () => {
       setSheetInfo({ name: data?.sheetName, id: data?.sheetId })
     } catch (err) {
       console.error(err)
-      const detail = err?.response?.data?.detail || err?.message
+      const detail = err?.response?.data?.error || err?.response?.data?.detail || err?.message
       setError(`Unable to load sheet rows. ${detail || 'Check connection and try again.'}`)
     } finally {
       setLoading(false)
