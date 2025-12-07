@@ -4,22 +4,28 @@ export default {
   theme: {
     extend: {
       colors: {
-        primary: '#0f766e',
-        primaryDark: '#0b5f56',
-        mint: '#C1F5EF', // requested blue-green accent
-        mist: '#F2F2F2', // silver
-        panel: '#f9fbfc',
-        ink: '#0f172a',
-        muted: '#6b7280',
-        outline: '#dce7e1',
+        main: '#020617', // Deepest background
+        surface: '#0f172a', // Secondary background
+        primary: '#14b8a6', // Teal 500 (Vibrant)
+        'primary-dim': '#0f766e', // Teal 700 (Muted)
+        'primary-glow': '#2dd4bf', // Teal 400 (Glow source)
+        accent: '#ccfbf1', // Teal 50 (Text accent)
+        muted: '#94a3b8', // Slate 400
+        outline: '#1e293b', // Slate 800
+        glass: 'rgba(15, 23, 42, 0.7)',
+        'glass-border': 'rgba(255, 255, 255, 0.08)',
       },
       fontFamily: {
         sans: ['"Plus Jakarta Sans"', '"Inter"', '"Helvetica Neue"', 'Helvetica', 'Arial', 'sans-serif'],
       },
       boxShadow: {
-        brand: '0 18px 40px rgba(15, 118, 110, 0.18)',
-        soft: '0 12px 30px rgba(0,0,0,0.06)',
+        'glow-sm': '0 0 10px rgba(20, 184, 166, 0.3)',
+        'glow-md': '0 0 20px rgba(20, 184, 166, 0.4)',
+        glass: '0 8px 32px 0 rgba(0, 0, 0, 0.37)',
       },
+      backgroundImage: {
+        'mesh': 'radial-gradient(circle at 50% 10%, rgba(20, 184, 166, 0.15), transparent 40%), radial-gradient(circle at 0% 0%, rgba(15, 23, 42, 1), transparent 100%)',
+      }
     },
   },
   plugins: [],

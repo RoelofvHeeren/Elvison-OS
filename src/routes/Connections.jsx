@@ -1,233 +1,59 @@
-import { useEffect, useState } from 'react'
-import {
-  AlertCircle,
-  CheckCircle2,
-  GitBranch,
-  KeyRound,
-  Link2,
-  Loader2,
-  Plug,
-  ShieldCheck,
-} from 'lucide-react'
-import {
-  disconnectGoogle,
-  fetchAuthStatus,
-  fetchConnection,
-  fetchHealth,
-  fetchSheets,
-  saveConnection,
-  startJob,
-  activateGoogleSheetsMcp,
-  GOOGLE_SHEETS_MCP_ENDPOINTS,
-} from '../utils/api'
+import { useEffect, useMemo, useState } from 'react'
+import { AlertCircle, CheckCircle2, Loader2, Link2, Plug, RefreshCw, ShieldCheck } from 'lucide-react'
+import { fetchHealth, startJob, GOOGLE_SHEETS_MCP_ENDPOINTS } from '../utils/api'
 
-const defaultForm = {
-  sheetUrlOrId: '',
-  sheetName: 'AI Lead Sheet',
-  agentWorkflowId: '',
-  agentWorkflowVersion: '',
-  openaiApiKey: '',
-  sheetMcpUrl: '',
-  mcpApiKey: '',
+const SHEET_NAME = 'AI Lead Sheet'
+const SHEET_ID = import.meta.env.VITE_SHEET_ID || '1T50YCAUgqUoT3DhdmjS3v3s866y3RYdAdyxn9nywpdI'
+const WORKFLOW_ID = import.meta.env.VITE_WORKFLOW_ID || 'wf_69257604d1c081908d6258389947f9de0365b387e2a1c674'
+const WORKFLOW_VERSION = import.meta.env.VITE_WORKFLOW_VERSION || '20'
+
+const statusMap = {
+  ok: { label: 'Hosted MCP ready', variant: 'success' },
+  hosted: { label: 'Hosted MCP endpoint configured', variant: 'success' },
+  reauth: { label: 'Re-auth needed for hosted MCP', variant: 'warning' },
+  stopped: { label: 'Local MCP offline', variant: 'warning' },
+  error: { label: 'Health check failed', variant: 'warning' },
+  unknown: { label: 'Checking MCP health', variant: 'warning' },
 }
 
 const Connections = () => {
-  const [form, setForm] = useState(defaultForm)
-  const [errors, setErrors] = useState({})
-  const [saving, setSaving] = useState(false)
-  const [saveMessage, setSaveMessage] = useState('')
-  const [loadingSaved, setLoadingSaved] = useState(true)
-  const [sheets, setSheets] = useState([])
-  const [googleConnected, setGoogleConnected] = useState(false)
-  const [mcpStatus, setMcpStatus] = useState({ state: 'idle', message: '' })
-  const [activatingMcp, setActivatingMcp] = useState(false)
-  const apiBase = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
-  const [disconnectMessage, setDisconnectMessage] = useState('')
+  const [health, setHealth] = useState(null)
+  const [loadingHealth, setLoadingHealth] = useState(true)
+  const [healthError, setHealthError] = useState('')
   const [jobPrompt, setJobPrompt] = useState('')
   const [jobStatus, setJobStatus] = useState({ loading: false, error: '', success: '' })
 
-  const updateField = (field, value) => {
-    setForm((prev) => ({ ...prev, [field]: value }))
-  }
+  const sheetStatus = health?.sheet || 'unknown'
+  const sheetStatusInfo = statusMap[sheetStatus] || statusMap.unknown
+  const agentStatus = health?.agent === 'ok' ? 'Agent workflow reachable' : 'Agent workflow not reachable'
 
-  useEffect(() => {
-    const loadSaved = async () => {
-      try {
-        const data = await fetchConnection()
-        const saved = data?.connection
-        if (saved) {
-          setForm((prev) => ({
-            ...prev,
-            sheetUrlOrId: saved.sheetId || prev.sheetUrlOrId,
-            sheetName: saved.sheetName || prev.sheetName,
-            agentWorkflowId: saved.agentWorkflowId || prev.agentWorkflowId,
-            agentWorkflowVersion: saved.agentWorkflowVersion || prev.agentWorkflowVersion,
-            openaiApiKey: saved.openaiApiKey || prev.openaiApiKey,
-            sheetMcpUrl: saved.sheetMcpUrl || prev.sheetMcpUrl,
-            mcpApiKey: saved.mcpApiKey || prev.mcpApiKey,
-          }))
-          setSaveMessage('Loaded saved connection.')
-        }
-      } catch (err) {
-        console.info('[connections] No saved connection found', err?.response?.status || err?.message)
-      } finally {
-        setLoadingSaved(false)
-      }
-    }
-    loadSaved()
-  }, [])
-
-  useEffect(() => {
-    const loadGoogleStatus = async () => {
-      try {
-        const status = await fetchAuthStatus()
-        setGoogleConnected(!!status?.connected)
-        if (status?.connected) {
-          const sheetData = await fetchSheets()
-          setSheets(sheetData?.sheets || [])
-        }
-      } catch (err) {
-        console.error('Auth status fetch failed', err)
-      }
-    }
-    loadGoogleStatus()
-  }, [])
-
-  useEffect(() => {
-    const loadMcpHealth = async () => {
-      try {
-        const health = await fetchHealth()
-        const sheetStatus = health?.sheet
-        if (sheetStatus === 'ok') {
-          setMcpStatus({ state: 'connected', message: 'Google Sheets MCP Connected' })
-        } else if (sheetStatus === 'reauth') {
-          setMcpStatus({ state: 'reauth', message: 'Re-authenticate Google Sheets MCP' })
-        } else if (sheetStatus === 'stopped') {
-          setMcpStatus({ state: 'stopped', message: 'Google Sheets MCP is offline' })
-        }
-      } catch (err) {
-        setMcpStatus((prev) => ({
-          ...prev,
-          state: prev.state === 'connected' ? 'connected' : 'error',
-          message: prev.state === 'connected' ? prev.message : 'Unable to read MCP health',
-        }))
-      }
-    }
-    loadMcpHealth()
-  }, [])
-
-  const validate = () => {
-    const required = ['sheetUrlOrId', 'agentWorkflowId', 'agentWorkflowVersion', 'openaiApiKey']
-    const nextErrors = required.reduce((acc, key) => {
-      if (!form[key]?.trim()) acc[key] = 'Required'
-      return acc
-    }, {})
-    setErrors(nextErrors)
-    return Object.keys(nextErrors).length === 0
-  }
-
-  const handleSave = async (e) => {
-    e.preventDefault()
-    if (!validate()) return
-    setSaving(true)
-    setSaveMessage('')
+  const loadHealth = async () => {
+    setLoadingHealth(true)
+    setHealthError('')
     try {
-      await saveConnection(form)
-      setSaveMessage('Connection saved to backend.')
+      const data = await fetchHealth()
+      setHealth(data)
     } catch (err) {
-      const message =
-        err?.response?.data?.error || err?.message || 'Unable to save the connection right now.'
-      setSaveMessage(message)
+      console.error('Health fetch failed', err)
+      setHealthError('Unable to resolve MCP health. Check the hosted MCP service and try again.')
     } finally {
-      setSaving(false)
+      setLoadingHealth(false)
     }
   }
 
-  const pollMcpHealth = async () => {
-    for (let i = 0; i < 8; i += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 2000))
-      try {
-        const health = await fetchHealth()
-        if (health?.sheet === 'ok') {
-          setMcpStatus({ state: 'connected', message: 'Google Sheets MCP Connected' })
-          return
-        }
-        if (health?.sheet === 'reauth') {
-          setMcpStatus({ state: 'reauth', message: 'Re-authenticate Google Sheets MCP' })
-          return
-        }
-      } catch (err) {
-        // keep polling silently
-      }
-    }
-  }
+  useEffect(() => {
+    loadHealth()
+  }, [])
 
-  const handleActivateMcp = async () => {
-    setActivatingMcp(true)
-    setMcpStatus({ state: 'activating', message: 'Starting Google Sheets MCP...' })
-    try {
-      const result = await activateGoogleSheetsMcp()
-      if (result?.status === 'auth') {
-        setMcpStatus({
-          state: 'auth',
-          message: 'Google auth popup opened. Complete login to finish activation.',
-        })
-        await pollMcpHealth()
-      } else if (result?.status === 'reauth') {
-        setMcpStatus({
-          state: 'reauth',
-          message: 'Re-authentication required. Click activate again after signing in.',
-        })
-      } else if (result?.status === 'ok') {
-        if (result?.probe?.status === 'reauth') {
-          setMcpStatus({
-            state: 'reauth',
-            message: 'Re-authentication required. Click activate again after signing in.',
-          })
-        } else {
-          setMcpStatus({ state: 'connected', message: 'Google Sheets MCP Connected' })
-        }
-      } else {
-        setMcpStatus({
-          state: 'error',
-          message: result?.error || 'Unable to start the Sheets MCP server.',
-        })
-      }
-    } catch (err) {
-      const detail =
-        err?.response?.data?.detail ||
-        err?.response?.data?.error ||
-        err?.message ||
-        'Unable to start the Sheets MCP server.'
-      setMcpStatus({
-        state: 'error',
-        message: detail,
-      })
-      if (err?.response?.data?.code === 'MISSING_OAUTH' && err?.response?.data?.meta?.oauthPath) {
-        setMcpStatus({
-          state: 'error',
-        message: `Add gcp-oauth.keys.json to ${err.response.data.meta.oauthPath} or set GSHEETS_OAUTH_JSON, then retry.`,
-        })
-      } else if (err?.response?.data?.code === 'MCP_BOOTSTRAP_FAILED') {
-        setMcpStatus({
-          state: 'error',
-          message: 'Local MCP build failed. Check git/npm availability and retry.',
-        })
-      }
-    } finally {
-      setActivatingMcp(false)
-    }
-  }
-
-  const StatusPill = ({ label, ok }) => (
+  const StatusPill = ({ label, variant = 'warning' }) => (
     <div
       className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${
-        ok
+        variant === 'success'
           ? 'border-emerald-200 bg-mint/70 text-primary'
           : 'border-amber-200 bg-amber-50 text-amber-800'
       }`}
     >
-      {ok ? <CheckCircle2 className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
+      {variant === 'success' ? <CheckCircle2 className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
       {label}
     </div>
   )
@@ -250,21 +76,17 @@ const Connections = () => {
         setJobStatus({ loading: false, error: 'No job ID returned from workflow.', success: '' })
       }
     } catch (err) {
-      const message = err?.response?.data?.error || err?.message || 'Unable to start workflow.'
+      const message =
+        err?.response?.data?.error || err?.response?.data?.detail || err?.message || 'Unable to start workflow.'
       setJobStatus({ loading: false, error: message, success: '' })
     }
   }
 
-  const mcpStatusLabel =
-    mcpStatus.message ||
-    (mcpStatus.state === 'connected'
-      ? 'Google Sheets MCP Connected'
-      : 'Google Sheets MCP not started yet.')
-  const mcpStatusOk = mcpStatus.state === 'connected'
-  const openGoogleAuth = () => {
-    const url = `${apiBase}/api/auth/google`
-    window.open(url, '_blank', 'noopener,noreferrer')
-  }
+  const healthDetail = useMemo(() => {
+    if (!health?.mcpProbe) return null
+    if (health.mcpProbe.status === 'ok') return null
+    return health.mcpProbe.detail || `Probe status: ${health.mcpProbe.status || 'unknown'}`
+  }, [health])
 
   return (
     <div className="space-y-6">
@@ -274,8 +96,7 @@ const Connections = () => {
           <div>
             <h1 className="text-3xl font-semibold text-primary">Connect sheet + agent</h1>
             <p className="text-sm text-muted">
-              Configure the Google Sheet MCP endpoint and the Agent Workflow used across this
-              dashboard.
+              Google Sheets MCP is already hosted; everything runs through that managed endpoint.
             </p>
           </div>
           <div className="flex items-center gap-2 rounded-2xl border border-outline/80 bg-white/60 px-4 py-3 text-xs font-semibold text-muted">
@@ -285,364 +106,130 @@ const Connections = () => {
         </div>
       </div>
 
-      <div id="activate-mcp" className="glass-panel space-y-4 px-6 py-6">
+      <div className="glass-panel space-y-4 px-6 py-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <Plug className="h-5 w-5 text-primary" />
             <div>
-              <p className="text-sm font-semibold text-ink">Activate Google Sheets MCP</p>
+              <p className="text-sm font-semibold text-ink">Google Sheets MCP</p>
               <p className="text-xs text-muted">
-                Boots the Final-Sheet-MCP server locally via SSE on 127.0.0.1:3325.
+                Hosted MCP at {GOOGLE_SHEETS_MCP_ENDPOINTS.sse.replace(/\/sse$/, '')}. Credentials and
+                authentication are managed on the hosted service.
               </p>
             </div>
           </div>
-          <StatusPill
-            label={
-              mcpStatusOk
-                ? 'Google Sheets MCP Connected'
-                : mcpStatus.state === 'auth'
-                  ? 'Waiting for Google login'
-                  : mcpStatus.state === 'reauth'
-                    ? 'Re-auth needed'
-                    : 'MCP inactive'
-            }
-            ok={mcpStatusOk}
-          />
+          <StatusPill label={sheetStatusInfo.label} variant={sheetStatusInfo.variant} />
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
-            onClick={handleActivateMcp}
-            disabled={activatingMcp}
-            className="btn-primary disabled:cursor-not-allowed disabled:opacity-70"
+            onClick={loadHealth}
+            disabled={loadingHealth}
+            className="inline-flex items-center gap-2 rounded-2xl border border-outline/80 bg-white/80 px-3 py-1 text-xs font-semibold text-primary transition hover:border-primary/70 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {activatingMcp && <Loader2 className="h-4 w-4 animate-spin" />}
-            Activate Google Sheets MCP
+            <RefreshCw className="h-4 w-4" />
+            {loadingHealth ? 'Refreshing status…' : 'Refresh status'}
           </button>
-          <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-outline/80 bg-white/70 px-4 py-3 text-sm text-muted">
-            <span>{mcpStatusLabel}</span>
-            {(mcpStatus.state === 'auth' || mcpStatus.state === 'reauth') && (
-              <button
-                type="button"
-                onClick={openGoogleAuth}
-                className="rounded-xl border border-primary/30 bg-mint/60 px-3 py-1 text-xs font-semibold text-primary hover:bg-mint"
-              >
-                Open Google auth
-              </button>
-            )}
-          </div>
+          <span className="text-xs text-muted">{agentStatus}</span>
         </div>
+        {healthError && (
+          <div className="flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-800">
+            <AlertCircle className="h-4 w-4" />
+            {healthError}
+          </div>
+        )}
+        {healthDetail && (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900">
+            <strong>Probe detail:</strong> {healthDetail}
+          </div>
+        )}
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="rounded-2xl border border-outline/80 bg-white/80 px-4 py-3">
             <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted">SSE Stream</p>
-            <p className="font-mono text-sm text-ink">{GOOGLE_SHEETS_MCP_ENDPOINTS.sse}</p>
+            <p className="font-mono text-sm text-ink break-all">{GOOGLE_SHEETS_MCP_ENDPOINTS.sse}</p>
           </div>
           <div className="rounded-2xl border border-outline/80 bg-white/80 px-4 py-3">
             <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted">POST /messages</p>
-            <p className="font-mono text-sm text-ink">{GOOGLE_SHEETS_MCP_ENDPOINTS.messages}</p>
+            <p className="font-mono text-sm text-ink break-all">{GOOGLE_SHEETS_MCP_ENDPOINTS.messages}</p>
           </div>
         </div>
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[1.35fr,1fr]">
-        <form onSubmit={handleSave} className="glass-panel space-y-5 px-6 py-6">
-          {loadingSaved && (
-            <div className="rounded-2xl border border-dashed border-outline/80 bg-white/70 px-4 py-3 text-xs text-muted">
-              Loading saved connection...
-            </div>
-          )}
-          <div className="flex items-center gap-2">
-            <Link2 className="h-5 w-5 text-primary" />
-            <div>
-              <p className="text-sm font-semibold text-ink">Google Sheet</p>
-              <p className="text-xs text-muted">Provide a sheet URL or ID plus the target tab name.</p>
-            </div>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">
-                Google Sheet URL or ID<span className="text-rose-500"> *</span>
-              </label>
-              <input
-                type="text"
-                value={form.sheetUrlOrId}
-                onChange={(e) => updateField('sheetUrlOrId', e.target.value)}
-                placeholder="https://docs.google.com/spreadsheets/d/..."
-                className={`rounded-2xl border bg-white/80 px-4 py-3 text-sm outline-none transition-all duration-200 focus:border-primary focus:ring-2 focus:ring-mint ${
-                  errors.sheetUrlOrId ? 'border-rose-300' : 'border-outline/80'
-                }`}
-              />
-              {errors.sheetUrlOrId && (
-                <span className="text-xs text-rose-500">{errors.sheetUrlOrId}</span>
-              )}
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">
-                Sheet Name
-              </label>
-              <input
-                type="text"
-                value={form.sheetName}
-                onChange={(e) => updateField('sheetName', e.target.value)}
-                placeholder="AI Lead Sheet"
-                className="rounded-2xl border border-outline/80 bg-white/80 px-4 py-3 text-sm outline-none transition-all duration-200 focus:border-primary focus:ring-2 focus:ring-mint"
-              />
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 pt-2">
-            <GitBranch className="h-5 w-5 text-primary" />
-            <div>
-              <p className="text-sm font-semibold text-ink">Agent workflow</p>
-              <p className="text-xs text-muted">Workflow ID + version used to trigger LeadFlow.</p>
-            </div>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">
-                Agent Workflow ID<span className="text-rose-500"> *</span>
-              </label>
-              <input
-                type="text"
-                value={form.agentWorkflowId}
-                onChange={(e) => updateField('agentWorkflowId', e.target.value)}
-                placeholder="wf_xxx"
-                className={`rounded-2xl border bg-white/80 px-4 py-3 text-sm outline-none transition-all duration-200 focus:border-primary focus:ring-2 focus:ring-mint ${
-                  errors.agentWorkflowId ? 'border-rose-300' : 'border-outline/80'
-                }`}
-              />
-              {errors.agentWorkflowId && (
-                <span className="text-xs text-rose-500">{errors.agentWorkflowId}</span>
-              )}
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">
-                Agent Workflow Version<span className="text-rose-500"> *</span>
-              </label>
-              <input
-                type="text"
-                value={form.agentWorkflowVersion}
-                onChange={(e) => updateField('agentWorkflowVersion', e.target.value)}
-                placeholder="1"
-                className={`rounded-2xl border bg-white/80 px-4 py-3 text-sm outline-none transition-all duration-200 focus:border-primary focus:ring-2 focus:ring-mint ${
-                  errors.agentWorkflowVersion ? 'border-rose-300' : 'border-outline/80'
-                }`}
-              />
-              {errors.agentWorkflowVersion && (
-                <span className="text-xs text-rose-500">{errors.agentWorkflowVersion}</span>
-              )}
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 pt-2">
-            <ShieldCheck className="h-5 w-5 text-primary" />
-            <div>
-              <p className="text-sm font-semibold text-ink">Credentials</p>
-              <p className="text-xs text-muted">
-                Keys are only used to run the test and persist to the backend API.
-              </p>
-            </div>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">
-                OpenAI API Key<span className="text-rose-500"> *</span>
-              </label>
-              <input
-                type="password"
-                value={form.openaiApiKey}
-                onChange={(e) => updateField('openaiApiKey', e.target.value)}
-                placeholder="sk-..."
-                className={`rounded-2xl border bg-white/80 px-4 py-3 text-sm outline-none transition-all duration-200 focus:border-primary focus:ring-2 focus:ring-mint ${
-                  errors.openaiApiKey ? 'border-rose-300' : 'border-outline/80'
-                }`}
-              />
-              {errors.openaiApiKey && (
-                <span className="text-xs text-rose-500">{errors.openaiApiKey}</span>
-              )}
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">
-                Sheet MCP URL <span className="text-muted">(optional)</span>
-              </label>
-              <input
-                type="text"
-                value={form.sheetMcpUrl}
-                onChange={(e) => updateField('sheetMcpUrl', e.target.value)}
-                placeholder="https://sheet-mcp.example.com/mcp"
-                className={`rounded-2xl border bg-white/80 px-4 py-3 text-sm outline-none transition-all duration-200 focus:border-primary focus:ring-2 focus:ring-mint ${
-                  errors.sheetMcpUrl ? 'border-rose-300' : 'border-outline/80'
-                }`}
-              />
-              {errors.sheetMcpUrl && (
-                <span className="text-xs text-rose-500">{errors.sheetMcpUrl}</span>
-              )}
-            </div>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">
-                MCP API Key (optional)
-              </label>
-              <input
-                type="password"
-                value={form.mcpApiKey}
-                onChange={(e) => updateField('mcpApiKey', e.target.value)}
-                placeholder="Bearer token for Sheet MCP"
-                className="rounded-2xl border border-outline/80 bg-white/80 px-4 py-3 text-sm outline-none transition-all duration-200 focus:border-primary focus:ring-2 focus:ring-mint"
-              />
-            </div>
-            <div className="flex flex-col justify-end gap-3 rounded-2xl border border-dashed border-outline/70 bg-panel px-4 py-4 text-xs text-muted">
-              <div className="flex items-center gap-2 text-sm font-semibold text-ink">
-                <KeyRound className="h-4 w-4 text-primary" />
-                Secure handling
-              </div>
-              <p>Credentials stay local to this backend stub for development.</p>
-              <p>Use the Test Connection button before saving the config.</p>
-              <div className="mt-2">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted">Google</p>
-                {googleConnected ? (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-emerald-700">Connected to Google.</span>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        try {
-                          setDisconnectMessage('')
-                          await disconnectGoogle()
-                          setGoogleConnected(false)
-                          setSheets([])
-                          setDisconnectMessage('Disconnected Google.')
-                        } catch (err) {
-                          setDisconnectMessage(err?.message || 'Unable to disconnect.')
-                        }
-                      }}
-                      className="rounded-xl border border-outline/80 bg-white/70 px-2 py-1 text-[11px] font-semibold text-primary"
-                    >
-                      Disconnect
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => (window.location.href = `${apiBase}/api/auth/google`)}
-                    className="mt-1 inline-flex items-center gap-2 rounded-2xl border border-outline/80 bg-white/70 px-3 py-2 text-xs font-semibold text-primary"
-                  >
-                    Sign in with Google
-                  </button>
-                )}
-                {disconnectMessage && (
-                  <p className="text-[11px] text-muted">{disconnectMessage}</p>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {googleConnected && sheets.length > 0 && (
-            <div className="rounded-2xl border border-outline/80 bg-white/70 px-4 py-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">Pick a sheet</p>
-                  <p className="text-xs text-muted">Select to auto-fill Sheet URL/ID and Name.</p>
-                </div>
-                <span className="text-xs font-semibold text-emerald-700">Google connected</span>
-              </div>
-              <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                {sheets.map((sheet) => {
-                  const isSelected = form.sheetUrlOrId === sheet.id
-                  return (
-                    <button
-                      key={sheet.id}
-                      type="button"
-                      onClick={() => {
-                        updateField('sheetUrlOrId', sheet.id)
-                        updateField('sheetName', sheet.name || form.sheetName)
-                      }}
-                      className={`flex items-center justify-between rounded-xl border px-3 py-2 text-left text-sm transition-all ${
-                        isSelected
-                          ? 'border-primary bg-mint/60 shadow-soft'
-                          : 'border-outline/80 bg-white/80 hover:border-primary/50'
-                      }`}
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate font-semibold text-ink">{sheet.name || 'Untitled sheet'}</p>
-                        <p className="truncate text-[11px] text-muted">{sheet.id}</p>
-                      </div>
-                      <span className="text-xs font-semibold text-primary">{isSelected ? 'Selected' : 'Use'}</span>
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-          )}
-
-          <div className="flex flex-wrap items-center justify-end gap-3 pt-2">
-            <button
-              type="submit"
-              disabled={saving}
-              className="btn-primary disabled:cursor-not-allowed disabled:opacity-70"
-            >
-              {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-              Save Connection
-            </button>
-          </div>
-
-          {saveMessage && (
-            <div className="flex items-center gap-2 rounded-2xl border border-outline/80 bg-white/70 px-4 py-3 text-sm text-ink">
-              {saveMessage.toLowerCase().includes('unable') ? (
-                <AlertCircle className="h-4 w-4 text-rose-500" />
-              ) : (
-                <CheckCircle2 className="h-4 w-4 text-primary" />
-              )}
-              {saveMessage}
-            </div>
-          )}
-        </form>
-
-                <div className="glass-panel space-y-4 px-6 py-6">
-          <div className="flex items-center gap-3">
-            <ShieldCheck className="h-5 w-5 text-primary" />
-            <div>
-              <p className="text-sm font-semibold text-ink">Trigger workflow</p>
-              <p className="text-xs text-muted">Send a prompt to the saved Agent Workflow.</p>
-            </div>
-          </div>
-          <textarea
-            value={jobPrompt}
-            onChange={(e) => setJobPrompt(e.target.value)}
-            rows={4}
-            placeholder="Describe what to run..."
-            className="w-full rounded-2xl border border-outline/80 bg-white/70 px-3 py-2 text-sm outline-none transition-all focus:border-primary focus:ring-2 focus:ring-mint"
-          />
-          {jobStatus.error && (
-            <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-              <AlertCircle className="h-4 w-4" />
-              {jobStatus.error}
-            </div>
-          )}
-          {jobStatus.success && (
-            <div className="flex items-center gap-2 rounded-xl border border-emerald-100 bg-mint/70 px-3 py-2 text-sm text-primary">
-              <CheckCircle2 className="h-4 w-4" />
-              {jobStatus.success}
-            </div>
-          )}
-          <div className="flex justify-end">
-            <button
-              type="button"
-              onClick={handleStartJob}
-              disabled={jobStatus.loading}
-              className="btn-primary disabled:cursor-not-allowed disabled:opacity-70"
-            >
-              {jobStatus.loading && <Loader2 className="h-4 w-4 animate-spin" />}
-              Send to workflow
-            </button>
+      <div className="glass-panel space-y-4 px-6 py-6">
+        <div className="flex items-center gap-3">
+          <Link2 className="h-5 w-5 text-primary" />
+          <div>
+            <p className="text-sm font-semibold text-ink">Google Sheet</p>
+            <p className="text-xs text-muted">AI Lead Sheet is tracked via the hosted MCP connection.</p>
           </div>
         </div>
-</div>
+        <div className="flex flex-wrap gap-3 text-xs font-semibold text-muted">
+          <span className="rounded-full border border-outline/80 bg-white/70 px-3 py-1 text-ink">
+            Sheet: {SHEET_NAME}
+          </span>
+          <span className="rounded-full border border-outline/80 bg-white/70 px-3 py-1">
+            ID: {SHEET_ID}
+          </span>
+          <span className="rounded-full border border-outline/80 bg-white/70 px-3 py-1">
+            Workflow: {WORKFLOW_ID} @ v{WORKFLOW_VERSION}
+          </span>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="rounded-2xl border border-outline/80 bg-white/80 px-4 py-3">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted">Hosted MCP base</p>
+            <p className="font-mono text-sm text-ink break-all">
+              {GOOGLE_SHEETS_MCP_ENDPOINTS.sse.replace(/\/sse$/, '')}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-outline/80 bg-white/80 px-4 py-3">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted">Workflow + ChatKit</p>
+            <p className="text-xs text-muted">
+              The workflow runs with the stored OpenAI key and ChatKit session created on the backend—no
+              additional configuration is required here.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="glass-panel space-y-4 px-6 py-6">
+        <div className="flex items-center gap-2">
+          <ShieldCheck className="h-5 w-5 text-primary" />
+          <div>
+            <p className="text-sm font-semibold text-ink">Trigger workflow</p>
+            <p className="text-xs text-muted">Send a prompt to the saved Agent Workflow.</p>
+          </div>
+        </div>
+        <textarea
+          value={jobPrompt}
+          onChange={(e) => setJobPrompt(e.target.value)}
+          rows={4}
+          placeholder="Describe what to run..."
+          className="w-full rounded-2xl border border-outline/80 bg-white/70 px-3 py-2 text-sm outline-none transition-all focus:border-primary focus:ring-2 focus:ring-mint"
+        />
+        {jobStatus.error && (
+          <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+            <AlertCircle className="h-4 w-4" />
+            {jobStatus.error}
+          </div>
+        )}
+        {jobStatus.success && (
+          <div className="flex items-center gap-2 rounded-xl border border-emerald-100 bg-mint/70 px-3 py-2 text-sm text-primary">
+            <CheckCircle2 className="h-4 w-4" />
+            {jobStatus.success}
+          </div>
+        )}
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={handleStartJob}
+            disabled={jobStatus.loading}
+            className="btn-primary disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            {jobStatus.loading && <Loader2 className="h-4 w-4 animate-spin" />}
+            Send to workflow
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

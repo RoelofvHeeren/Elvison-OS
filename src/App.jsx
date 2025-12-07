@@ -13,9 +13,9 @@ const App = () => {
 
   return (
     <BrowserRouter>
-      <div className="flex min-h-screen bg-white text-ink">
+      <div className="flex min-h-screen text-gray-200">
         <Sidebar collapsed={collapsed} onToggle={() => setCollapsed((v) => !v)} />
-        <div className="flex min-h-screen flex-1 flex-col bg-gradient-to-br from-white via-panel to-white">
+        <div className="flex min-h-screen flex-1 flex-col">
           <Navbar onToggleSidebar={() => setCollapsed((v) => !v)} />
           <main className="pb-12">
             <div className="mx-auto max-w-6xl px-4 sm:px-8">

@@ -20,10 +20,10 @@ const SheetTable = ({ rows, loading, error }) => {
   }
 
   return (
-    <div className="glass-panel overflow-hidden transition-all duration-200">
+    <div className="rounded-3xl border border-glass-border bg-glass backdrop-blur-xl overflow-hidden transition-all duration-200 shadow-glass">
       <div className="max-h-[65vh] overflow-auto">
-        <table className="min-w-full divide-y divide-outline/80 text-left">
-          <thead className="bg-panel text-[11px] font-semibold uppercase tracking-[0.25em] text-muted">
+        <table className="min-w-full divide-y divide-glass-border text-left">
+          <thead className="bg-surface/50 text-[11px] font-semibold uppercase tracking-[0.25em] text-muted">
             <tr>
               {columns.map((col) => (
                 <th key={col.key} className="px-4 py-3">
@@ -32,7 +32,7 @@ const SheetTable = ({ rows, loading, error }) => {
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-outline/70 text-sm">
+          <tbody className="divide-y divide-glass-border text-sm">
             {loading ? (
               <tr>
                 <td colSpan={columns.length} className="px-4 py-6 text-center text-muted">
@@ -49,17 +49,17 @@ const SheetTable = ({ rows, loading, error }) => {
               rows.map((row, idx) => (
                 <tr
                   key={`${row.email}-${idx}`}
-                  className="transition-all duration-200 hover:-translate-y-[1px] hover:bg-mint/40"
+                  className="transition-all duration-200 hover:-translate-y-[1px] hover:bg-white/5"
                 >
-                  <td className="px-4 py-3 text-ink">{row.date || '—'}</td>
-                  <td className="px-4 py-3 text-ink">{row.name || '—'}</td>
-                  <td className="px-4 py-3 text-ink">{row.title || '—'}</td>
-                  <td className="px-4 py-3 text-ink">{row.company || '—'}</td>
-                  <td className="px-4 py-3 text-ink">
+                  <td className="px-4 py-3 text-gray-300">{row.date || '—'}</td>
+                  <td className="px-4 py-3 text-gray-300">{row.name || '—'}</td>
+                  <td className="px-4 py-3 text-gray-300">{row.title || '—'}</td>
+                  <td className="px-4 py-3 text-gray-300">{row.company || '—'}</td>
+                  <td className="px-4 py-3 text-gray-300">
                     {row.email ? (
                       <a
                         href={`mailto:${row.email}`}
-                        className="text-primary underline decoration-mint decoration-2 underline-offset-2"
+                        className="text-primary underline decoration-primary/30 decoration-2 underline-offset-2 hover:decoration-primary"
                       >
                         {row.email}
                       </a>
@@ -67,7 +67,7 @@ const SheetTable = ({ rows, loading, error }) => {
                       '—'
                     )}
                   </td>
-                  <td className="px-4 py-3 text-ink">
+                  <td className="px-4 py-3 text-gray-300">
                     {row.linkedin ? (
                       <a
                         href={row.linkedin}
@@ -81,7 +81,7 @@ const SheetTable = ({ rows, loading, error }) => {
                       '—'
                     )}
                   </td>
-                  <td className="px-4 py-3 text-ink">
+                  <td className="px-4 py-3 text-gray-300">
                     {row.website ? (
                       <a
                         href={row.website}

@@ -12,18 +12,17 @@ const navItems = [
 
 const Sidebar = ({ collapsed, onToggle }) => (
   <aside
-    className={`relative flex h-screen flex-col border-r border-outline/60 bg-white/90 backdrop-blur ${
-      collapsed ? 'w-20' : 'w-64'
-    } transition-all duration-300`}
+    className={`relative flex h-screen flex-col border-r border-glass-border bg-glass backdrop-blur-xl ${collapsed ? 'w-20' : 'w-64'
+      } transition-all duration-300`}
   >
     <div className="flex items-center gap-3 px-4 py-5">
-      <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-mint text-primary shadow-brand">
+      <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/20 text-primary shadow-glow-sm">
         <Sparkles className="h-5 w-5" />
       </div>
       {!collapsed && (
         <div>
           <p className="text-[11px] uppercase tracking-[0.28em] text-muted">LeadFlow</p>
-          <p className="text-lg font-semibold text-ink">Console</p>
+          <p className="text-lg font-semibold text-white">Console</p>
         </div>
       )}
     </div>
@@ -39,8 +38,8 @@ const Sidebar = ({ collapsed, onToggle }) => (
               [
                 'flex items-center gap-3 rounded-2xl border px-3 py-3 text-sm font-semibold transition-all duration-200',
                 isActive
-                  ? 'border-primary/20 bg-mint/60 text-primary shadow-soft'
-                  : 'border-outline/80 text-muted hover:border-primary/30 hover:bg-mint/40 hover:text-primary',
+                  ? 'border-primary/20 bg-primary/10 text-primary shadow-glow-sm'
+                  : 'border-transparent text-muted hover:border-primary/10 hover:bg-white/5 hover:text-gray-200',
               ].join(' ')
             }
           >

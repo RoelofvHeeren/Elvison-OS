@@ -5,8 +5,8 @@
   font-family: 'Plus Jakarta Sans', 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
   line-height: 1.6;
   font-weight: 400;
-  color: #0f172a;
-  background-color: #f6fbf8;
+  color: #e2e8f0; /* Slate 200 */
+  background-color: #020617; /* Main dark bg */
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -16,10 +16,11 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background:
-    radial-gradient(85% 70% at 15% 8%, rgba(193, 245, 239, 0.15), transparent),
-    radial-gradient(75% 50% at 85% 0%, rgba(193, 245, 239, 0.1), transparent),
-    #ffffff;
+  background: 
+    radial-gradient(circle at 15% 10%, rgba(20, 184, 166, 0.08), transparent 40%),
+    radial-gradient(circle at 85% 30%, rgba(147, 51, 234, 0.05), transparent 40%), /* Subtle purple hint for depth */
+    #020617;
+  overflow-x: hidden;
 }
 
 a {
