@@ -2,11 +2,11 @@
 @import './styles/tailwind.css';
 
 :root {
-  font-family: 'Plus Jakarta Sans', 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
   line-height: 1.6;
   font-weight: 400;
-  color: #e2e8f0; /* Slate 200 */
-  background-color: #020617; /* Main dark bg */
+  color: #e2e8f0;
+  background-color: #000000;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -16,10 +16,12 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background: 
-    radial-gradient(circle at 15% 10%, rgba(20, 184, 166, 0.08), transparent 40%),
-    radial-gradient(circle at 85% 30%, rgba(147, 51, 234, 0.05), transparent 40%), /* Subtle purple hint for depth */
-    #020617;
+  background-color: #000000;
+  background-image:
+    radial-gradient(circle at 50% 0%, rgba(6, 182, 212, 0.15), transparent 70%),
+    linear-gradient(rgba(34, 211, 238, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(34, 211, 238, 0.03) 1px, transparent 1px);
+  background-size: 100% 100%, 40px 40px, 40px 40px;
   overflow-x: hidden;
 }
 

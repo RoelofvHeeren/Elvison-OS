@@ -4,27 +4,29 @@ export default {
   theme: {
     extend: {
       colors: {
-        main: '#020617', // Deepest background
-        surface: '#0f172a', // Secondary background
-        primary: '#14b8a6', // Teal 500 (Vibrant)
-        'primary-dim': '#0f766e', // Teal 700 (Muted)
-        'primary-glow': '#2dd4bf', // Teal 400 (Glow source)
-        accent: '#ccfbf1', // Teal 50 (Text accent)
+        main: '#000000', // Pure Black
+        surface: '#09090b', // Zinc 950
+        primary: '#06b6d4', // Cyan 500 (Arc Reactor)
+        'primary-dim': '#0e7490', // Cyan 700
+        'primary-glow': '#22d3ee', // Cyan 400
+        accent: '#cffafe', // Cyan 50
         muted: '#94a3b8', // Slate 400
         outline: '#1e293b', // Slate 800
-        glass: 'rgba(15, 23, 42, 0.7)',
-        'glass-border': 'rgba(255, 255, 255, 0.08)',
+        glass: 'rgba(9, 9, 11, 0.7)', // Darker glass
+        'glass-border': 'rgba(34, 211, 238, 0.3)', // Cyan tint border
       },
       fontFamily: {
-        sans: ['"Plus Jakarta Sans"', '"Inter"', '"Helvetica Neue"', 'Helvetica', 'Arial', 'sans-serif'],
+        sans: ['"Plus Jakarta Sans"', '"Inter"', 'sans-serif'],
+        mono: ['"JetBrains Mono"', 'monospace'], // Added for data
       },
       boxShadow: {
-        'glow-sm': '0 0 10px rgba(20, 184, 166, 0.3)',
-        'glow-md': '0 0 20px rgba(20, 184, 166, 0.4)',
-        glass: '0 8px 32px 0 rgba(0, 0, 0, 0.37)',
+        'neon': '0 0 5px theme("colors.primary"), 0 0 20px theme("colors.primary-glow")',
+        'hud': 'inset 0 0 0 1px rgba(34, 211, 238, 0.1), 0 0 15px rgba(6, 182, 212, 0.15)',
+        glass: '0 8px 32px 0 rgba(0, 0, 0, 0.5)',
       },
       backgroundImage: {
-        'mesh': 'radial-gradient(circle at 50% 10%, rgba(20, 184, 166, 0.15), transparent 40%), radial-gradient(circle at 0% 0%, rgba(15, 23, 42, 1), transparent 100%)',
+        'grid': 'linear-gradient(rgba(34, 211, 238, 0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(34, 211, 238, 0.05) 1px, transparent 1px)',
+        'radial-glow': 'radial-gradient(circle at 50% 0%, rgba(6, 182, 212, 0.15), transparent 70%)',
       }
     },
   },

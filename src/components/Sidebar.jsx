@@ -12,22 +12,23 @@ const navItems = [
 
 const Sidebar = ({ collapsed, onToggle }) => (
   <aside
-    className={`relative flex h-screen flex-col border-r border-glass-border bg-glass backdrop-blur-xl ${collapsed ? 'w-20' : 'w-64'
-      } transition-all duration-300`}
+    className={`relative flex h-screen flex-col border-r border-glass-border bg-black/80 backdrop-blur-xl shadow-hud ${collapsed ? 'w-20' : 'w-72'
+      } transition-all duration-300 z-50`}
   >
-    <div className="flex items-center gap-3 px-4 py-5">
-      <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/20 text-primary shadow-glow-sm">
-        <Sparkles className="h-5 w-5" />
+    <div className="flex items-center gap-4 px-6 py-8">
+      <div className="relative flex h-12 w-12 items-center justify-center rounded-full border border-primary bg-primary/10 text-primary shadow-neon">
+        <Sparkles className="h-6 w-6 animate-pulse" />
+        <div className="absolute inset-0 rounded-full border border-primary opacity-50 blur-[2px]"></div>
       </div>
       {!collapsed && (
-        <div>
-          <p className="text-[11px] uppercase tracking-[0.28em] text-muted">LeadFlow</p>
-          <p className="text-lg font-semibold text-white">Console</p>
+        <div className="flex flex-col">
+          <p className="font-mono text-[10px] font-bold uppercase tracking-[0.3em] text-primary-dim">Elvison OS</p>
+          <p className="text-xl font-bold tracking-wider text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.5)]">JARVIS</p>
         </div>
       )}
     </div>
 
-    <nav className="mt-4 flex flex-1 flex-col gap-2 px-3">
+    <nav className="mt-8 flex flex-1 flex-col gap-3 px-4">
       {navItems.map((item) => {
         const Icon = item.icon
         return (
@@ -36,10 +37,10 @@ const Sidebar = ({ collapsed, onToggle }) => (
             to={item.to}
             className={({ isActive }) =>
               [
-                'flex items-center gap-3 rounded-2xl border px-3 py-3 text-sm font-semibold transition-all duration-200',
+                'group flex items-center gap-4 rounded-lg border px-4 py-4 text-sm font-bold uppercase tracking-wider transition-all duration-300',
                 isActive
-                  ? 'border-primary/20 bg-primary/10 text-primary shadow-glow-sm'
-                  : 'border-transparent text-muted hover:border-primary/10 hover:bg-white/5 hover:text-gray-200',
+                  ? 'border-primary bg-primary/10 text-primary shadow-neon'
+                  : 'border-transparent text-muted hover:border-primary/30 hover:bg-primary/5 hover:text-primary-glow',
               ].join(' ')
             }
           >
