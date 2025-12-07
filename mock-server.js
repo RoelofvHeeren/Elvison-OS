@@ -334,24 +334,36 @@ const startSheetMcpServer = async () => {
 
   const { binPath: binaryPath, distPath: binaryDistPath } = ensureFinalSheetBinary()
   const { oauthPath, credentialsPath, configDir, oauthJson } = ensureGoogleSheetsFiles()
-  try {
-    if (oauthPath && binaryDistPath && fs.existsSync(oauthPath)) {
-      const targetOauth = path.join(path.dirname(binaryDistPath), 'gcp-oauth.keys.json')
-      const parsed = JSON.parse(oauthJson)
-      const installed = parsed.installed || parsed.web || {}
-      installed.redirect_uris = Array.from(
-        new Set([
-          ...(installed.redirect_uris || []),
-          'http://localhost:3000/oauth2callback',
-          'http://127.0.0.1:3000/oauth2callback',
-          process.env.GSHEETS_REDIRECT_URI,
-        ].filter(Boolean)),
-      )
-      parsed.installed = installed
-      fs.writeFileSync(targetOauth, JSON.stringify(parsed, null, 2))
+
+  if (oauthPath && fs.existsSync(oauthPath)) {
+    try {
+      const rawInfo = fs.readFileSync(oauthPath, 'utf-8')
+      const parsed = JSON.parse(rawInfo)
+      const type = parsed.installed ? 'installed' : parsed.web ? 'web' : 'installed'
+      const config = parsed[type] || {}
+
+      const currentRedirects = config.redirect_uris || []
+      const requiredRedirects = [
+        'http://localhost:3000/oauth2callback',
+        'http://127.0.0.1:3000/oauth2callback',
+        process.env.GSHEETS_REDIRECT_URI,
+        'https://elvison-os-production.up.railway.app/api/auth/google/callback' // Added production URL guess just in case
+      ].filter(Boolean)
+
+      config.redirect_uris = Array.from(new Set([...currentRedirects, ...requiredRedirects]))
+      parsed[type] = config
+
+      // Write back to the configuration file used by the process
+      fs.writeFileSync(oauthPath, JSON.stringify(parsed, null, 2))
+
+      // Also ensure it is copied/updated in the binary location if needed
+      if (binaryDistPath) {
+        const distAuthPath = path.join(path.dirname(binaryDistPath), 'gcp-oauth.keys.json')
+        fs.writeFileSync(distAuthPath, JSON.stringify(parsed, null, 2))
+      }
+    } catch (err) {
+      console.error('Critical: Failed to patch OAuth file', err)
     }
-  } catch (copyErr) {
-    console.warn('Failed to copy OAuth file to MCP dist directory', copyErr?.message)
   }
 
   sheetMcpAuthNotified = false
@@ -997,6 +1009,15 @@ app.get('/api/auth/status', (req, res) => {
 // Disconnect Google (clear tokens)
 const handleDisconnect = (req, res) => {
   TOKEN_STORE.delete('defaultUserTokens')
+  try {
+    const credentialsPath = process.env.GSHEETS_CREDENTIALS_PATH || path.join(HOME_CONFIG_DIR, 'credentials.json')
+    if (fs.existsSync(credentialsPath)) {
+      fs.unlinkSync(credentialsPath)
+      console.log('Deleted credentials.json')
+    }
+  } catch (err) {
+    console.warn('Failed to delete credentials file:', err)
+  }
   res.json({ ok: true, disconnected: true })
 }
 
