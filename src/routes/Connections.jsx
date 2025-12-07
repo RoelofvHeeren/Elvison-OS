@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AlertCircle, CheckCircle2, Loader2, Link2, Plug, RefreshCw, ShieldCheck } from 'lucide-react'
-import { fetchHealth, startJob, GOOGLE_SHEETS_MCP_ENDPOINTS, disconnectGoogle } from '../utils/api'
+import { fetchHealth, startJob, GOOGLE_SHEETS_MCP_ENDPOINTS, disconnectGoogle, activateGoogleSheetsMcp, fetchAuthStatus } from '../utils/api'
 
 const SHEET_NAME = 'AI Lead Sheet'
 const SHEET_ID = import.meta.env.VITE_SHEET_ID || '1T50YCAUgqUoT3DhdmjS3v3s866y3RYdAdyxn9nywpdI'
@@ -32,10 +32,25 @@ const Connections = () => {
     setLoadingHealth(true)
     setHealthError('')
     try {
-      const [healthData, authData] = await Promise.all([
+      let [healthData, authData] = await Promise.all([
         fetchHealth(),
         fetchAuthStatus()
       ])
+
+      // Auto-activate if local MCP is stopped
+      if (healthData?.sheet === 'stopped' || healthData?.sheet === 'error') {
+        console.log('Local MCP offline. Attempting activation...')
+        try {
+          await activateGoogleSheetsMcp()
+          // Wait a moment for startup
+          await new Promise(r => setTimeout(r, 3000))
+          // Retry health check
+          healthData = await fetchHealth()
+        } catch (activationErr) {
+          console.warn('Auto-activation failed', activationErr)
+        }
+      }
+
       setHealth(healthData)
       setIsConnected(!!authData?.connected)
     } catch (err) {
