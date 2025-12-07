@@ -22,6 +22,7 @@ const Connections = () => {
   const [healthError, setHealthError] = useState('')
   const [jobPrompt, setJobPrompt] = useState('')
   const [jobStatus, setJobStatus] = useState({ loading: false, error: '', success: '' })
+  const [isConnected, setIsConnected] = useState(false)
 
   const sheetStatus = health?.sheet || 'unknown'
   const sheetStatusInfo = statusMap[sheetStatus] || statusMap.unknown
@@ -31,8 +32,12 @@ const Connections = () => {
     setLoadingHealth(true)
     setHealthError('')
     try {
-      const data = await fetchHealth()
-      setHealth(data)
+      const [healthData, authData] = await Promise.all([
+        fetchHealth(),
+        fetchAuthStatus()
+      ])
+      setHealth(healthData)
+      setIsConnected(!!authData?.connected)
     } catch (err) {
       console.error('Health fetch failed', err)
       setHealthError('Unable to resolve MCP health. Check the hosted MCP service and try again.')
@@ -129,20 +134,33 @@ const Connections = () => {
             <RefreshCw className="h-4 w-4" />
             {loadingHealth ? 'Refreshing status…' : 'Refresh status'}
           </button>
-          <button
-            type="button"
-            onClick={async () => {
-              if (confirm('Are you sure you want to disconnect Google? You will need to re-authenticate.')) {
-                await disconnectGoogle();
-                window.location.reload();
-              }
-            }}
-            className="inline-flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-700 transition hover:bg-rose-100"
-          >
-            Reset Connection
-          </button>
+
+          {isConnected ? (
+            <button
+              type="button"
+              onClick={async () => {
+                if (confirm('Are you sure you want to disconnect Google? You will need to re-authenticate.')) {
+                  await disconnectGoogle();
+                  window.location.reload();
+                }
+              }}
+              className="inline-flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-700 transition hover:bg-rose-100"
+            >
+              Reset Connection
+            </button>
+          ) : (
+            <a
+              href="/api/auth/google"
+              className="inline-flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100"
+            >
+              <Link2 className="h-4 w-4" />
+              Connect Google Sheet
+            </a>
+          )}
+
           <span className="text-xs text-muted">{agentStatus}</span>
         </div>
+
         {healthError && (
           <div className="flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-800">
             <AlertCircle className="h-4 w-4" />
@@ -241,7 +259,7 @@ const Connections = () => {
           </button>
         </div>
       </div>
-    </div>
+    </div >
   )
 }
 
