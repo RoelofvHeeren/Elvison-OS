@@ -27,7 +27,7 @@ const LOCAL_SHEET_MCP_HOST = '127.0.0.1'
 const LOCAL_SHEET_MCP_PORT = 3325
 const LOCAL_SHEET_MCP_BASE = `http://${LOCAL_SHEET_MCP_HOST}:${LOCAL_SHEET_MCP_PORT}`
 const SHEET_MCP_SSE = `${LOCAL_SHEET_MCP_BASE}/sse`
-const HOSTED_SHEET_MCP_BASE = process.env.SHEET_MCP_URL?.replace(/\/$/, '')
+const HOSTED_SHEET_MCP_BASE = null // Force Local MCP to ensure shared authentication state
 
 const app = express()
 app.use(cors())
@@ -921,8 +921,19 @@ app.get('/api/auth/google/callback', async (req, res) => {
   }
 
   const tokens = await tokenRes.json()
-  TOKEN_STORE.set('defaultUserTokens', { ...tokens, createdAt: Date.now() })
+  const tokenData = { ...tokens, createdAt: Date.now() }
+  TOKEN_STORE.set('defaultUserTokens', tokenData)
   TOKEN_STORE.delete(`oauth_state:${state}`)
+
+  // Persist to file so MCP process sees it
+  try {
+    const credentialsPath = process.env.GSHEETS_CREDENTIALS_PATH || path.join(HOME_CONFIG_DIR, 'credentials.json')
+    ensureDirExists(path.dirname(credentialsPath))
+    fs.writeFileSync(credentialsPath, JSON.stringify(tokenData, null, 2))
+    console.log('Updated credentials.json with new OAuth tokens')
+  } catch (err) {
+    console.error('Failed to persist tokens to disk:', err)
+  }
 
   // Redirect back to app
   res.redirect(process.env.POST_AUTH_REDIRECT || 'http://localhost:5173/connections?google=connected')
