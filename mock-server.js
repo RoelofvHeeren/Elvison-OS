@@ -791,9 +791,9 @@ app.post('/api/write-leads', (req, res) => {
 
 // GET /api/sheet/rows
 app.get('/api/sheet/rows', async (req, res) => {
-  const active = getActiveConnection()
-  const sheetId = req.query.sheetId || active.sheetId
-  const sheetName = req.query.sheetName || active.sheetName
+  // Always use hardcoded values - ignore request params
+  const sheetId = '1T50YCAUgqUoT3DhdmjS3v3s866y3RYdAdyxn9nywpdI'
+  const sheetName = 'AI Lead Sheet'
   if (!sheetId) {
     return res.status(400).json({ error: 'sheetId is required for MCP sheet read' })
   }
@@ -823,9 +823,9 @@ app.get('/api/sheet/rows', async (req, res) => {
 
 // POST /api/sheet/append
 app.post('/api/sheet/append', async (req, res) => {
-  const active = getActiveConnection()
-  const sheetId = req.body?.sheetId || active.sheetId
-  const sheetName = req.body?.sheetName || active.sheetName
+  // Always use hardcoded values - ignore request params
+  const sheetId = '1T50YCAUgqUoT3DhdmjS3v3s866y3RYdAdyxn9nywpdI'
+  const sheetName = 'AI Lead Sheet'
   const rows = Array.isArray(req.body?.rows) ? req.body.rows : []
   if (!sheetId) {
     return res.status(400).json({ error: 'sheetId is required for MCP sheet append' })
