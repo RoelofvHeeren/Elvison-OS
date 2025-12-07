@@ -27,7 +27,7 @@ const LOCAL_SHEET_MCP_HOST = '127.0.0.1'
 const LOCAL_SHEET_MCP_PORT = 3325
 const LOCAL_SHEET_MCP_BASE = `http://${LOCAL_SHEET_MCP_HOST}:${LOCAL_SHEET_MCP_PORT}`
 const SHEET_MCP_SSE = `${LOCAL_SHEET_MCP_BASE}/sse`
-const HOSTED_SHEET_MCP_BASE = null // Force Local MCP to ensure shared authentication state
+const HOSTED_SHEET_MCP_BASE = process.env.SHEET_MCP_URL || 'https://final-sheet-mcp-production.up.railway.app'
 
 const app = express()
 app.use(cors())
