@@ -5,7 +5,6 @@ import Sidebar from './components/Sidebar'
 import CRM from './routes/CRM'
 import Connections from './routes/Connections'
 import NewJob from './routes/NewJob'
-import SheetManager from './routes/SheetManager'
 import Status from './routes/Status'
 
 const App = () => {
@@ -24,7 +23,8 @@ const App = () => {
                 <Route path="/crm" element={<CRM />} />
                 <Route path="/new-job" element={<NewJob />} />
                 <Route path="/status" element={<Status />} />
-                <Route path="/sheet" element={<SheetManager />} />
+                {/* Redirect legacy sheet route to CRM */}
+                <Route path="/sheet" element={<Navigate to="/crm" replace />} />
                 <Route path="/connections" element={<Connections />} />
               </Routes>
             </div>
