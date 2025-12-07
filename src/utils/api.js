@@ -50,13 +50,14 @@ export const fetchSheets = async () => {
   return data
 }
 
-export const fetchSheetRows = async () => {
-  const { data } = await client.get('/api/sheet/rows')
+export const fetchSheetRows = async (sheetId) => {
+  const params = sheetId ? { sheetId } : {}
+  const { data } = await client.get('/api/sheet/rows', { params })
   return data
 }
 
-export const appendSheetRows = async (rows) => {
-  const { data } = await client.post('/api/sheet/append', { rows })
+export const appendSheetRows = async (rows, sheetId) => {
+  const { data } = await client.post('/api/sheet/append', { rows, sheetId })
   return data
 }
 

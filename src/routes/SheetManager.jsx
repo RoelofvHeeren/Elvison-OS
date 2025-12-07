@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { AlertCircle, CheckCircle2, FileUp, Loader2, RefreshCw, Table } from 'lucide-react'
 import { appendSheetRows, fetchConnection, fetchSheetRows } from '../utils/api'
 
+const SHEET_ID = import.meta.env.VITE_SHEET_ID || '1T50YCAUgqUoT3DhdmjS3v3s866y3RYdAdyxn9nywpdI'
+
 const parseCsv = async (file) =>
   new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -31,9 +33,11 @@ const SheetManager = () => {
     setLoading(true)
     setError('')
     try {
-      const data = await fetchSheetRows()
+      // Use saved ID or fallback
+      const targetId = sheetInfo.id || SHEET_ID
+      const data = await fetchSheetRows(targetId)
       setRows(data?.rows || [])
-      setSheetInfo({ name: data?.sheetName, id: data?.sheetId })
+      setSheetInfo({ name: data?.sheetName, id: data?.sheetId || targetId })
     } catch (err) {
       console.error(err)
       const detail = err?.response?.data?.error || err?.response?.data?.detail || err?.message
@@ -56,7 +60,25 @@ const SheetManager = () => {
       } catch (err) {
         console.error('Failed to load saved connection', err)
       }
-      loadRows()
+      // Call loadRows after checking saved connection
+      // We need to call it effectively, so we'll rely on the next render or call it explicitly
+      // But loadRows closes over stale sheetInfo here.
+      // So let's just use the ID we found or fallback directly.
+      const savedId = (await fetchConnection().catch(() => { }))?.connection?.sheetId
+      const targetId = savedId || SHEET_ID
+
+      try {
+        setLoading(true)
+        const data = await fetchSheetRows(targetId)
+        setRows(data?.rows || [])
+        setSheetInfo({ name: data?.sheetName, id: data?.sheetId || targetId })
+      } catch (err) {
+        console.error(err)
+        const detail = err?.response?.data?.error || err?.response?.data?.detail || err?.message
+        setError(`Unable to load sheet rows. ${detail || 'Check connection and try again.'}`)
+      } finally {
+        setLoading(false)
+      }
     }
     init()
   }, [])
@@ -71,7 +93,8 @@ const SheetManager = () => {
     setAppendError('')
     setAppendSuccess('')
     try {
-      await appendSheetRows(newRows)
+      const targetId = sheetInfo.id || SHEET_ID
+      await appendSheetRows(newRows, targetId)
       setAppendSuccess(`Appended ${newRows.length} row(s). Refreshing…`)
       await loadRows()
     } catch (err) {
