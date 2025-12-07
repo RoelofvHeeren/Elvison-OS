@@ -12,23 +12,22 @@ const navItems = [
 
 const Sidebar = ({ collapsed, onToggle }) => (
   <aside
-    className={`relative flex h-screen flex-col border-r border-glass-border bg-black/80 backdrop-blur-xl shadow-hud ${collapsed ? 'w-20' : 'w-72'
-      } transition-all duration-300 z-50`}
+    className={`relative flex h-screen flex-col border-r border-glass-border bg-white/80 backdrop-blur-2xl shadow-luxury ${collapsed ? 'w-20' : 'w-72'
+      } transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)] z-50`}
   >
-    <div className="flex items-center gap-4 px-6 py-8">
-      <div className="relative flex h-12 w-12 items-center justify-center rounded-full border border-primary bg-primary/10 text-primary shadow-neon">
-        <Sparkles className="h-6 w-6 animate-pulse" />
-        <div className="absolute inset-0 rounded-full border border-primary opacity-50 blur-[2px]"></div>
+    <div className="flex items-center gap-4 px-8 py-10">
+      <div className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-white shadow-lg shadow-primary/20">
+        <Sparkles className="h-5 w-5" />
       </div>
       {!collapsed && (
         <div className="flex flex-col">
-          <p className="font-mono text-[10px] font-bold uppercase tracking-[0.3em] text-primary-dim">Elvison OS</p>
-          <p className="text-xl font-bold tracking-wider text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.5)]">JARVIS</p>
+          <p className="text-[9px] font-bold uppercase tracking-[0.3em] text-muted">Elvison OS</p>
+          <p className="font-serif text-xl italic tracking-tight text-accent">Prada Mode</p>
         </div>
       )}
     </div>
 
-    <nav className="mt-8 flex flex-1 flex-col gap-3 px-4">
+    <nav className="mt-8 flex flex-1 flex-col gap-2 px-4">
       {navItems.map((item) => {
         const Icon = item.icon
         return (
@@ -37,10 +36,10 @@ const Sidebar = ({ collapsed, onToggle }) => (
             to={item.to}
             className={({ isActive }) =>
               [
-                'group flex items-center gap-4 rounded-lg border px-4 py-4 text-sm font-bold uppercase tracking-wider transition-all duration-300',
+                'group flex items-center gap-4 rounded-xl px-4 py-3.5 text-sm font-medium transition-all duration-300',
                 isActive
-                  ? 'border-primary bg-primary/10 text-primary shadow-neon'
-                  : 'border-transparent text-muted hover:border-primary/30 hover:bg-primary/5 hover:text-primary-glow',
+                  ? 'bg-surface text-primary shadow-sharp'
+                  : 'text-muted hover:bg-surface/50 hover:text-accent',
               ].join(' ')
             }
           >

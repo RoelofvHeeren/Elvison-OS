@@ -50,7 +50,7 @@ const NewJob = () => {
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           placeholder="Find 3 top decision makers at growth-stage US fintech firms..."
-          className="w-full rounded-xl border border-white/20 bg-white px-4 py-4 text-sm font-medium text-black outline-none transition-all duration-300 placeholder:text-gray-400 focus:border-primary focus:ring-2 focus:ring-primary/50 shadow-neon"
+          className="w-full rounded-xl border border-glass-border bg-white px-4 py-4 text-sm font-medium text-black outline-none transition-all duration-300 placeholder:text-muted/50 focus:border-primary focus:ring-1 focus:ring-primary shadow-sharp"
         />
 
         {error && (

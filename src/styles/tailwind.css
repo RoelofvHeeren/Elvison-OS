@@ -14,14 +14,14 @@
 
 @layer components {
   .glass-panel {
-    @apply rounded-xl border border-glass-border bg-surface/80 backdrop-blur-md shadow-hud;
+    @apply rounded-xl border border-glass-border bg-white/60 backdrop-blur-xl shadow-luxury;
   }
 
   .chip {
-    @apply inline-flex items-center gap-2 rounded-lg border border-glass-border bg-glass px-3 py-2 text-primary-glow/80 font-mono text-xs uppercase tracking-wider transition-all duration-300 hover:bg-primary/10 hover:text-primary hover:shadow-neon hover:border-primary/50;
+    @apply inline-flex items-center gap-2 rounded-lg border border-glass-border bg-white/70 px-3 py-2 text-muted font-sans text-xs font-semibold tracking-wide transition-all duration-300 hover:bg-white hover:text-primary hover:shadow-sharp;
   }
 
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-primary bg-primary/10 px-6 py-3 text-sm font-bold uppercase tracking-widest text-primary shadow-neon transition-all duration-300 hover:bg-primary hover:text-black hover:shadow-neon;
+    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-6 py-3 text-sm font-semibold tracking-wide text-white shadow-luxury transition-all duration-300 hover:bg-primary-dim hover:shadow-xl hover:-translate-y-0.5;
   }
 }

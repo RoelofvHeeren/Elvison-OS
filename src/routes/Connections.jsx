@@ -48,8 +48,8 @@ const Connections = () => {
   const StatusPill = ({ label, variant = 'warning' }) => (
     <div
       className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${variant === 'success'
-          ? 'border-emerald-200 bg-mint/70 text-primary'
-          : 'border-amber-200 bg-amber-50 text-amber-800'
+        ? 'border-emerald-200 bg-mint/70 text-primary'
+        : 'border-amber-200 bg-amber-50 text-amber-800'
         }`}
     >
       {variant === 'success' ? <CheckCircle2 className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
@@ -98,7 +98,7 @@ const Connections = () => {
               Google Sheets MCP is already hosted; everything runs through that managed endpoint.
             </p>
           </div>
-          <div className="flex items-center gap-2 rounded-lg border border-primary/30 bg-white px-4 py-3 text-xs font-bold uppercase tracking-wider text-primary shadow-neon">
+          <div className="flex items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-xs font-bold uppercase tracking-wider text-primary shadow-sharp">
             <Plug className="h-4 w-4" />
             Workflow test via /api/connections
           </div>
@@ -203,7 +203,7 @@ const Connections = () => {
           onChange={(e) => setJobPrompt(e.target.value)}
           rows={4}
           placeholder="Describe what to run..."
-          className="w-full rounded-xl border border-white/20 bg-white px-4 py-3 text-sm font-medium text-black outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/50 shadow-neon"
+          className="w-full rounded-xl border border-glass-border bg-white px-4 py-3 text-sm font-medium text-black outline-none transition-all focus:border-primary focus:ring-1 focus:ring-primary shadow-sharp"
         />
         {jobStatus.error && (
           <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">

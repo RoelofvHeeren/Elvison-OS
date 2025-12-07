@@ -4,29 +4,28 @@ export default {
   theme: {
     extend: {
       colors: {
-        main: '#000000', // Pure Black
-        surface: '#09090b', // Zinc 950
-        primary: '#06b6d4', // Cyan 500 (Arc Reactor)
-        'primary-dim': '#0e7490', // Cyan 700
-        'primary-glow': '#22d3ee', // Cyan 400
-        accent: '#cffafe', // Cyan 50
-        muted: '#94a3b8', // Slate 400
-        outline: '#1e293b', // Slate 800
-        glass: 'rgba(9, 9, 11, 0.7)', // Darker glass
-        'glass-border': 'rgba(34, 211, 238, 0.3)', // Cyan tint border
+        main: '#ffffff', // Pure White
+        surface: '#f8fafc', // Slate 50 (Subtle depth)
+        primary: '#0f766e', // Deep Teal (Sophisticated)
+        'primary-dim': '#115e59', // Teal 800
+        'primary-glow': '#14b8a6', // Teal 500 (Softer glow)
+        accent: '#000000', // Jet Black
+        muted: '#64748b', // Slate 500 (Elegant gray)
+        outline: '#e2e8f0', // Slate 200
+        glass: 'rgba(255, 255, 255, 0.7)', // White Crystal
+        'glass-border': 'rgba(0, 0, 0, 0.04)', // Very subtle dark border
       },
       fontFamily: {
         sans: ['"Plus Jakarta Sans"', '"Inter"', 'sans-serif'],
-        mono: ['"JetBrains Mono"', 'monospace'], // Added for data
+        mono: ['"JetBrains Mono"', 'monospace'],
       },
       boxShadow: {
-        'neon': '0 0 5px theme("colors.primary"), 0 0 20px theme("colors.primary-glow")',
-        'hud': 'inset 0 0 0 1px rgba(34, 211, 238, 0.1), 0 0 15px rgba(6, 182, 212, 0.15)',
-        glass: '0 8px 32px 0 rgba(0, 0, 0, 0.5)',
+        'luxury': '0 20px 40px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01)',
+        'sharp': '0 0 0 1px rgba(0,0,0,0.03), 0 1px 2px rgba(0,0,0,0.05)',
+        glass: '0 8px 32px 0 rgba(255, 255, 255, 0.5)',
       },
       backgroundImage: {
-        'grid': 'linear-gradient(rgba(34, 211, 238, 0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(34, 211, 238, 0.05) 1px, transparent 1px)',
-        'radial-glow': 'radial-gradient(circle at 50% 0%, rgba(6, 182, 212, 0.15), transparent 70%)',
+        'gradient-luxury': 'linear-gradient(to bottom right, #ffffff, #f1f5f9)',
       }
     },
   },

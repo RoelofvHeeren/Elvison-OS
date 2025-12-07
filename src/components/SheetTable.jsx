@@ -20,10 +20,10 @@ const SheetTable = ({ rows, loading, error }) => {
   }
 
   return (
-    <div className="rounded-xl border border-glass-border bg-black/50 backdrop-blur-md overflow-hidden transition-all duration-300 shadow-hud mt-6">
+    <div className="rounded-xl border border-glass-border bg-white/60 backdrop-blur-xl overflow-hidden transition-all duration-300 shadow-luxury mt-6">
       <div className="max-h-[65vh] overflow-auto">
         <table className="min-w-full divide-y divide-glass-border text-left">
-          <thead className="bg-primary/5 text-[10px] font-mono font-bold uppercase tracking-widest text-primary-dim">
+          <thead className="bg-surface text-[9px] font-bold uppercase tracking-[0.2em] text-muted">
             <tr>
               {columns.map((col) => (
                 <th key={col.key} className="px-4 py-3">
@@ -49,17 +49,17 @@ const SheetTable = ({ rows, loading, error }) => {
               rows.map((row, idx) => (
                 <tr
                   key={`${row.email}-${idx}`}
-                  className="transition-all duration-200 hover:bg-primary/5 group"
+                  className="transition-all duration-200 hover:bg-surface/50 group"
                 >
-                  <td className="px-4 py-3 text-sm font-mono text-primary-glow/90">{row.date || '—'}</td>
-                  <td className="px-4 py-3 text-white font-medium tracking-wide">{row.name || '—'}</td>
-                  <td className="px-4 py-3 text-muted">{row.title || '—'}</td>
-                  <td className="px-4 py-3 text-muted">{row.company || '—'}</td>
-                  <td className="px-4 py-3 text-muted">
+                  <td className="px-4 py-3.5 text-xs font-medium text-muted">{row.date || '—'}</td>
+                  <td className="px-4 py-3.5 text-sm font-semibold text-accent tracking-tight">{row.name || '—'}</td>
+                  <td className="px-4 py-3.5 text-xs text-muted">{row.title || '—'}</td>
+                  <td className="px-4 py-3.5 text-xs text-muted">{row.company || '—'}</td>
+                  <td className="px-4 py-3.5 text-xs text-muted">
                     {row.email ? (
                       <a
                         href={`mailto:${row.email}`}
-                        className="text-primary hover:text-primary-glow hover:underline underline-offset-4 transition-colors font-mono text-xs"
+                        className="text-primary hover:text-primary-dim hover:underline underline-offset-4 transition-colors font-medium"
                       >
                         {row.email}
                       </a>
