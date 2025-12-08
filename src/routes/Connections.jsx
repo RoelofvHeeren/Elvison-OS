@@ -110,15 +110,15 @@ const Connections = () => {
   return (
     <div className="space-y-6">
       <div className="mb-8">
-        <p className="text-xs uppercase tracking-[0.3em] font-bold text-primary">Connections</p>
+        <p className="text-xs uppercase tracking-[0.3em] font-bold text-gray-400">Connections</p>
         <div className="flex items-center gap-3">
-          <h1 className="font-serif text-3xl font-bold tracking-tight text-accent">Connect sheet + agent</h1>
-          <div className="h-px flex-1 bg-glass-border"></div>
+          <h1 className="font-serif text-3xl font-bold tracking-tight text-white">Connect sheet + agent</h1>
+          <div className="h-px flex-1 bg-white/20"></div>
         </div>
-        <p className="text-sm text-muted">MCP is already hosted; everything runs through that managed endpoint.
+        <p className="text-sm text-gray-300">MCP is already hosted; everything runs through that managed endpoint.
         </p>
       </div>
-      <div className="flex items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-xs font-bold uppercase tracking-wider text-primary shadow-sharp">
+      <div className="flex items-center gap-2 rounded-lg border border-white/20 bg-white/5 px-4 py-3 text-xs font-bold uppercase tracking-wider text-white shadow-sharp backdrop-blur-sm">
         <Plug className="h-4 w-4" />
         Workflow test via /api/connections
       </div>

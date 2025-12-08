@@ -31,7 +31,8 @@ const Sidebar = ({ collapsed, onToggle }) => (
           key={item.to}
           to={item.to}
           className={({ isActive }) =>
-            `group relative flex items-center gap-3 rounded-lg px-4 py-3.5 text-sm font-medium transition-all duration-300 ${isActive
+            `group relative flex items-center gap-3 rounded-lg py-3.5 text-sm font-medium transition-all duration-300 ${collapsed ? 'justify-center px-2' : 'px-4'
+            } ${isActive
               ? 'bg-primary text-white shadow-3d translate-x-1'
               : 'text-muted hover:bg-surface hover:text-primary hover:translate-x-1'
             }`
