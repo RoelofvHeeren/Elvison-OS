@@ -17,8 +17,8 @@
 body {
   margin: 0;
   min-height: 100vh;
-  /* background-color: #1a1a1a; Removed to allow video visibility */
-  background-color: transparent;
+  /* Black background ensures 0.4 opacity video fades to black */
+  background-color: #000000;
   overflow-x: hidden;
   position: relative;
 }

@@ -71,7 +71,7 @@ const CRM = () => {
       <div className="glass-panel flex flex-wrap items-center justify-between gap-4 px-6 py-5">
         <div>
           <p className="text-xs uppercase tracking-[0.3em] font-bold text-primary">LeadFlow</p>
-          <h1 className="text-3xl font-bold text-accent">Operations Console</h1>
+          <h1 className="font-serif text-3xl font-bold tracking-tight text-accent">Operations Console</h1>
           <p className="text-sm text-muted">Live sync from your AI Lead Sheet.</p>
         </div>
         <div className="flex items-center gap-2">
@@ -111,14 +111,14 @@ const CRM = () => {
           <CalendarDays className="h-11 w-11 rounded-xl bg-primary/10 p-2.5 text-primary border border-primary/20" />
           <div>
             <p className="text-xs uppercase tracking-[0.25em] font-bold text-primary">Latest entry</p>
-            <p className="text-xl font-bold text-accent">{rows[0]?.date || 'No data yet'}</p>
+            <p className="font-serif text-2xl font-bold text-accent">{rows[0]?.date || 'No data yet'}</p>
           </div>
         </div>
         <div className="glass-panel flex items-center gap-4 px-5 py-4">
           <Building2 className="h-11 w-11 rounded-xl bg-primary/10 p-2.5 text-primary border border-primary/20" />
           <div>
             <p className="text-xs uppercase tracking-[0.25em] font-bold text-primary">Total companies</p>
-            <p className="text-xl font-bold text-accent">
+            <p className="font-serif text-2xl font-bold text-accent">
               {new Set(rows.map((r) => r.company).filter(Boolean)).size}
             </p>
           </div>
@@ -126,9 +126,9 @@ const CRM = () => {
         <div className="glass-panel flex items-center justify-between px-5 py-4">
           <div>
             <p className="text-xs uppercase tracking-[0.25em] font-bold text-primary">Leads tracked</p>
-            <p className="text-xl font-bold text-accent">{rows.length}</p>
+            <p className="font-serif text-2xl font-bold text-accent">{rows.length}</p>
           </div>
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-white text-sm font-bold shadow-lg shadow-primary/30">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-white font-serif text-lg font-bold shadow-lg shadow-primary/30">
             {rows.length}
           </div>
         </div>
@@ -163,7 +163,7 @@ const CRM = () => {
             placeholder="Acme Corp"
             value={filters.company}
             onChange={(e) => setFilters((prev) => ({ ...prev, company: e.target.value }))}
-            className="w-full rounded-2xl border border-outline/80 bg-white/80 px-3 py-2.5 text-sm text-ink outline-none transition-all duration-200 focus:border-primary focus:ring-2 focus:ring-mint"
+            className="w-full rounded-2xl border border-outline/80 bg-white/80 px-3 py-2.5 text-sm text-ink outline-none transition-all duration-200 focus:border-primary focus:ring-2 focus:ring-primary/10"
           />
         </div>
       </div>
