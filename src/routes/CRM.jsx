@@ -24,6 +24,9 @@ const CRM = () => {
         email: row[5] || '',
         linkedin: row[6] || '',
         website: row[7] || '',
+        connectionRequest: row[8] || '',
+        emailMessage: row[9] || '',
+        companyProfile: row[10] || '',
       }))
       setRows(normalized)
     } catch (err) {

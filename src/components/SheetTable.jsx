@@ -9,7 +9,9 @@ const columns = [
   { key: 'email', label: 'Email', width: 'w-56' },
   { key: 'linkedin', label: 'LinkedIn', width: 'w-24' },
   { key: 'website', label: 'Company Website', width: 'w-28' },
-  { key: 'message', label: 'Connection Request', width: 'w-96' },
+  { key: 'connectionRequest', label: 'Connection Request', width: 'min-w-[20rem]' },
+  { key: 'emailMessage', label: 'Email Message', width: 'min-w-[20rem]' },
+  { key: 'companyProfile', label: 'Company Profile', width: 'min-w-[24rem]' },
 ]
 
 const SheetTable = ({ rows, loading, error }) => {
@@ -168,9 +170,9 @@ const SheetTable = ({ rows, loading, error }) => {
                   </td>
                   <td
                     className="px-4 py-3.5 text-xs text-muted cursor-text"
-                    onClick={() => handleCellClick(idx, 'message', row.message)}
+                    onClick={() => handleCellClick(idx, 'connectionRequest', row.connectionRequest)}
                   >
-                    {editingCell?.rowIdx === idx && editingCell?.colKey === 'message' ? (
+                    {editingCell?.rowIdx === idx && editingCell?.colKey === 'connectionRequest' ? (
                       <textarea
                         value={editValue}
                         onChange={(e) => setEditValue(e.target.value)}
@@ -180,7 +182,41 @@ const SheetTable = ({ rows, loading, error }) => {
                         className="w-full bg-white border border-accent rounded px-2 py-1 text-xs resize-none"
                       />
                     ) : (
-                      <div className="max-w-96 line-clamp-2">{row.message || '—'}</div>
+                      <div className="max-w-xs line-clamp-3">{row.connectionRequest || '—'}</div>
+                    )}
+                  </td>
+                  <td
+                    className="px-4 py-3.5 text-xs text-muted cursor-text"
+                    onClick={() => handleCellClick(idx, 'emailMessage', row.emailMessage)}
+                  >
+                    {editingCell?.rowIdx === idx && editingCell?.colKey === 'emailMessage' ? (
+                      <textarea
+                        value={editValue}
+                        onChange={(e) => setEditValue(e.target.value)}
+                        onBlur={handleCellBlur}
+                        autoFocus
+                        rows={3}
+                        className="w-full bg-white border border-accent rounded px-2 py-1 text-xs resize-none"
+                      />
+                    ) : (
+                      <div className="max-w-xs line-clamp-3">{row.emailMessage || '—'}</div>
+                    )}
+                  </td>
+                  <td
+                    className="px-4 py-3.5 text-xs text-muted cursor-text"
+                    onClick={() => handleCellClick(idx, 'companyProfile', row.companyProfile)}
+                  >
+                    {editingCell?.rowIdx === idx && editingCell?.colKey === 'companyProfile' ? (
+                      <textarea
+                        value={editValue}
+                        onChange={(e) => setEditValue(e.target.value)}
+                        onBlur={handleCellBlur}
+                        autoFocus
+                        rows={3}
+                        className="w-full bg-white border border-accent rounded px-2 py-1 text-xs resize-none"
+                      />
+                    ) : (
+                      <div className="max-w-md line-clamp-4">{row.companyProfile || '—'}</div>
                     )}
                   </td>
                 </tr>
@@ -203,7 +239,9 @@ SheetTable.propTypes = {
       email: PropTypes.string,
       linkedin: PropTypes.string,
       website: PropTypes.string,
-      message: PropTypes.string,
+      connectionRequest: PropTypes.string,
+      emailMessage: PropTypes.string,
+      companyProfile: PropTypes.string,
     }),
   ),
   loading: PropTypes.bool,
