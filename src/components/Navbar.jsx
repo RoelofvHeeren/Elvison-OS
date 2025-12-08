@@ -16,7 +16,7 @@ const Navbar = ({ onToggleSidebar }) => {
 
   return (
     <header className="sticky top-0 z-30 px-8 py-6">
-      <div className="mx-auto flex max-w-7xl items-center justify-between rounded-2xl border border-glass-border bg-white/70 px-8 py-4 shadow-luxury backdrop-blur-xl">
+      <div className="mx-auto flex max-w-7xl items-center justify-between rounded-2xl border border-glass-border bg-white px-8 py-4 shadow-3d transition-all duration-300 hover:shadow-lifted">
         <div className="flex items-center gap-8">
           <button
             type="button"

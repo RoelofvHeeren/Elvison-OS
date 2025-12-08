@@ -10,7 +10,7 @@ const navItems = [
 
 const Sidebar = ({ collapsed, onToggle }) => (
   <aside
-    className={`relative flex h-screen flex-col border-r border-glass-border bg-white/80 backdrop-blur-2xl shadow-luxury ${collapsed ? 'w-20' : 'w-72'
+    className={`relative flex h-screen flex-col border-r border-glass-border bg-white shadow-luxury ${collapsed ? 'w-20' : 'w-72'
       } transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)] z-50`}
   >
     <div className="flex items-center gap-4 px-8 py-10">
