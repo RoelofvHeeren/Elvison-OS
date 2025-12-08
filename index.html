@@ -1,41 +1,52 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>elvison-ai</title>
-  </head>
-  <body>
-    <video class="bg-video" autoplay muted loop playsinline>
-      <source src="/bg-video.mp4" type="video/mp4">
-    </video>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-    <script>
-      // Ping-pong video playback
-      const video = document.querySelector('.bg-video');
-      let playbackDirection = 1;
-      
-      video.addEventListener('ended', () => {
-        playbackDirection *= -1;
-        if (playbackDirection === -1) {
-          video.playbackRate = -1;
-        } else {
-          video.currentTime = 0;
-          video.playbackRate = 1;
-        }
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>elvison-ai</title>
+</head>
+
+<body>
+  <video class="bg-video" autoplay muted playsinline>
+    <source src="/bg-video.mp4" type="video/mp4">
+  </video>
+  <div id="root"></div>
+  <script type="module" src="/src/main.jsx"></script>
+  <script>
+    // Ping-pong video playback
+    const video = document.querySelector('.bg-video');
+    let playbackDirection = 1;
+
+    // Ensure video plays on load
+    video.play().catch(e => console.error("Video autoplay failed:", e));
+
+    video.addEventListener('ended', () => {
+      playbackDirection = -1;
+
+      // Try to use playbackRate for reverse
+      if (video.playbackRate) {
+        video.playbackRate = -1;
+        video.play().catch(e => console.error("Reverse play failed:", e));
+      } else {
+        // Fallback for browsers that don't support negative playbackRate
+        // Just restart
+        video.currentTime = 0;
         video.play();
-      });
-      
-      // Handle reverse playback reaching start
-      video.addEventListener('timeupdate', () => {
-        if (video.currentTime <= 0.1 && playbackDirection === -1) {
-          playbackDirection = 1;
-          video.playbackRate = 1;
-          video.play();
-        }
-      });
-    </script>
-  </body>
+      }
+    });
+
+    // Handle reverse playback reaching start
+    video.addEventListener('timeupdate', () => {
+      // If playing backwards and near start
+      if (playbackDirection === -1 && video.currentTime <= 0.1) {
+        playbackDirection = 1;
+        video.playbackRate = 1;
+        video.play().catch(e => console.error("Forward play failed:", e));
+      }
+    });
+  </script>
+</body>
+
 </html>
