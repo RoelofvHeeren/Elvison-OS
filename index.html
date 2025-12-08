@@ -7,7 +7,35 @@
     <title>elvison-ai</title>
   </head>
   <body>
+    <video class="bg-video" autoplay muted loop playsinline>
+      <source src="/bg-video.mp4" type="video/mp4">
+    </video>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
+    <script>
+      // Ping-pong video playback
+      const video = document.querySelector('.bg-video');
+      let playbackDirection = 1;
+      
+      video.addEventListener('ended', () => {
+        playbackDirection *= -1;
+        if (playbackDirection === -1) {
+          video.playbackRate = -1;
+        } else {
+          video.currentTime = 0;
+          video.playbackRate = 1;
+        }
+        video.play();
+      });
+      
+      // Handle reverse playback reaching start
+      video.addEventListener('timeupdate', () => {
+        if (video.currentTime <= 0.1 && playbackDirection === -1) {
+          playbackDirection = 1;
+          video.playbackRate = 1;
+          video.play();
+        }
+      });
+    </script>
   </body>
 </html>
