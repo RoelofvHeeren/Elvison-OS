@@ -28,7 +28,7 @@ const Navbar = ({ onToggleSidebar }) => {
           </button>
           <div>
             <div className="flex items-center gap-2">
-              <div className="h-1.5 w-1.5 rounded-full bg-emerald-500"></div>
+              <div className="h-1.5 w-1.5 rounded-full bg-black"></div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-muted">System Active</p>
             </div>
             <p className="text-lg font-bold text-accent tracking-tight">{pageLabel}</p>

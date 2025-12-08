@@ -22,6 +22,6 @@
   }
 
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-6 py-3 text-sm font-semibold tracking-wide text-white shadow-luxury transition-all duration-300 hover:bg-primary-dim hover:shadow-xl hover:-translate-y-0.5;
+    @apply inline-flex items-center gap-2 rounded-xl bg-gradient-dark px-6 py-3 text-sm font-bold text-white shadow-lifted transition-all duration-300 hover:shadow-3d hover:-translate-y-0.5;
   }
 }

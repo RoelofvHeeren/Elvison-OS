@@ -77,14 +77,14 @@ const CRM = () => {
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs font-bold text-primary">
             <span
-              className={`h-2.5 w-2.5 rounded-full ${health.sheet === 'ok' ? 'bg-emerald-500 shadow-sm shadow-emerald-500/50' : 'bg-amber-400'
+              className={`h-2.5 w-2.5 rounded-full ${health.sheet === 'ok' ? 'bg-black shadow-sm shadow-black/30' : 'bg-amber-400'
                 }`}
             />
             Sheet
           </div>
           <div className="flex items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs font-bold text-primary">
             <span
-              className={`h-2.5 w-2.5 rounded-full ${health.agent === 'ok' ? 'bg-emerald-500 shadow-sm shadow-emerald-500/50' : 'bg-amber-400'
+              className={`h-2.5 w-2.5 rounded-full ${health.agent === 'ok' ? 'bg-black shadow-sm shadow-black/30' : 'bg-amber-400'
                 }`}
             />
             Agent
@@ -147,7 +147,7 @@ const CRM = () => {
             type="date"
             value={filters.date}
             onChange={(e) => setFilters((prev) => ({ ...prev, date: e.target.value }))}
-            className="w-full rounded-2xl border border-outline/80 bg-white/80 px-3 py-2.5 text-sm text-ink outline-none transition-all duration-200 focus:border-primary focus:ring-2 focus:ring-mint"
+            className="w-full rounded-2xl border border-outline/80 bg-white/80 px-3 py-2.5 text-sm text-ink outline-none transition-all duration-200 focus:border-accent focus:ring-2 focus:ring-black/10"
           />
         </div>
         <div className="flex flex-1 flex-col gap-1">

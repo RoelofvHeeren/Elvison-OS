@@ -68,7 +68,7 @@ const Connections = () => {
   const StatusPill = ({ label, variant = 'warning' }) => (
     <div
       className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${variant === 'success'
-        ? 'border-emerald-200 bg-mint/70 text-primary'
+        ? 'border-gray-300 bg-gray-100 text-accent'
         : 'border-amber-200 bg-amber-50 text-amber-800'
         }`}
     >
@@ -166,7 +166,7 @@ const Connections = () => {
           ) : (
             <a
               href="/api/auth/google"
-              className="inline-flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100"
+              className="inline-flex items-center gap-2 rounded-2xl border border-gray-300 bg-gray-100 px-3 py-1 text-xs font-semibold text-accent transition hover:bg-gray-200"
             >
               <Link2 className="h-4 w-4" />
               Connect Google Sheet
@@ -257,7 +257,7 @@ const Connections = () => {
           </div>
         )}
         {jobStatus.success && (
-          <div className="flex items-center gap-2 rounded-xl border border-emerald-100 bg-mint/70 px-3 py-2 text-sm text-primary">
+          <div className="flex items-center gap-2 rounded-xl border border-gray-300 bg-gray-100 px-3 py-2 text-sm text-accent">
             <CheckCircle2 className="h-4 w-4" />
             {jobStatus.success}
           </div>

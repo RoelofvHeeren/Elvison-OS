@@ -73,7 +73,7 @@ const SheetTable = ({ rows, loading, error }) => {
                         href={row.linkedin}
                         target="_blank"
                         rel="noreferrer"
-                        className="text-primary underline decoration-mint decoration-2 underline-offset-2"
+                        className="text-accent underline decoration-black decoration-2 underline-offset-2 hover:text-muted transition-colors"
                       >
                         Profile
                       </a>
