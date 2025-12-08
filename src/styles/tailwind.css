@@ -14,7 +14,7 @@
 
 @layer components {
   .glass-panel {
-    @apply rounded-xl border border-glass-border bg-white/60 backdrop-blur-xl shadow-luxury;
+    @apply rounded-xl border border-glass-border bg-white backdrop-blur-xl shadow-3d transition-all duration-300 hover:shadow-lifted hover:-translate-y-0.5;
   }
 
   .chip {

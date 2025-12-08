@@ -4,9 +4,7 @@ import { LayoutDashboard, ListChecks, Plug, Sparkles, Table, Wand2 } from 'lucid
 
 const navItems = [
   { to: '/crm', label: 'CRM', icon: LayoutDashboard },
-  { to: '/status', label: 'Status', icon: ListChecks },
   { to: '/new-job', label: 'New Job', icon: Wand2 },
-  { to: '/sheet', label: 'Sheet', icon: Table },
   { to: '/connections', label: 'Connections', icon: Plug },
 ]
 

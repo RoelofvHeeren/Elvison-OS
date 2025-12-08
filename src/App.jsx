@@ -5,7 +5,6 @@ import Sidebar from './components/Sidebar'
 import CRM from './routes/CRM'
 import Connections from './routes/Connections'
 import NewJob from './routes/NewJob'
-import Status from './routes/Status'
 
 const App = () => {
   const [collapsed, setCollapsed] = useState(false)
@@ -22,9 +21,6 @@ const App = () => {
                 <Route path="/" element={<Navigate to="/crm" replace />} />
                 <Route path="/crm" element={<CRM />} />
                 <Route path="/new-job" element={<NewJob />} />
-                <Route path="/status" element={<Status />} />
-                {/* Redirect legacy sheet route to CRM */}
-                <Route path="/sheet" element={<Navigate to="/crm" replace />} />
                 <Route path="/connections" element={<Connections />} />
               </Routes>
             </div>

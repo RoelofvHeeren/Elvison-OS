@@ -12,7 +12,7 @@ const linkClass = ({ isActive }) =>
 const Navbar = ({ onToggleSidebar }) => {
   const { pathname } = useLocation()
   const pageLabel =
-    pathname === '/crm' ? 'CRM Dashboard' : pathname === '/status' ? 'Job Status' : 'New Job'
+    pathname === '/crm' ? 'CRM Dashboard' : pathname === '/connections' ? 'Connections' : 'New Job'
 
   return (
     <header className="sticky top-0 z-30 px-8 py-6">
@@ -38,9 +38,6 @@ const Navbar = ({ onToggleSidebar }) => {
         <nav className="flex items-center gap-6">
           <NavLink to="/crm" className={linkClass}>
             Dashboard
-          </NavLink>
-          <NavLink to="/status" className={linkClass}>
-            Status
           </NavLink>
           <NavLink to="/connections#activate-mcp" className={linkClass}>
             <PlugZap className="h-4 w-4" />
