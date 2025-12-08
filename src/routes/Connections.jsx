@@ -109,21 +109,20 @@ const Connections = () => {
 
   return (
     <div className="space-y-6">
-      <div className="glass-panel px-6 py-6">
+      <div className="mb-8">
         <p className="text-xs uppercase tracking-[0.3em] font-bold text-primary">Connections</p>
-        <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="text-3xl font-bold text-accent">Connect sheet + agent</h1>
-            <p className="text-sm text-muted">
-              Google Sheets MCP is already hosted; everything runs through that managed endpoint.
-            </p>
-          </div>
-          <div className="flex items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-xs font-bold uppercase tracking-wider text-primary shadow-sharp">
-            <Plug className="h-4 w-4" />
-            Workflow test via /api/connections
-          </div>
+        <div className="flex items-center gap-3">
+          <h1 className="font-serif text-3xl font-bold tracking-tight text-accent">Connect sheet + agent</h1>
+          <div className="h-px flex-1 bg-glass-border"></div>
         </div>
+        <p className="text-sm text-muted">MCP is already hosted; everything runs through that managed endpoint.
+        </p>
       </div>
+      <div className="flex items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-xs font-bold uppercase tracking-wider text-primary shadow-sharp">
+        <Plug className="h-4 w-4" />
+        Workflow test via /api/connections
+      </div>
+
 
       <div className="glass-panel space-y-4 px-6 py-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -274,7 +273,7 @@ const Connections = () => {
           </button>
         </div>
       </div>
-    </div>
+    </div >
   )
 }
 

@@ -6,10 +6,11 @@ export default {
       colors: {
         main: '#ffffff', // Pure White
         surface: '#f5f5f5', // Light gray for subtle depth
-        primary: '#000000', // Jet Black (was teal)
+        primary: '#000000', // Jet Black
         'primary-dim': '#1a1a1a', // Dark gray
         'primary-glow': '#333333', // Medium dark gray
         accent: '#000000', // Jet Black
+        'teal-accent': '#139187', // New hover accent
         muted: '#666666', // Medium gray
         outline: '#e0e0e0', // Light gray border
         glass: 'rgba(255, 255, 255, 0.95)', // White Crystal
@@ -17,6 +18,7 @@ export default {
       },
       fontFamily: {
         sans: ['"Plus Jakarta Sans"', '"Inter"', 'sans-serif'],
+        serif: ['"Instrument Serif"', 'serif'],
         mono: ['"JetBrains Mono"', 'monospace'],
       },
       boxShadow: {
