@@ -5,7 +5,7 @@ import { fetchHealth, startJob, GOOGLE_SHEETS_MCP_ENDPOINTS, disconnectGoogle, a
 const SHEET_NAME = 'AI Lead Sheet'
 const SHEET_ID = import.meta.env.VITE_SHEET_ID || '1T50YCAUgqUoT3DhdmjS3v3s866y3RYdAdyxn9nywpdI'
 const WORKFLOW_ID = import.meta.env.VITE_WORKFLOW_ID || 'wf_69257604d1c081908d6258389947f9de0365b387e2a1c674'
-const WORKFLOW_VERSION = import.meta.env.VITE_WORKFLOW_VERSION || '20'
+const WORKFLOW_VERSION = import.meta.env.VITE_WORKFLOW_VERSION || '21'
 
 const statusMap = {
   ok: { label: 'Hosted MCP ready', variant: 'success' },

@@ -246,7 +246,7 @@ async function workflowHealthCheck() {
   try {
     const run = await client.beta.workflows.runs.create({
       workflow_id: 'wf_69257604d1c081908d6258389947f9de0365b387e2a1c674',
-      version: '20',
+      version: '21',
       input: { input_as_text: 'health check' },
     })
     console.log('Health check OK', run.id)
@@ -573,7 +573,7 @@ async function startJob(input_as_text) {
   try {
     const run = await client.beta.workflows.runs.create({
       workflow_id: 'wf_69257604d1c081908d6258389947f9de0365b387e2a1c674',
-      version: '20',
+      version: '21',
       input: { input_as_text },
     })
     return run
