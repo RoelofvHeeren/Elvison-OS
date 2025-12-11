@@ -102,6 +102,7 @@ export const runAgentWorkflow = async (input, config) => {
         return agentConfigs[agentKey]?.instructions || defaultInst;
     };
 
+    const listeners = config.listeners || {};
     const logStep = (step, detail) => {
         if (listeners.onLog) {
             listeners.onLog({ step, detail, timestamp: new Date().toISOString() });

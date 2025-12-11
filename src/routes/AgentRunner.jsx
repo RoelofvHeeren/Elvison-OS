@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Play, Terminal, CheckCircle, AlertCircle, Loader2, Send, FileText, Bot } from 'lucide-react'
+import { PlayCircle, Terminal, CheckCircle, AlertCircle, Loader2, Send, FileText, Bot } from 'lucide-react'
 
 const STEPS = [
     { id: 'Company Finder', label: 'Company Finder' },
@@ -36,8 +36,6 @@ const AgentRunner = () => {
         setCurrentStep(STEPS[0].id)
 
         try {
-            // we use fetch with a standard reader for SSE-like behavior without EventSource object
-            // to send POST body data easily
             const response = await fetch('/api/agents/run', {
                 method: 'POST',
                 headers: {
@@ -126,7 +124,7 @@ const AgentRunner = () => {
                                 </>
                             ) : (
                                 <>
-                                    <Play className="h-4 w-4 fill-current" />
+                                    <PlayCircle className="h-4 w-4 fill-current" />
                                     Start Workflow
                                 </>
                             )}

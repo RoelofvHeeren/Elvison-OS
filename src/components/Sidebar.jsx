@@ -1,12 +1,12 @@
 import PropTypes from 'prop-types'
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, ListChecks, Plug, Sparkles, Table, Wand2, BookOpen, Bot, Play } from 'lucide-react'
+import { LayoutDashboard, ListChecks, Plug, Sparkles, Table, Wand2, BookOpen, Bot, PlayCircle } from 'lucide-react'
 
 const navItems = [
   { to: '/crm', label: 'CRM', icon: LayoutDashboard },
   { to: '/new-job', label: 'New Job', icon: Wand2 },
   { to: '/agents', label: 'Agents', icon: Bot },
-  { to: '/runner', label: 'Run Workflow', icon: Play },
+  { to: '/runner', label: 'Run Workflow', icon: PlayCircle },
   { to: '/connections', label: 'Connections', icon: Plug },
   { to: '/knowledge', label: 'Knowledge Base', icon: BookOpen },
 ]
