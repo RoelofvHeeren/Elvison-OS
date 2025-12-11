@@ -1271,7 +1271,7 @@ app.post('/api/knowledge/upload', (req, res) => {
   // In a real app, you'd handle multipart/form-data here
   const newFile = {
     id: `file_${Date.now()}`,
-    name: `Uploaded_Document_${Date.now()}.pdf`, // Mock name since we're not parsing multipart
+    name: req.query.filename || `Uploaded_Document_${Date.now()}.pdf`, // Use filename from query if present
     status: 'processing',
     uploadedAt: Date.now()
   }

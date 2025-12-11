@@ -30,7 +30,7 @@ const KnowledgeBase = () => {
         formData.append('file', selectedFiles[0])
 
         try {
-            const res = await fetch('/api/knowledge/upload', {
+            const res = await fetch(`/api/knowledge/upload?filename=${encodeURIComponent(selectedFiles[0].name)}`, {
                 method: 'POST',
                 body: formData, // Browser automatically sets Content-Type to multipart/form-data
             })
