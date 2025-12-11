@@ -154,7 +154,7 @@ export const runAgentWorkflow = async (input, config) => {
     const companyFinder = new Agent({
         name: "Company Finder",
         instructions: getInstructions('company_finder', finderDefaultInst),
-        model: "gpt-4o",
+        model: "gpt-4o-mini",
         tools: getToolsForAgent('company_finder'),
         outputType: CompanyFinderSchema,
     });
@@ -176,7 +176,7 @@ export const runAgentWorkflow = async (input, config) => {
     const companyProfiler = new Agent({
         name: "Company Profiler",
         instructions: getInstructions('company_profiler', profilerDefaultInst),
-        model: "gpt-4o",
+        model: "gpt-4o-mini",
         tools: getToolsForAgent('company_profiler'),
         outputType: CompanyProfilerSchema,
     });
@@ -208,7 +208,7 @@ export const runAgentWorkflow = async (input, config) => {
     const apolloLeadFinder = new Agent({
         name: "Apollo Lead Finder",
         instructions: getInstructions('apollo_lead_finder', leadDefaultInst),
-        model: "gpt-4o",
+        model: "gpt-4o-mini",
         tools: getToolsForAgent('apollo_lead_finder'),
         outputType: ApolloLeadFinderSchema,
     });
@@ -226,7 +226,7 @@ export const runAgentWorkflow = async (input, config) => {
     const outreachCreator = new Agent({
         name: "Outreach Creator",
         instructions: getInstructions('outreach_creator', outreachDefaultInst),
-        model: "gpt-4o",
+        model: "gpt-4o-mini",
         tools: getToolsForAgent('outreach_creator'),
         outputType: OutreachCreatorSchema,
     });
@@ -243,7 +243,7 @@ export const runAgentWorkflow = async (input, config) => {
     const sheetBuilder = new Agent({
         name: "Sheet Builder",
         instructions: getInstructions('sheet_builder', sheetBuilderDefaultInst),
-        model: "gpt-4o",
+        model: "gpt-4o-mini",
         tools: getToolsForAgent('sheet_builder'),
         outputType: SheetBuilderSchema,
     });
