@@ -53,12 +53,39 @@ const KnowledgeBase = () => {
         }
     }
 
+    // Vector Store ID Persistence
+    const [vectorStoreId, setVectorStoreId] = useState('')
+
+    useEffect(() => {
+        const savedId = localStorage.getItem('elvison_vector_store_id')
+        if (savedId) setVectorStoreId(savedId)
+    }, [])
+
+    const handleVectorStoreIdChange = (e) => {
+        const newVal = e.target.value
+        setVectorStoreId(newVal)
+        localStorage.setItem('elvison_vector_store_id', newVal)
+    }
+
     return (
         <div className="space-y-8 animate-fade-in">
             <header>
                 <h1 className="font-serif text-3xl font-medium text-primary">Knowledge Base</h1>
                 <p className="text-gray-400 mt-2">Manage documents for your AI agents to reference.</p>
             </header>
+
+            {/* Vector Store ID Input */}
+            <div className="rounded-xl border border-[#139187]/30 bg-[#139187]/5 p-4 flex flex-col gap-2">
+                <label className="text-sm font-bold text-[#139187]">Vector Store ID (OpenAI)</label>
+                <input
+                    type="text"
+                    value={vectorStoreId}
+                    onChange={handleVectorStoreIdChange}
+                    placeholder="vs_..."
+                    className="w-full rounded-lg border border-white/10 bg-black/20 p-2 text-sm text-white placeholder:text-gray-600 focus:border-[#139187] focus:outline-none"
+                />
+                <p className="text-xs text-gray-500">Enter your existing Vector Store ID here so agents can access files without re-uploading.</p>
+            </div>
 
             {/* Upload Area */}
             <div className="rounded-2xl border-2 border-dashed border-outline/50 bg-surface/30 p-10 text-center transition-all hover:border-primary/50 hover:bg-surface/50">

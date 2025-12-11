@@ -8,6 +8,7 @@ const navItems = [
   { to: '/runner', label: 'Run Workflow', icon: PlayCircle },
   { to: '/connections', label: 'Connections', icon: Plug },
   { to: '/knowledge', label: 'Knowledge Base', icon: BookOpen },
+  { to: '/logbook', label: 'Logbook', icon: BookOpen },
 ]
 
 const Sidebar = ({ collapsed, onToggle }) => (

@@ -6,6 +6,7 @@ import KnowledgeBase from './routes/KnowledgeBase'
 import AgentRunner from './routes/AgentRunner'
 import CRM from './routes/CRM'
 import Connections from './routes/Connections'
+import Logbook from './routes/Logbook'
 
 const App = () => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
@@ -31,6 +32,7 @@ const App = () => {
             <Route path="/runner" element={<AgentRunner />} />
             <Route path="/crm" element={<CRM />} />
             <Route path="/connections" element={<Connections />} />
+            <Route path="/logbook" element={<Logbook />} />
           </Routes>
         </div>
       </main>

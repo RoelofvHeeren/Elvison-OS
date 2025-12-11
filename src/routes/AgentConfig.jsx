@@ -35,10 +35,25 @@ const AgentConfig = () => {
                 fetch('/api/knowledge/files')
             ])
 
+            let serverConfigs = {}
             if (configRes.ok) {
                 const data = await configRes.json()
-                setConfigs(data.configs || {})
+                serverConfigs = data.configs || {}
             }
+
+            // Merge with local storage (Local persistence overrides for simplicity in this dev tool)
+            const localConfigs = localStorage.getItem('elvison_agent_configs')
+            if (localConfigs) {
+                try {
+                    const parsedLocal = JSON.parse(localConfigs)
+                    setConfigs({ ...serverConfigs, ...parsedLocal })
+                } catch (e) {
+                    setConfigs(serverConfigs)
+                }
+            } else {
+                setConfigs(serverConfigs)
+            }
+
             if (filesRes.ok) {
                 const data = await filesRes.json()
                 setFiles(data.files || [])
@@ -55,6 +70,9 @@ const AgentConfig = () => {
         setMessage(null)
         const currentConfig = configs[selectedAgentId] || {}
 
+        // Persist locally first
+        localStorage.setItem('elvison_agent_configs', JSON.stringify(configs))
+
         try {
             const res = await fetch('/api/agents/config', {
                 method: 'POST',
@@ -68,10 +86,10 @@ const AgentConfig = () => {
             })
 
             if (res.ok) {
-                setMessage({ type: 'success', text: 'Configuration saved successfully!' })
+                setMessage({ type: 'success', text: 'Configuration saved (Local & Server)!' })
                 setTimeout(() => setMessage(null), 3000)
             } else {
-                setMessage({ type: 'error', text: 'Failed to save configuration.' })
+                setMessage({ type: 'error', text: 'Failed to save to server.' })
             }
         } catch (err) {
             setMessage({ type: 'error', text: 'Error saving: ' + err.message })
@@ -243,8 +261,8 @@ const AgentConfig = () => {
                                                     key={file.id}
                                                     onClick={() => toggleFile(file.id)}
                                                     className={`group flex w-full items-center justify-between rounded-lg p-2.5 text-left transition-all ${isSelected
-                                                            ? 'bg-[#139187]/10 border border-[#139187]/40'
-                                                            : 'hover:bg-gray-50 border border-transparent'
+                                                        ? 'bg-[#139187]/10 border border-[#139187]/40'
+                                                        : 'hover:bg-gray-50 border border-transparent'
                                                         }`}
                                                 >
                                                     <div className="flex items-center gap-3 overflow-hidden">

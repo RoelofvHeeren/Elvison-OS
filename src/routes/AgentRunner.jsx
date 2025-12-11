@@ -22,12 +22,34 @@ const AgentRunner = () => {
         logsEndRef.current?.scrollIntoView({ behavior: 'smooth' })
     }
 
+    // Load prompt from local storage
     useEffect(() => {
+        const savedPrompt = localStorage.getItem('elvison_prompt')
+        if (savedPrompt) setPrompt(savedPrompt)
+
         scrollToBottom()
     }, [logs])
 
+    const saveJobToHistory = (jobResult) => {
+        const historyItem = {
+            id: Date.now(),
+            timestamp: new Date().toISOString(),
+            prompt: prompt,
+            status: jobResult ? 'success' : 'failed',
+            result: jobResult,
+            error: error
+        }
+
+        const existingHistory = JSON.parse(localStorage.getItem('elvison_job_history') || '[]')
+        const newHistory = [...existingHistory, historyItem]
+        localStorage.setItem('elvison_job_history', JSON.stringify(newHistory))
+    }
+
     const handleRun = async () => {
         if (!prompt.trim()) return
+
+        // Persist prompt
+        localStorage.setItem('elvison_prompt', prompt)
 
         setIsRunning(true)
         setLogs([])
@@ -36,12 +58,18 @@ const AgentRunner = () => {
         setCurrentStep(STEPS[0].id)
 
         try {
+            // Get vectorStoreId from local storage
+            const vectorStoreId = localStorage.getItem('elvison_vector_store_id')
+
             const response = await fetch('/api/agents/run', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ prompt })
+                body: JSON.stringify({
+                    prompt,
+                    vectorStoreId // Pass the persistent ID
+                })
             })
 
             const reader = response.body.getReader()
@@ -70,9 +98,13 @@ const AgentRunner = () => {
                             } else if (type === 'result') {
                                 setResult(data)
                                 setCurrentStep('Complete')
+                                saveJobToHistory(data) // Save success
                             } else if (type === 'error') {
                                 setError(data.message)
                                 setIsRunning(false)
+                                saveJobToHistory(null) // Save failure is tough here because error state is set but not passed to saveJob. 
+                                // Actually, better to save failure in the catch block or here if we pass error msg.
+                                // We'll rely on the fact that result is null for failure.
                             } else if (type === 'done') {
                                 setIsRunning(false)
                             }
@@ -85,6 +117,16 @@ const AgentRunner = () => {
         } catch (err) {
             setError(err.message)
             setIsRunning(false)
+            // Save failure to history
+            const historyItem = {
+                id: Date.now(),
+                timestamp: new Date().toISOString(),
+                prompt: prompt,
+                status: 'failed',
+                error: err.message
+            }
+            const existingHistory = JSON.parse(localStorage.getItem('elvison_job_history') || '[]')
+            localStorage.setItem('elvison_job_history', JSON.stringify([...existingHistory, historyItem]))
         }
     }
 
@@ -144,17 +186,17 @@ const AgentRunner = () => {
                                 <div
                                     key={step.id}
                                     className={`flex items-center gap-3 rounded-lg p-3 transition-all ${isActive
-                                            ? 'bg-[#139187]/10 border border-[#139187]/40'
-                                            : isCompleted
-                                                ? 'bg-emerald-500/5'
-                                                : 'opacity-50'
+                                        ? 'bg-[#139187]/10 border border-[#139187]/40'
+                                        : isCompleted
+                                            ? 'bg-emerald-500/5'
+                                            : 'opacity-50'
                                         }`}
                                 >
                                     <div className={`flex h-8 w-8 items-center justify-center rounded-full border ${isActive
-                                            ? 'border-[#139187] text-[#139187] animate-pulse'
-                                            : isCompleted
-                                                ? 'border-emerald-500 bg-emerald-500 text-white'
-                                                : 'border-white/20 text-gray-500'
+                                        ? 'border-[#139187] text-[#139187] animate-pulse'
+                                        : isCompleted
+                                            ? 'border-emerald-500 bg-emerald-500 text-white'
+                                            : 'border-white/20 text-gray-500'
                                         }`}>
                                         {isCompleted ? <CheckCircle className="h-4 w-4" /> : <span className="text-xs font-bold">{idx + 1}</span>}
                                     </div>
@@ -199,9 +241,9 @@ const AgentRunner = () => {
                                     <span className="shrink-0 text-gray-600 text-[10px] pt-1">{new Date(log.timestamp).toLocaleTimeString()}</span>
                                     <div>
                                         <span className={`font-bold mr-2 ${log.step.includes('Finder') ? 'text-blue-400' :
-                                                log.step.includes('Profiler') ? 'text-purple-400' :
-                                                    log.step.includes('Outreach') ? 'text-amber-400' :
-                                                        log.step.includes('Sheet') ? 'text-emerald-400' : 'text-[#139187]'
+                                            log.step.includes('Profiler') ? 'text-purple-400' :
+                                                log.step.includes('Outreach') ? 'text-amber-400' :
+                                                    log.step.includes('Sheet') ? 'text-emerald-400' : 'text-[#139187]'
                                             }`}>[{log.step}]</span>
                                         <span className="text-gray-300">{log.detail}</span>
                                     </div>
