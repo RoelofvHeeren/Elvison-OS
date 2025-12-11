@@ -278,47 +278,56 @@ export const runAgentWorkflow = async (input, config) => {
             }
         });
 
-        const conversationHistory = [
-            { role: "user", content: [{ type: "input_text", text: input.input_as_text }] }
-        ];
-
         // 1. Company Finder
         logStep('Company Finder', 'Identifying potential companies...');
-        const finderRes = await retryWithBackoff(() => runner.run(companyFinder, [...conversationHistory]));
+        // Initial input
+        const finderInput = [{ role: "user", content: [{ type: "input_text", text: input.input_as_text }] }];
+
+        const finderRes = await retryWithBackoff(() => runner.run(companyFinder, finderInput));
         if (!finderRes.finalOutput) throw new Error("Company Finder failed");
 
         const finderOutput = finderRes.finalOutput;
         logStep('Company Finder', `Found ${finderOutput.results?.length} companies.`);
-        conversationHistory.push(...finderRes.newItems.map(i => i.rawItem));
 
         // 2. Profiler
         logStep('Company Profiler', 'Filtering and profiling companies...');
-        const profilerRes = await retryWithBackoff(() => runner.run(companyProfiler, [...conversationHistory]));
+        // Pass clean input from previous output
+        const profilerInput = [{ role: "user", content: [{ type: "input_text", text: JSON.stringify(finderOutput) }] }];
+
+        const profilerRes = await retryWithBackoff(() => runner.run(companyProfiler, profilerInput));
         if (!profilerRes.finalOutput) throw new Error("Profiler failed");
 
         const profilerOutput = profilerRes.finalOutput;
         logStep('Company Profiler', `Profiled ${profilerOutput?.results?.length} qualified companies.`);
-        conversationHistory.push(...profilerRes.newItems.map(i => i.rawItem));
 
         // 3. Lead Finder
         logStep('Apollo Lead Finder', 'Finding decision makers...');
-        const leadRes = await retryWithBackoff(() => runner.run(apolloLeadFinder, [...conversationHistory]));
+        // Pass clean input from previous output
+        const leadInput = [{ role: "user", content: [{ type: "input_text", text: JSON.stringify(profilerOutput) }] }];
+
+        const leadRes = await retryWithBackoff(() => runner.run(apolloLeadFinder, leadInput));
         if (!leadRes.finalOutput) throw new Error("Apollo Lead Finder failed");
 
+        const leadOutput = leadRes.finalOutput;
         logStep('Apollo Lead Finder', 'Leads found and enriched.');
-        conversationHistory.push(...leadRes.newItems.map(i => i.rawItem));
 
         // 4. Outreach Creator
         logStep('Outreach Creator', 'Drafting personalized messages...');
-        const outreachRes = await retryWithBackoff(() => runner.run(outreachCreator, [...conversationHistory]));
+        // Pass clean input from previous output
+        const outreachInput = [{ role: "user", content: [{ type: "input_text", text: JSON.stringify(leadOutput) }] }];
+
+        const outreachRes = await retryWithBackoff(() => runner.run(outreachCreator, outreachInput));
         if (!outreachRes.finalOutput) throw new Error("Outreach Creator failed");
 
+        const outreachOutput = outreachRes.finalOutput;
         logStep('Outreach Creator', 'Messages drafted.');
-        conversationHistory.push(...outreachRes.newItems.map(i => i.rawItem));
 
         // 5. Sheet Builder
         logStep('Sheet Builder', 'Exporting to Google Sheets...');
-        const sheetRes = await retryWithBackoff(() => runner.run(sheetBuilder, [...conversationHistory]));
+        // Pass clean input from previous output
+        const sheetInput = [{ role: "user", content: [{ type: "input_text", text: JSON.stringify(outreachOutput) }] }];
+
+        const sheetRes = await retryWithBackoff(() => runner.run(sheetBuilder, sheetInput));
         if (!sheetRes.finalOutput) throw new Error("Sheet Builder failed");
 
         logStep('Sheet Builder', 'Export complete.');
