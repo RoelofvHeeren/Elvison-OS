@@ -6,6 +6,7 @@ const AGENTS = [
     { id: 'company_profiler', name: 'Company Profiler', description: 'Filters and profiles companies.' },
     { id: 'apollo_lead_finder', name: 'Apollo Lead Finder', description: 'Finds contact info for decision makers.' },
     { id: 'outreach_creator', name: 'Outreach Creator', description: 'Drafts personalized outreach messages.' },
+    { id: 'sheet_builder', name: 'Sheet Builder', description: 'Exports data to Google Sheets.' },
 ]
 
 const AgentConfig = () => {
@@ -104,15 +105,15 @@ const AgentConfig = () => {
                     <button
                         key={agent.id}
                         onClick={() => setSelectedAgentId(agent.id)}
-                        className={`flex w-full items-center gap-3 rounded-xl p-3 text-left text-sm font-medium transition-all ${selectedAgentId === agent.id
+                        className={`flex w - full items - center gap - 3 rounded - xl p - 3 text - left text - sm font - medium transition - all ${selectedAgentId === agent.id
                                 ? 'bg-primary text-white shadow-md'
                                 : 'text-secondary hover:bg-surface'
-                            }`}
+                            } `}
                     >
-                        <Bot className={`h-5 w-5 ${selectedAgentId === agent.id ? 'text-white' : 'text-primary'}`} />
+                        <Bot className={`h - 5 w - 5 ${selectedAgentId === agent.id ? 'text-white' : 'text-primary'} `} />
                         <div>
                             <div className="font-semibold">{agent.name}</div>
-                            <div className={`text-xs ${selectedAgentId === agent.id ? 'text-white/80' : 'text-muted'}`}>
+                            <div className={`text - xs ${selectedAgentId === agent.id ? 'text-white/80' : 'text-muted'} `}>
                                 {agent.description}
                             </div>
                         </div>
@@ -138,7 +139,7 @@ const AgentConfig = () => {
                 </header>
 
                 {message && (
-                    <div className={`rounded-lg p-3 text-sm flex items-center gap-2 ${message.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+                    <div className={`rounded - lg p - 3 text - sm flex items - center gap - 2 ${message.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'} `}>
                         {message.type === 'success' ? <Check className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
                         {message.text}
                     </div>
@@ -175,16 +176,16 @@ const AgentConfig = () => {
                                             <button
                                                 key={file.id}
                                                 onClick={() => toggleFile(file.id)}
-                                                className={`group flex w-full items-center justify-between rounded-lg p-3 text-left transition-all ${isSelected ? 'bg-primary/5 border border-primary/20' : 'hover:bg-surface border border-transparent'
-                                                    }`}
+                                                className={`group flex w - full items - center justify - between rounded - lg p - 3 text - left transition - all ${isSelected ? 'bg-primary/5 border border-primary/20' : 'hover:bg-surface border border-transparent'
+                                                    } `}
                                             >
                                                 <div className="flex items-center gap-3 overflow-hidden">
-                                                    <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${isSelected ? 'bg-primary text-white' : 'bg-surface text-muted group-hover:bg-white'
-                                                        }`}>
+                                                    <div className={`flex h - 8 w - 8 shrink - 0 items - center justify - center rounded - md ${isSelected ? 'bg-primary text-white' : 'bg-surface text-muted group-hover:bg-white'
+                                                        } `}>
                                                         <FileText className="h-4 w-4" />
                                                     </div>
                                                     <div className="overflow-hidden">
-                                                        <div className={`truncate text-sm font-medium ${isSelected ? 'text-primary' : 'text-secondary'}`}>
+                                                        <div className={`truncate text - sm font - medium ${isSelected ? 'text-primary' : 'text-secondary'} `}>
                                                             {file.name}
                                                         </div>
                                                         <div className="text-xs text-muted">{new Date(file.uploadedAt).toLocaleDateString()}</div>

@@ -1189,7 +1189,8 @@ const AGENT_CONFIGS = {
   company_finder: { instructions: '', linkedFileIds: [] },
   company_profiler: { instructions: '', linkedFileIds: [] },
   apollo_lead_finder: { instructions: '', linkedFileIds: [] },
-  outreach_creator: { instructions: '', linkedFileIds: [] }
+  outreach_creator: { instructions: '', linkedFileIds: [] },
+  sheet_builder: { instructions: '', linkedFileIds: [] }
 }
 
 // GET /api/agents/config
@@ -1254,10 +1255,7 @@ app.post('/api/agents/run', async (req, res) => {
 })
 
 // Knowledge Base Mock Data
-const KNOWLEDGE_BASE_FILES = [
-  { id: 'file_1', name: 'Company_Guidelines.pdf', status: 'ready', uploadedAt: Date.now() - 100000 },
-  { id: 'file_2', name: 'Product_Specs_v2.txt', status: 'processing', uploadedAt: Date.now() - 5000 }
-]
+const KNOWLEDGE_BASE_FILES = []
 
 // GET /api/knowledge/files
 app.get('/api/knowledge/files', (req, res) => {

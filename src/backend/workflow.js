@@ -53,6 +53,11 @@ const OutreachCreatorSchema = z.object({
     }))
 });
 
+const SheetBuilderSchema = z.object({
+    spreadsheet_url: z.string(),
+    status: z.string()
+});
+
 // --- Dynamic Workflow Function ---
 /**
  * Runs the agent workflow with dynamic vector store inputs.
@@ -210,6 +215,23 @@ Output format Return this exact JSON object:
         outputType: OutreachCreatorSchema,
     });
 
+    // 5. Sheet Builder
+    const sheetBuilderDefaultInst = `You are the Sheet Builder Agent. You receive input.leads containing enriched leads with outreach messages.
+Your job is to write these leads to a Google Sheet.
+1. Create a new spreadsheet or use an existing one if a sheetId is provided in context (though typically we create new for a batch). Title it "Hazen Road Leads - [Date]".
+2. Create a header row with: Date Added, First Name, Last Name, Company, Title, Email, LinkedIn, Website, Connection Request, Email Message, Profile.
+3. Write all leads to the sheet.
+4. Return the spreadsheet URL and status "success".
+Output JSON: { "spreadsheet_url": "...", "status": "success" }`;
+
+    const sheetBuilder = new Agent({
+        name: "Sheet Builder",
+        instructions: getInstructions('sheet_builder', sheetBuilderDefaultInst),
+        model: "gpt-4o",
+        tools: getToolsForAgent('sheet_builder', [sheetMcp]),
+        outputType: SheetBuilderSchema,
+    });
+
     // --- Runner Execution ---
 
     return await withTrace("Lead Gen OS (In-House)", async () => {
@@ -251,7 +273,12 @@ Output format Return this exact JSON object:
         // 4. Outreach Creator
         const outreachRes = await runner.run(outreachCreator, [...conversationHistory]);
         if (!outreachRes.finalOutput) throw new Error("Outreach Creator failed");
+        conversationHistory.push(...outreachRes.newItems.map(i => i.rawItem));
 
-        return outreachRes.finalOutput;
+        // 5. Sheet Builder
+        const sheetRes = await runner.run(sheetBuilder, [...conversationHistory]);
+        if (!sheetRes.finalOutput) throw new Error("Sheet Builder failed");
+
+        return sheetRes.finalOutput;
     });
 };

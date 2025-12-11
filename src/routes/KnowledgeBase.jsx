@@ -57,7 +57,7 @@ const KnowledgeBase = () => {
         <div className="space-y-8 animate-fade-in">
             <header>
                 <h1 className="font-serif text-3xl font-medium text-primary">Knowledge Base</h1>
-                <p className="text-muted mt-2">Manage documents for your AI agents to reference.</p>
+                <p className="text-gray-400 mt-2">Manage documents for your AI agents to reference.</p>
             </header>
 
             {/* Upload Area */}
@@ -100,8 +100,8 @@ const KnowledgeBase = () => {
                                         <FileText className="h-5 w-5 text-secondary" />
                                     </div>
                                     <div>
-                                        <h3 className="font-medium text-secondary">{file.name}</h3>
-                                        <p className="text-xs text-muted">
+                                        <h3 className="font-medium text-gray-800">{file.name}</h3>
+                                        <p className="text-xs text-gray-500">
                                             {new Date(file.uploadedAt).toLocaleDateString()} • {new Date(file.uploadedAt).toLocaleTimeString()}
                                         </p>
                                     </div>
