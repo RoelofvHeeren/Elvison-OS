@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Bot, Save, FileText, Check, AlertCircle, Wrench, Database, MessageSquare } from 'lucide-react'
+import { Bot, Save, FileText, Check, AlertCircle, Wrench, Database, MessageSquare, Globe } from 'lucide-react'
 
 const AGENTS = [
     { id: 'company_finder', name: 'Company Finder', description: 'Finds companies matching criteria.' },
@@ -11,6 +11,7 @@ const AGENTS = [
 
 const AVAILABLE_TOOLS = [
     { id: 'file_search', name: 'File Search', description: 'Search knowledge base documents', icon: FileText },
+    { id: 'web_search', name: 'Web Search', description: 'Search the internet for information', icon: Globe },
     { id: 'sheet_mcp', name: 'Google Sheets MCP', description: 'Read/Write to Google Sheets', icon: Database },
     { id: 'apollo_mcp', name: 'Apollo MCP', description: 'Enrich leads and find contacts', icon: Wrench },
 ]
@@ -123,8 +124,8 @@ const AgentConfig = () => {
                             key={agent.id}
                             onClick={() => setSelectedAgentId(agent.id)}
                             className={`flex w-full items-start gap-3 rounded-lg p-3 text-left transition-all border ${selectedAgentId === agent.id
-                                    ? 'bg-primary/20 text-white border-primary shadow-[0_0_15px_rgba(var(--primary-rgb),0.3)]'
-                                    : 'text-gray-400 border-transparent hover:bg-white/5 hover:text-white'
+                                ? 'bg-primary/20 text-white border-primary shadow-[0_0_15px_rgba(var(--primary-rgb),0.3)]'
+                                : 'text-gray-400 border-transparent hover:bg-white/5 hover:text-white'
                                 }`}
                         >
                             <div className={`mt-0.5 p-1.5 rounded-md ${selectedAgentId === agent.id ? 'bg-primary text-black' : 'bg-white/5 text-gray-500'}`}>
@@ -199,8 +200,8 @@ const AgentConfig = () => {
                                             key={tool.id}
                                             onClick={() => toggleTool(tool.id)}
                                             className={`flex items-center gap-3 p-3 rounded-lg border transition-all text-left ${isEnabled
-                                                    ? 'bg-primary/20 border-primary/50 shadow-sm'
-                                                    : 'bg-white/5 border-white/10 hover:bg-white/10'
+                                                ? 'bg-primary/20 border-primary/50 shadow-sm'
+                                                : 'bg-white/5 border-white/10 hover:bg-white/10'
                                                 }`}
                                         >
                                             <div className={`p-2 rounded-md ${isEnabled ? 'bg-primary text-black' : 'bg-white/10 text-gray-400'}`}>
@@ -242,8 +243,8 @@ const AgentConfig = () => {
                                                     key={file.id}
                                                     onClick={() => toggleFile(file.id)}
                                                     className={`group flex w-full items-center justify-between rounded-lg p-2.5 text-left transition-all ${isSelected
-                                                            ? 'bg-primary/20 border border-primary/40'
-                                                            : 'hover:bg-white/5 border border-transparent'
+                                                        ? 'bg-primary/20 border border-primary/40'
+                                                        : 'hover:bg-white/5 border border-transparent'
                                                         }`}
                                                 >
                                                     <div className="flex items-center gap-3 overflow-hidden">

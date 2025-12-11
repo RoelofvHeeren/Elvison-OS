@@ -1,5 +1,6 @@
 
-import { fileSearchTool, hostedMcpTool, Agent, Runner, withTrace } from "@openai/agents";
+
+import { fileSearchTool, hostedMcpTool, webSearchTool, Agent, Runner, withTrace } from "@openai/agents";
 import { z } from "zod";
 
 // --- Schema Definitions ---
@@ -89,6 +90,9 @@ export const runAgentWorkflow = async (input, config) => {
         if (enabledIds.includes('apollo_mcp')) {
             tools.push(apolloMcp);
         }
+        if (enabledIds.includes('web_search')) {
+            tools.push(webSearch);
+        }
 
         return tools;
     };
@@ -97,6 +101,9 @@ export const runAgentWorkflow = async (input, config) => {
     const getInstructions = (agentKey, defaultInst) => {
         return agentConfigs[agentKey]?.instructions || defaultInst;
     };
+
+    // Standard Tools
+    const webSearch = webSearchTool();
 
     // MCP Tools (Hardcoded URLs from user snippet)
     const sheetMcp = hostedMcpTool({
