@@ -6,6 +6,7 @@ import CRM from './routes/CRM'
 import Connections from './routes/Connections'
 import NewJob from './routes/NewJob'
 import KnowledgeBase from './routes/KnowledgeBase'
+import AgentConfig from './routes/AgentConfig'
 
 const App = () => {
   const [collapsed, setCollapsed] = useState(false)
@@ -22,6 +23,7 @@ const App = () => {
                 <Route path="/" element={<Navigate to="/crm" replace />} />
                 <Route path="/crm" element={<CRM />} />
                 <Route path="/new-job" element={<NewJob />} />
+                <Route path="/agents" element={<AgentConfig />} />
                 <Route path="/connections" element={<Connections />} />
                 <Route path="/knowledge" element={<KnowledgeBase />} />
               </Routes>

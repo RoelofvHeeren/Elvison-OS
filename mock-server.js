@@ -14,6 +14,7 @@ import path from 'path'
 import { EventSource } from 'eventsource'
 import { execSync, spawn } from 'child_process'
 import { fileURLToPath } from 'url'
+import { runAgentWorkflow } from './src/backend/workflow.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -1182,6 +1183,75 @@ app.all(/^\/sheet-mcp\/.*$/, proxyMcp(LOCAL_SHEET_MCP_BASE))
 // Workflow proxy routes (passthrough to OpenAI)
 app.post('/v1/workflows/runs', proxyOpenAI)
 app.get('/v1/workflows/runs/:run_id', proxyOpenAI)
+
+// Agent Configuration Store
+const AGENT_CONFIGS = {
+  company_finder: { instructions: '', linkedFileIds: [] },
+  company_profiler: { instructions: '', linkedFileIds: [] },
+  apollo_lead_finder: { instructions: '', linkedFileIds: [] },
+  outreach_creator: { instructions: '', linkedFileIds: [] }
+}
+
+// GET /api/agents/config
+app.get('/api/agents/config', (req, res) => {
+  res.json({ configs: AGENT_CONFIGS })
+})
+
+// POST /api/agents/config
+app.post('/api/agents/config', (req, res) => {
+  const { agentKey, instructions, linkedFileIds } = req.body
+  if (!agentKey || !AGENT_CONFIGS[agentKey]) { // Allow empty instructions/files
+    return res.status(400).json({ error: 'Invalid agent key' })
+  }
+
+  if (typeof instructions === 'string') {
+    AGENT_CONFIGS[agentKey].instructions = instructions
+  }
+  if (Array.isArray(linkedFileIds)) {
+    AGENT_CONFIGS[agentKey].linkedFileIds = linkedFileIds
+  }
+
+  res.json({ success: true, config: AGENT_CONFIGS[agentKey] })
+})
+
+// POST /api/agents/run - Run the in-house agent workflow
+app.post('/api/agents/run', async (req, res) => {
+  const { prompt, vectorStoreId } = req.body
+
+  if (!prompt) {
+    return res.status(400).json({ error: 'Prompt is required' })
+  }
+
+  // Use a default Vector Store ID if none provided (mock or env var)
+  // In a real scenario, this would come from the user selecting a "Knowledge Base" document
+  const effectiveVectorStoreId = vectorStoreId || "vs_69003f222fa08191834fdf89585b93e0"
+
+  try {
+    console.log('Starting In-House Agent Workflow...', {
+      prompt,
+      vectorStoreId: effectiveVectorStoreId,
+      agentConfigs: AGENT_CONFIGS
+    })
+
+    // Run the agent with stored configs
+    const result = await runAgentWorkflow(
+      { input_as_text: prompt },
+      {
+        vectorStoreId: effectiveVectorStoreId,
+        agentConfigs: AGENT_CONFIGS // Pass the dynamic configs
+      }
+    )
+
+    res.json({ success: true, result })
+  } catch (err) {
+    console.error('In-House Agent Error:', err)
+    res.status(500).json({
+      error: 'Agent execution failed',
+      detail: err.message,
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    })
+  }
+})
 
 // Knowledge Base Mock Data
 const KNOWLEDGE_BASE_FILES = [
