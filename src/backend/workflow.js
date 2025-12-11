@@ -248,6 +248,27 @@ export const runAgentWorkflow = async (input, config) => {
         outputType: SheetBuilderSchema,
     });
 
+    // Helper for retry logic
+    const retryWithBackoff = async (fn, retries = 3, initialDelay = 5000) => {
+        let attempt = 0;
+        while (attempt <= retries) {
+            try {
+                return await fn();
+            } catch (error) {
+                if (error?.status === 429 || (error?.message && error.message.includes('429'))) {
+                    attempt++;
+                    if (attempt > retries) throw error;
+
+                    const delay = initialDelay * Math.pow(2, attempt - 1); // Exponential backoff
+                    console.warn(`Rate limit hit (429). Retrying in ${delay / 1000}s (Attempt ${attempt}/${retries})...`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                } else {
+                    throw error;
+                }
+            }
+        }
+    };
+
     // --- Runner Execution ---
 
     return await withTrace("Lead Gen OS (In-House)", async () => {
@@ -263,7 +284,7 @@ export const runAgentWorkflow = async (input, config) => {
 
         // 1. Company Finder
         logStep('Company Finder', 'Identifying potential companies...');
-        const finderRes = await runner.run(companyFinder, [...conversationHistory]);
+        const finderRes = await retryWithBackoff(() => runner.run(companyFinder, [...conversationHistory]));
         if (!finderRes.finalOutput) throw new Error("Company Finder failed");
 
         const finderOutput = finderRes.finalOutput;
@@ -272,7 +293,7 @@ export const runAgentWorkflow = async (input, config) => {
 
         // 2. Profiler
         logStep('Company Profiler', 'Filtering and profiling companies...');
-        const profilerRes = await runner.run(companyProfiler, [...conversationHistory]);
+        const profilerRes = await retryWithBackoff(() => runner.run(companyProfiler, [...conversationHistory]));
         if (!profilerRes.finalOutput) throw new Error("Profiler failed");
 
         const profilerOutput = profilerRes.finalOutput;
@@ -281,7 +302,7 @@ export const runAgentWorkflow = async (input, config) => {
 
         // 3. Lead Finder
         logStep('Apollo Lead Finder', 'Finding decision makers...');
-        const leadRes = await runner.run(apolloLeadFinder, [...conversationHistory]);
+        const leadRes = await retryWithBackoff(() => runner.run(apolloLeadFinder, [...conversationHistory]));
         if (!leadRes.finalOutput) throw new Error("Apollo Lead Finder failed");
 
         logStep('Apollo Lead Finder', 'Leads found and enriched.');
@@ -289,7 +310,7 @@ export const runAgentWorkflow = async (input, config) => {
 
         // 4. Outreach Creator
         logStep('Outreach Creator', 'Drafting personalized messages...');
-        const outreachRes = await runner.run(outreachCreator, [...conversationHistory]);
+        const outreachRes = await retryWithBackoff(() => runner.run(outreachCreator, [...conversationHistory]));
         if (!outreachRes.finalOutput) throw new Error("Outreach Creator failed");
 
         logStep('Outreach Creator', 'Messages drafted.');
@@ -297,7 +318,7 @@ export const runAgentWorkflow = async (input, config) => {
 
         // 5. Sheet Builder
         logStep('Sheet Builder', 'Exporting to Google Sheets...');
-        const sheetRes = await runner.run(sheetBuilder, [...conversationHistory]);
+        const sheetRes = await retryWithBackoff(() => runner.run(sheetBuilder, [...conversationHistory]));
         if (!sheetRes.finalOutput) throw new Error("Sheet Builder failed");
 
         logStep('Sheet Builder', 'Export complete.');
