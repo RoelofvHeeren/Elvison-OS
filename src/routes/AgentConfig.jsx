@@ -123,17 +123,17 @@ const AgentConfig = () => {
                         <button
                             key={agent.id}
                             onClick={() => setSelectedAgentId(agent.id)}
-                            className={`flex w-full items-start gap-3 rounded-lg p-3 text-left transition-all border ${selectedAgentId === agent.id
-                                ? 'bg-primary/20 text-white border-primary shadow-[0_0_15px_rgba(var(--primary-rgb),0.3)]'
-                                : 'text-gray-400 border-transparent hover:bg-white/5 hover:text-white'
+                            className={`flex w-full items-start gap-3 rounded-lg p-3 text-left transition-all border-2 ${selectedAgentId === agent.id
+                                    ? 'bg-white text-black border-primary shadow-[0_0_15px_rgba(var(--primary-rgb),0.3)]'
+                                    : 'text-gray-400 border-transparent hover:bg-white/5 hover:text-white'
                                 }`}
                         >
-                            <div className={`mt-0.5 p-1.5 rounded-md ${selectedAgentId === agent.id ? 'bg-primary text-black' : 'bg-white/5 text-gray-500'}`}>
+                            <div className={`mt-0.5 p-1.5 rounded-md ${selectedAgentId === agent.id ? 'bg-primary/10 text-primary' : 'bg-white/5 text-gray-500'}`}>
                                 <Bot className="h-4 w-4" />
                             </div>
                             <div>
                                 <div className="font-semibold text-sm">{agent.name}</div>
-                                <div className={`text-xs mt-0.5 leading-snug ${selectedAgentId === agent.id ? 'text-gray-300' : 'text-gray-500'}`}>
+                                <div className={`text-xs mt-0.5 leading-snug ${selectedAgentId === agent.id ? 'text-gray-600' : 'text-gray-500'}`}>
                                     {agent.description}
                                 </div>
                             </div>
@@ -174,7 +174,7 @@ const AgentConfig = () => {
                             System Instructions
                         </label>
                         <textarea
-                            className="flex-1 w-full resize-none rounded-xl border border-primary/50 bg-black/40 p-4 font-mono text-sm leading-relaxed text-gray-200 placeholder:text-gray-600 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary overflow-y-auto shadow-inner"
+                            className="flex-1 w-full resize-none rounded-xl border-2 border-primary bg-white p-4 font-mono text-sm leading-relaxed text-black placeholder:text-gray-400 focus:outline-none focus:ring-4 focus:ring-primary/20 overflow-y-auto shadow-sm"
                             placeholder="Enter detailed instructions for this agent..."
                             value={currentConfig.instructions}
                             onChange={(e) => updateConfig('instructions', e.target.value)}
@@ -191,7 +191,7 @@ const AgentConfig = () => {
                                 <Wrench className="h-4 w-4 text-primary" />
                                 Enabled Tools
                             </label>
-                            <div className="grid grid-cols-1 gap-2 border border-primary/50 rounded-xl p-3 bg-black/20">
+                            <div className="grid grid-cols-1 gap-2 border-2 border-primary rounded-xl p-3 bg-white">
                                 {AVAILABLE_TOOLS.map((tool) => {
                                     const ToolIcon = tool.icon
                                     const isEnabled = (currentConfig.enabledToolIds || []).includes(tool.id)
@@ -200,18 +200,18 @@ const AgentConfig = () => {
                                             key={tool.id}
                                             onClick={() => toggleTool(tool.id)}
                                             className={`flex items-center gap-3 p-3 rounded-lg border transition-all text-left ${isEnabled
-                                                ? 'bg-primary/20 border-primary/50 shadow-sm'
-                                                : 'bg-white/5 border-white/10 hover:bg-white/10'
+                                                    ? 'bg-primary/10 border-primary/40 shadow-sm'
+                                                    : 'bg-gray-50 border-gray-100 hover:bg-gray-100'
                                                 }`}
                                         >
-                                            <div className={`p-2 rounded-md ${isEnabled ? 'bg-primary text-black' : 'bg-white/10 text-gray-400'}`}>
+                                            <div className={`p-2 rounded-md ${isEnabled ? 'bg-primary text-black' : 'bg-white border border-gray-200 text-primary'}`}>
                                                 <ToolIcon className="h-4 w-4" />
                                             </div>
                                             <div className="flex-1">
-                                                <div className={`text-sm font-semibold ${isEnabled ? 'text-white' : 'text-gray-400'}`}>{tool.name}</div>
+                                                <div className="text-sm font-bold text-gray-900">{tool.name}</div>
                                                 <div className="text-xs text-gray-500">{tool.description}</div>
                                             </div>
-                                            <div className={`w-5 h-5 rounded-full border flex items-center justify-center ${isEnabled ? 'bg-primary border-primary' : 'border-gray-600'
+                                            <div className={`w-5 h-5 rounded-full border flex items-center justify-center ${isEnabled ? 'bg-primary border-primary' : 'border-gray-300'
                                                 }`}>
                                                 {isEnabled && <Check className="h-3 w-3 text-black" />}
                                             </div>
@@ -227,12 +227,12 @@ const AgentConfig = () => {
                                 <FileText className="h-4 w-4 text-primary" />
                                 Linked Knowledge Base
                             </label>
-                            <div className="flex-1 min-h-[200px] border border-primary/50 bg-black/20 rounded-xl overflow-hidden flex flex-col shadow-inner">
+                            <div className="flex-1 min-h-[200px] border-2 border-primary bg-white rounded-xl overflow-hidden flex flex-col shadow-sm">
                                 {files.length === 0 ? (
-                                    <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-gray-500">
-                                        <FileText className="mb-2 h-8 w-8 opacity-20" />
-                                        <p>No files available.</p>
-                                        <p className="text-xs mt-1 text-gray-600">Upload in Knowledge Base section first.</p>
+                                    <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-gray-400">
+                                        <FileText className="mb-2 h-8 w-8 text-primary/20" />
+                                        <p className="text-gray-900 font-medium">No files available.</p>
+                                        <p className="text-xs mt-1">Upload in Knowledge Base section first.</p>
                                     </div>
                                 ) : (
                                     <div className="overflow-y-auto p-2 space-y-1">
@@ -243,17 +243,17 @@ const AgentConfig = () => {
                                                     key={file.id}
                                                     onClick={() => toggleFile(file.id)}
                                                     className={`group flex w-full items-center justify-between rounded-lg p-2.5 text-left transition-all ${isSelected
-                                                        ? 'bg-primary/20 border border-primary/40'
-                                                        : 'hover:bg-white/5 border border-transparent'
+                                                            ? 'bg-primary/10 border border-primary/40'
+                                                            : 'hover:bg-gray-50 border border-transparent'
                                                         }`}
                                                 >
                                                     <div className="flex items-center gap-3 overflow-hidden">
-                                                        <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded ${isSelected ? 'bg-primary text-black' : 'bg-white/10 text-primary'
+                                                        <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded ${isSelected ? 'bg-primary text-black' : 'bg-gray-100 text-primary'
                                                             }`}>
                                                             <FileText className="h-3 w-3" />
                                                         </div>
                                                         <div className="overflow-hidden">
-                                                            <div className={`truncate text-sm font-medium ${isSelected ? 'text-white' : 'text-gray-400'}`}>
+                                                            <div className={`truncate text-sm font-bold ${isSelected ? 'text-primary' : 'text-gray-700'}`}>
                                                                 {file.name}
                                                             </div>
                                                         </div>
