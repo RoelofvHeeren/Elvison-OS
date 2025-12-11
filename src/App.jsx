@@ -1,37 +1,49 @@
-import { useState } from 'react'
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
-import Navbar from './components/Navbar'
+import { useRef, useEffect, useState } from 'react'
+import { Routes, Route, useNavigate, useLocation } from 'react-router-dom'
 import Sidebar from './components/Sidebar'
-import CRM from './routes/CRM'
-import Connections from './routes/Connections'
-import NewJob from './routes/NewJob'
-import KnowledgeBase from './routes/KnowledgeBase'
 import AgentConfig from './routes/AgentConfig'
+import KnowledgeBase from './routes/KnowledgeBase'
+import AgentRunner from './routes/AgentRunner'
 
 const App = () => {
-  const [collapsed, setCollapsed] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const navigate = useNavigate()
+  const location = useLocation()
+
+  useEffect(() => {
+    if (location.pathname === '/') {
+      navigate('/runner')
+    }
+  }, [location, navigate])
 
   return (
-    <BrowserRouter>
-      <div className="flex min-h-screen text-gray-200">
-        <Sidebar collapsed={collapsed} onToggle={() => setCollapsed((v) => !v)} />
-        <div className={`flex min-h-screen flex-1 flex-col transition-[margin] duration-500 ease-[cubic-bezier(0.25,1,0.5,1)] ${collapsed ? 'ml-20' : 'ml-72'}`}>
-          <Navbar onToggleSidebar={() => setCollapsed((v) => !v)} />
-          <main className="pb-12">
-            <div className="mx-auto max-w-6xl px-4 sm:px-8">
-              <Routes>
-                <Route path="/" element={<Navigate to="/crm" replace />} />
-                <Route path="/crm" element={<CRM />} />
-                <Route path="/new-job" element={<NewJob />} />
-                <Route path="/agents" element={<AgentConfig />} />
-                <Route path="/connections" element={<Connections />} />
-                <Route path="/knowledge" element={<KnowledgeBase />} />
-              </Routes>
-            </div>
-          </main>
+    <div className="flex h-screen w-full bg-background text-foreground overflow-hidden font-sans">
+      <Sidebar collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} />
+
+      <main className={`flex-1 flex flex-col transition-all duration-300 ${sidebarCollapsed ? 'ml-20' : 'ml-0'}`}>
+        {/* Top Navbar */}
+        <div className="h-16 border-b border-white/10 bg-surface/50 backdrop-blur-md flex items-center justify-between px-6 shrink-0">
+          <div className="flex items-center gap-4">
+            <span className="text-sm font-medium text-gray-400">Environment:</span>
+            <span className="px-2 py-0.5 rounded text-xs bg-[#139187]/10 text-[#139187] border border-[#139187]/20 font-mono">
+              Development
+            </span>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="h-8 w-8 rounded-full bg-gradient-to-tr from-[#139187] to-cyan-400"></div>
+          </div>
         </div>
-      </div>
-    </BrowserRouter>
+
+        {/* Content Area */}
+        <div className="flex-1 overflow-hidden p-6 relative">
+          <Routes>
+            <Route path="/agents" element={<AgentConfig />} />
+            <Route path="/knowledge" element={<KnowledgeBase />} />
+            <Route path="/runner" element={<AgentRunner />} />
+          </Routes>
+        </div>
+      </main>
+    </div>
   )
 }
 

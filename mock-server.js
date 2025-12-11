@@ -1218,7 +1218,7 @@ app.post('/api/agents/config', (req, res) => {
   res.json({ success: true, config: AGENT_CONFIGS[agentKey] })
 })
 
-// POST /api/agents/run - Run the in-house agent workflow
+// POST /api/agents/run - Run the in-house agent workflow with Streaming
 app.post('/api/agents/run', async (req, res) => {
   const { prompt, vectorStoreId } = req.body
 
@@ -1226,34 +1226,51 @@ app.post('/api/agents/run', async (req, res) => {
     return res.status(400).json({ error: 'Prompt is required' })
   }
 
-  // Use a default Vector Store ID if none provided (mock or env var)
-  // In a real scenario, this would come from the user selecting a "Knowledge Base" document
+  // Set headers for SSE
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
+  const sendEvent = (type, data) => {
+    res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+
   const effectiveVectorStoreId = vectorStoreId || "vs_69003f222fa08191834fdf89585b93e0"
 
   try {
-    console.log('Starting In-House Agent Workflow...', {
+    console.log('Starting In-House Agent Workflow (Streaming)...', {
       prompt,
-      vectorStoreId: effectiveVectorStoreId,
-      agentConfigs: AGENT_CONFIGS
+      vectorStoreId: effectiveVectorStoreId
     })
+
+    // Listeners for workflow events
+    const listeners = {
+      onLog: (log) => {
+        sendEvent('log', log);
+      }
+    };
 
     // Run the agent with stored configs
     const result = await runAgentWorkflow(
       { input_as_text: prompt },
       {
         vectorStoreId: effectiveVectorStoreId,
-        agentConfigs: AGENT_CONFIGS // Pass the dynamic configs
+        agentConfigs: AGENT_CONFIGS,
+        listeners
       }
     )
 
-    res.json({ success: true, result })
+    sendEvent('result', result);
+    sendEvent('done', {});
+    res.end();
+
   } catch (err) {
     console.error('In-House Agent Error:', err)
-    res.status(500).json({
-      error: 'Agent execution failed',
-      detail: err.message,
-      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
-    })
+    sendEvent('error', {
+      message: err.message,
+      detail: err.message
+    });
+    res.end();
   }
 })
 
