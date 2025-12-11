@@ -4,6 +4,8 @@ import Sidebar from './components/Sidebar'
 import AgentConfig from './routes/AgentConfig'
 import KnowledgeBase from './routes/KnowledgeBase'
 import AgentRunner from './routes/AgentRunner'
+import CRM from './routes/CRM'
+import Connections from './routes/Connections'
 
 const App = () => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
@@ -27,6 +29,8 @@ const App = () => {
             <Route path="/agents" element={<AgentConfig />} />
             <Route path="/knowledge" element={<KnowledgeBase />} />
             <Route path="/runner" element={<AgentRunner />} />
+            <Route path="/crm" element={<CRM />} />
+            <Route path="/connections" element={<Connections />} />
           </Routes>
         </div>
       </main>

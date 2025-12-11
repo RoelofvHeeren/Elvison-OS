@@ -74,10 +74,10 @@ export const runAgentWorkflow = async (input, config) => {
         const tools = [];
 
         // 1. File Search Tool (if files are linked)
-        if (agentConfig?.linkedFileIds?.length > 0) {
-            tools.push(fileSearchTool(agentConfig.linkedFileIds));
-        } else if (vectorStoreId) {
-            // Fallback to global vector store if no specific files linked
+        // Note: linkedFileIds are FILE IDs. fileSearchTool expects VECTOR STORE IDs.
+        // We cannot pass file IDs directly to vector_store_ids.
+        // For now, only use the global vectorStoreId if it is valid.
+        if (vectorStoreId && vectorStoreId.startsWith('vs_')) {
             tools.push(fileSearchTool([vectorStoreId]));
         }
 

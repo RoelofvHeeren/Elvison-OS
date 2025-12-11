@@ -4,7 +4,6 @@ import { LayoutDashboard, ListChecks, Plug, Sparkles, Table, Wand2, BookOpen, Bo
 
 const navItems = [
   { to: '/crm', label: 'CRM', icon: LayoutDashboard },
-  { to: '/new-job', label: 'New Job', icon: Wand2 },
   { to: '/agents', label: 'Agents', icon: Bot },
   { to: '/runner', label: 'Run Workflow', icon: PlayCircle },
   { to: '/connections', label: 'Connections', icon: Plug },
