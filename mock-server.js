@@ -1183,6 +1183,47 @@ app.all(/^\/sheet-mcp\/.*$/, proxyMcp(LOCAL_SHEET_MCP_BASE))
 app.post('/v1/workflows/runs', proxyOpenAI)
 app.get('/v1/workflows/runs/:run_id', proxyOpenAI)
 
+// Knowledge Base Mock Data
+const KNOWLEDGE_BASE_FILES = [
+  { id: 'file_1', name: 'Company_Guidelines.pdf', status: 'ready', uploadedAt: Date.now() - 100000 },
+  { id: 'file_2', name: 'Product_Specs_v2.txt', status: 'processing', uploadedAt: Date.now() - 5000 }
+]
+
+// GET /api/knowledge/files
+app.get('/api/knowledge/files', (req, res) => {
+  res.json({ files: KNOWLEDGE_BASE_FILES })
+})
+
+// POST /api/knowledge/upload
+app.post('/api/knowledge/upload', (req, res) => {
+  // Mock file upload - since we don't have multer, we just assume success
+  // In a real app, you'd handle multipart/form-data here
+  const newFile = {
+    id: `file_${Date.now()}`,
+    name: `Uploaded_Document_${Date.now()}.pdf`, // Mock name since we're not parsing multipart
+    status: 'processing',
+    uploadedAt: Date.now()
+  }
+  KNOWLEDGE_BASE_FILES.push(newFile)
+
+  // Simulate processing delay
+  setTimeout(() => {
+    newFile.status = 'ready'
+  }, 3000)
+
+  res.json({ ok: true, file: newFile })
+})
+
+// DELETE /api/knowledge/files/:id
+app.delete('/api/knowledge/files/:id', (req, res) => {
+  const { id } = req.params
+  const index = KNOWLEDGE_BASE_FILES.findIndex(f => f.id === id)
+  if (index !== -1) {
+    KNOWLEDGE_BASE_FILES.splice(index, 1)
+  }
+  res.json({ ok: true })
+})
+
 // Serve built frontend when running in production (Railway)
 if (process.env.NODE_ENV === 'production') {
   const distPath = path.join(__dirname, 'dist')

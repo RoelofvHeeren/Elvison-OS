@@ -5,6 +5,7 @@ import Sidebar from './components/Sidebar'
 import CRM from './routes/CRM'
 import Connections from './routes/Connections'
 import NewJob from './routes/NewJob'
+import KnowledgeBase from './routes/KnowledgeBase'
 
 const App = () => {
   const [collapsed, setCollapsed] = useState(false)
@@ -22,6 +23,7 @@ const App = () => {
                 <Route path="/crm" element={<CRM />} />
                 <Route path="/new-job" element={<NewJob />} />
                 <Route path="/connections" element={<Connections />} />
+                <Route path="/knowledge" element={<KnowledgeBase />} />
               </Routes>
             </div>
           </main>

@@ -1,11 +1,12 @@
 import PropTypes from 'prop-types'
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, ListChecks, Plug, Sparkles, Table, Wand2 } from 'lucide-react'
+import { LayoutDashboard, ListChecks, Plug, Sparkles, Table, Wand2, BookOpen } from 'lucide-react'
 
 const navItems = [
   { to: '/crm', label: 'CRM', icon: LayoutDashboard },
   { to: '/new-job', label: 'New Job', icon: Wand2 },
   { to: '/connections', label: 'Connections', icon: Plug },
+  { to: '/knowledge', label: 'Knowledge Base', icon: BookOpen },
 ]
 
 const Sidebar = ({ collapsed, onToggle }) => (
