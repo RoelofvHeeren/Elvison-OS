@@ -68,27 +68,29 @@ export const runAgentWorkflow = async (input, config) => {
     const { vectorStoreId, sheetId, agentConfigs = {} } = config;
 
     // Helper to get tools for an agent
-    const getToolsForAgent = (agentKey, defaultTools) => {
+    const getToolsForAgent = (agentKey) => {
         const agentConfig = agentConfigs[agentKey];
+        const tools = [];
+
+        // 1. File Search Tool (if files are linked)
         if (agentConfig?.linkedFileIds?.length > 0) {
-            // Create a specific file search tool for this agent with its linked files
-            const customFileSearch = fileSearchTool(agentConfig.linkedFileIds);
-
-            // Replace any existing file_search tool with the custom one
-            return defaultTools.map(t =>
-                (t.type === 'hosted_tool' && t.name === 'file_search') ? customFileSearch : t
-            );
+            tools.push(fileSearchTool(agentConfig.linkedFileIds));
+        } else if (vectorStoreId) {
+            // Fallback to global vector store if no specific files linked
+            tools.push(fileSearchTool([vectorStoreId]));
         }
 
-        // Fallback: if a global vectorStoreId was passed, ensure the default fileSearch uses it
-        if (vectorStoreId) {
-            const defaultFileSearch = fileSearchTool([vectorStoreId]);
-            return defaultTools.map(t =>
-                (t.type === 'hosted_tool' && t.name === 'file_search') ? defaultFileSearch : t
-            );
+        // 2. MCP Tools (based on enabledToolIds)
+        const enabledIds = agentConfig?.enabledToolIds || [];
+
+        if (enabledIds.includes('sheet_mcp')) {
+            tools.push(sheetMcp);
+        }
+        if (enabledIds.includes('apollo_mcp')) {
+            tools.push(apolloMcp);
         }
 
-        return defaultTools;
+        return tools;
     };
 
     // Helper to get instructions
@@ -121,8 +123,6 @@ export const runAgentWorkflow = async (input, config) => {
         serverUrl: "https://apollo-mcp-v4-production.up.railway.app/sse?apiKey=apollo-mcp-client-key-01"
     });
 
-    const baseFileSearch = fileSearchTool([]); // Placeholder, will be replaced by helper
-
     // --- Agent Definitions ---
 
     // 1. Company Finder
@@ -138,8 +138,8 @@ The remainder of the text after removing the extracted number. This may include 
     const companyFinder = new Agent({
         name: "Company Finder",
         instructions: getInstructions('company_finder', finderDefaultInst),
-        model: "gpt-4o", // User had "gpt-5.1" which isn't standard public yet, falling back to 4o or 4-turbo
-        tools: getToolsForAgent('company_finder', [baseFileSearch, sheetMcp]),
+        model: "gpt-4o",
+        tools: getToolsForAgent('company_finder'),
         outputType: CompanyFinderSchema,
     });
 
@@ -161,7 +161,7 @@ No text outside the JSON.`;
         name: "Company Profiler",
         instructions: getInstructions('company_profiler', profilerDefaultInst),
         model: "gpt-4o",
-        tools: getToolsForAgent('company_profiler', [baseFileSearch]),
+        tools: getToolsForAgent('company_profiler'),
         outputType: CompanyProfilerSchema,
     });
 
@@ -193,7 +193,7 @@ Return this JSON:
         name: "Apollo Lead Finder",
         instructions: getInstructions('apollo_lead_finder', leadDefaultInst),
         model: "gpt-4o",
-        tools: getToolsForAgent('apollo_lead_finder', [apolloMcp]),
+        tools: getToolsForAgent('apollo_lead_finder'),
         outputType: ApolloLeadFinderSchema,
     });
 
@@ -211,7 +211,7 @@ Output format Return this exact JSON object:
         name: "Outreach Creator",
         instructions: getInstructions('outreach_creator', outreachDefaultInst),
         model: "gpt-4o",
-        tools: getToolsForAgent('outreach_creator', [baseFileSearch]), // Note: reusing same fileSearch here for simplicity, or we could add a second one.
+        tools: getToolsForAgent('outreach_creator'),
         outputType: OutreachCreatorSchema,
     });
 
@@ -228,7 +228,7 @@ Output JSON: { "spreadsheet_url": "...", "status": "success" }`;
         name: "Sheet Builder",
         instructions: getInstructions('sheet_builder', sheetBuilderDefaultInst),
         model: "gpt-4o",
-        tools: getToolsForAgent('sheet_builder', [sheetMcp]),
+        tools: getToolsForAgent('sheet_builder'),
         outputType: SheetBuilderSchema,
     });
 

@@ -1186,11 +1186,11 @@ app.get('/v1/workflows/runs/:run_id', proxyOpenAI)
 
 // Agent Configuration Store
 const AGENT_CONFIGS = {
-  company_finder: { instructions: '', linkedFileIds: [] },
-  company_profiler: { instructions: '', linkedFileIds: [] },
-  apollo_lead_finder: { instructions: '', linkedFileIds: [] },
-  outreach_creator: { instructions: '', linkedFileIds: [] },
-  sheet_builder: { instructions: '', linkedFileIds: [] }
+  company_finder: { instructions: '', linkedFileIds: [], enabledToolIds: [] },
+  company_profiler: { instructions: '', linkedFileIds: [], enabledToolIds: [] },
+  apollo_lead_finder: { instructions: '', linkedFileIds: [], enabledToolIds: [] },
+  outreach_creator: { instructions: '', linkedFileIds: [], enabledToolIds: [] },
+  sheet_builder: { instructions: '', linkedFileIds: [], enabledToolIds: [] }
 }
 
 // GET /api/agents/config
@@ -1200,7 +1200,7 @@ app.get('/api/agents/config', (req, res) => {
 
 // POST /api/agents/config
 app.post('/api/agents/config', (req, res) => {
-  const { agentKey, instructions, linkedFileIds } = req.body
+  const { agentKey, instructions, linkedFileIds, enabledToolIds } = req.body
   if (!agentKey || !AGENT_CONFIGS[agentKey]) { // Allow empty instructions/files
     return res.status(400).json({ error: 'Invalid agent key' })
   }
@@ -1210,6 +1210,9 @@ app.post('/api/agents/config', (req, res) => {
   }
   if (Array.isArray(linkedFileIds)) {
     AGENT_CONFIGS[agentKey].linkedFileIds = linkedFileIds
+  }
+  if (Array.isArray(enabledToolIds)) {
+    AGENT_CONFIGS[agentKey].enabledToolIds = enabledToolIds
   }
 
   res.json({ success: true, config: AGENT_CONFIGS[agentKey] })
