@@ -351,14 +351,14 @@ No additional text.`;
     });
 
     // 3. Apollo Lead Finder
-    const leadDefaultInst = `You are Apollo Lead Ops. You receive input.results (company profiles). Identify up to 3 senior US-based capital decision makers per company.
+    const leadDefaultInst = `You are Apollo Lead Ops. You receive input.results (company profiles). Identify up to 3 senior capital decision makers per company.
     
     Tools: organization_search, employees_of_company, people_search, people_enrichment, get_person_email.
     
     Step 1: Resolve Org Identity (organization_search).
     Step 2: Retrieve Decision Makers (employees_of_company or people_search).
        Rank: CIO > Founder > Partner > Head > VP.
-       Location: US only.
+       Location: North America (US, Canada).
        Limit: 3 leads per company.
     Step 3: Enrich & Get Email (people_enrichment, get_person_email).
     
@@ -546,7 +546,8 @@ No additional text.`;
         if (!leadRes.finalOutput) throw new Error("Apollo Lead Finder failed");
 
         const leadOutput = leadRes.finalOutput;
-        logStep('Apollo Lead Finder', 'Leads found and enriched.');
+        const leadCount = leadOutput.leads ? leadOutput.leads.length : 0;
+        logStep('Apollo Lead Finder', `Found ${leadCount} enriched leads.`);
 
         // 4. Outreach Creator
         logStep('Outreach Creator', 'Drafting personalized messages...');
@@ -556,7 +557,8 @@ No additional text.`;
         if (!outreachRes.finalOutput) throw new Error("Outreach Creator failed");
 
         const outreachOutput = outreachRes.finalOutput;
-        logStep('Outreach Creator', 'Messages drafted.');
+        const msgCount = outreachOutput.leads ? outreachOutput.leads.length : 0;
+        logStep('Outreach Creator', `Drafted messages for ${msgCount} leads.`);
 
         // 5. Sheet Builder
         logStep('Sheet Builder', 'Exporting to Google Sheets...');
