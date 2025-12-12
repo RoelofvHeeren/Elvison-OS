@@ -457,6 +457,8 @@ No additional text.`;
         const MAX_ATTEMPTS = 5;
         const originalPrompt = input.input_as_text;
 
+        let lastRoundFound = 0; // Track previous success to adapt strategy
+
         // --- LOOP: Discovery & Profiling ---
         while (qualifiedCompanies.length < targetCount && attempts < MAX_ATTEMPTS) {
             attempts++;
@@ -475,6 +477,11 @@ No additional text.`;
             currentPrompt += `\n\n[SYSTEM INJECTION]: You are in iteration ${attempts}. Your GOAL is to find exactly ${needed} NEW companies.`;
             currentPrompt += `\n\n[CRITICAL]: You MUST verify you have read the 'Companies' sheet (using 'read_all_from_sheet') to exclude any firms we have already contacted. Do not skip this step.`;
 
+            // Smart Retry Logic for 0 results
+            if (attempts > 1 && lastRoundFound === 0) {
+                currentPrompt += `\n\n[ADAPTATION]: Your previous search yielded 0 results. You MUST use different, broader search terms now (e.g., "Top real estate investors Canada", "Major residential developers Canada", "Real estate private equity Toronto"). Do NOT repeat the same failed search queries.`;
+            }
+
             if (qualifiedCompanies.length > 0) {
                 const excludedNames = qualifiedCompanies.map(c => c.company_name).join(", ");
                 currentPrompt += `\n\n[EXCLUSION]: You MUST exclude these companies found in previous steps: ${excludedNames}.`;
@@ -490,6 +497,8 @@ No additional text.`;
             }
 
             const finderResults = finderRes.finalOutput.results || [];
+            lastRoundFound = finderResults.length; // Update for next iteration check
+
             if (finderResults.length === 0) {
                 logStep('Company Finder', 'No new companies found in this search.');
                 // If we found nothing new, breaking might be safer than looping infinitely, 
