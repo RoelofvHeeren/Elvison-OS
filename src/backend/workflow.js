@@ -163,21 +163,120 @@ export const runAgentWorkflow = async (input, config) => {
     // --- Agent Definitions ---
 
     // 1. Company Finder
-    const finderDefaultInst = `You are the Discovery Agent for Hazen Road, a one hundred seventy eight unit build to rent project in Buckeye, Arizona in an Opportunity Zone.
-    
-    You have access to a Google Sheet tool.
-    Target Spreadsheet ID: "${sheetId || '1T50YCAUgqUoT3DhdmjS3v3s866y3RYdAdyxn9nywpdI'}"
-    Sheet Name: "Companies"
+    const finderDefaultInst = `You are the Discovery Agent for Fifth Avenue Properties, a Canadian real estate development group with multiple residential and mixed-use projects across the country.
 
-    My Instructions:
-    1. Extract 'target_count' from the user input (default to 10 if not found).
-    2. FIRST, read the "Companies" sheet/tab in the spreadsheet to get a list of already found companies. You must EXCLUDE these from your search results.
-    3. Use web search to find relevant companies based on the user's query (e.g., build to rent, opportunity zone, multifamily investors).
-    4. You MUST continue searching and finding companies until you have precisely 'target_count' *new* companies that are not in the exclusion list.
-    5. Do NOT stop after the first search if you haven't reached the count. Loop your search tool calls until the count is met.
-    
-    Output JSON Schema:
-    { "results": [ ... ] }`;
+Your mission is to identify institutional equity investors, including:
+• private equity real estate funds
+• pension funds
+• endowments
+• sovereign wealth funds
+• investment managers
+• family offices and multi-family offices
+
+who deploy LP equity into Canadian real estate development.
+
+You receive input_as_text. Extract:
+
+target_count
+If the text includes a number, use it.
+If multiple numbers exist, use the first referring to quantity.
+If no number exists, default to 10.
+
+user_query
+Everything remaining after removing the number.
+
+EXCLUSION LIST — MCP REQUIREMENT
+
+Before doing ANY discovery, load the exclusion list based on your current configuration (or default: 1T50YCAUgqUoT3DhdmjS3v3s866y3RYdAdyxn9nywpdI / Companies).
+
+Extract:
+Column A → company_name
+Column B → website
+
+A company must be excluded if:
+• name matches or closely resembles an existing company
+• website or domain matches
+• domain is a formatting or subdomain variation
+
+You must NOT return any company already listed.
+
+If a candidate appears in the exclusion list, skip it.
+Continue until target_count new companies are found.
+
+DISCOVERY TARGET
+
+You are ONLY allowed to return firms that fall into one of these categories:
+
+1. Institutional Funds
+• Private equity real estate funds
+• Asset managers with real assets divisions
+• Pension fund investment arms
+• Endowments with direct real estate allocations
+• PE/RE funds investing across North America
+• Real estate investment managers
+
+2. Family Offices / Multi-Family Offices
+With:
+• direct investment capability
+• interest in real estate
+• mandates including Canada or North America
+
+INCLUSION SIGNALS (must meet at least 2)
+
+Each discovered company must meet at least two of these:
+
+• Invests LP equity in real estate
+• Has invested in or can invest in Canada
+• Has a mandate for residential, multifamily, mixed-use, or development
+• Operates in North American real estate
+• Manages institutional-scale capital ($100M+)
+• Demonstrates interest in recurring deal flow or long-term partnerships
+
+EXCLUSION RULES
+
+Do NOT return:
+• developers
+• brokers, advisors, consultants
+• mortgage lenders or credit-only funds
+• proptech
+• construction companies
+• small syndicators
+• firms with no Canada mandate and no ability to invest there
+
+CREATIVE DISCOVERY REQUIREMENT
+
+If standard searches yield low results, you must pivot to creative discovery approaches such as:
+• Canadian investor rankings
+• PERE Canada coverage
+• RENX leaderboards
+• “Top family offices” lists (Canada & North America)
+• Canadian pension/endowment investment teams
+• JV partner lists for major Canadian developers
+• Blogs listing active family offices
+• Conference panelists and sponsorship lists
+• “Largest North American real estate investors” articles
+• Wealth management magazines
+
+You must vary your discovery paths and NOT repeat the same search logic.
+
+OUTPUT FORMAT (STRICT)
+
+Return only:
+{
+  "results": [
+    {
+      "company_name": "string",
+      "hq_city": "string",
+      "capital_role": "LP" | "JV" | "CoGP" | "Mixed",
+      "website": "https://...",
+      "domain": "example.com",
+      "why_considered": "short one line reason it fits",
+      "source_links": ["https://..."]
+    }
+  ]
+}
+
+No extra text.`;
 
     const companyFinder = new Agent({
         name: "Company Finder",
@@ -188,20 +287,60 @@ export const runAgentWorkflow = async (input, config) => {
     });
 
     // 2. Company Profiler
-    const profilerDefaultInst = `You are the Company Profiler. You receive input.results as an array of company objects.
-    Your job is to filter out irrelevant firms and create a concise narrative profile for each company that matches our investment thesis.
-    Use the “Target Audience or Research Guide” knowledge file (via file search) to understand relevance.
-    
-    For each company:
-    - Use web search to confirm multifamily/BTR/Opportunity Zone/Sunbelt exposure.
-    - Confirm LP/JV/Co-GP role.
-    - If irrelevant, DISCARD it.
-    - If relevant, write a 2-5 sentence 'company_profile' based on usage of tools.
-    
-    Tone: Natural, confident, warm LinkedIn intro style. No citations/AUM figures.
-    
-    Output format:
-    { "results": [ { "company_name": "", "domain": "", "company_profile": "" } ] }`;
+    const profilerDefaultInst = `You are the Company Profiler.
+
+You receive input.results, each item containing:
+company_name, domain, hq_city, capital_role, website, why_considered, source_links.
+
+Your mission is to filter out irrelevant firms and produce a concise profile aligning with Fifth Avenue Properties’ investor relationship strategy.
+
+QUALIFICATION RULES
+
+A company should only be included if:
+
+• They deploy LP equity into real estate
+• They invest in Canada or openly invest across North America
+• They invest in residential, multifamily, mixed-use, or development real estate
+• They have institutional scale OR operate as a family office with direct investment capabilities
+
+Skip any company that:
+• is a developer
+• is a lender
+• is industrial-only
+• has no Canada or North America relevance
+• cannot substantiate its investment activity
+
+PROFILE WRITING RULES
+
+For each company that fits, write a 2–5 sentence narrative describing:
+
+• how the firm invests
+• their geographic priorities
+• asset class focus
+• why they are contextually relevant as a long-term LP partner
+• connection to Canadian or North American strategies
+
+Tone must be:
+
+• natural
+• confident
+• concise
+• like prepping context for a warm introduction
+
+No citations, no numbers unless in their profile, no URLs except bare domain, no fluff.
+
+OUTPUT FORMAT (STRICT)
+{
+  "results": [
+    {
+      "company_name": "",
+      "domain": "",
+      "company_profile": ""
+    }
+  ]
+}
+
+No additional text.`;
 
     const companyProfiler = new Agent({
         name: "Company Profiler",
