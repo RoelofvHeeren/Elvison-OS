@@ -444,32 +444,103 @@ No additional text.`;
             }
         });
 
-        // 1. Company Finder
-        logStep('Company Finder', 'Identifying potential companies...');
-        // Initial input
-        const finderInput = [{ role: "user", content: [{ type: "input_text", text: input.input_as_text }] }];
+        // 0. Parse Target Count
+        let targetCount = 10;
+        const countMatch = input.input_as_text.match(/\b(\d+)\b/);
+        if (countMatch) {
+            targetCount = parseInt(countMatch[1], 10);
+        }
+        logStep('Workflow', `Targeting ${targetCount} qualified companies.`);
 
-        const finderRes = await retryWithBackoff(() => runner.run(companyFinder, finderInput));
-        if (!finderRes.finalOutput) throw new Error("Company Finder failed");
+        let qualifiedCompanies = [];
+        let attempts = 0;
+        const MAX_ATTEMPTS = 5;
+        const originalPrompt = input.input_as_text;
 
-        const finderOutput = finderRes.finalOutput;
-        logStep('Company Finder', `Found ${finderOutput.results?.length} companies.`);
+        // --- LOOP: Discovery & Profiling ---
+        while (qualifiedCompanies.length < targetCount && attempts < MAX_ATTEMPTS) {
+            attempts++;
+            const needed = targetCount - qualifiedCompanies.length;
 
-        // 2. Profiler
-        logStep('Company Profiler', 'Filtering and profiling companies...');
-        // Pass clean input from previous output
-        const profilerInput = [{ role: "user", content: [{ type: "input_text", text: JSON.stringify(finderOutput) }] }];
+            // Only log if this is a re-run or substantial update
+            if (attempts > 1) {
+                logStep('Workflow', `Round ${attempts}: Need ${needed} more qualified companies (Found ${qualifiedCompanies.length}/${targetCount}).`);
+            } else {
+                logStep('Company Finder', `Identifying potential companies (Target: ${needed})...`);
+            }
 
-        const profilerRes = await retryWithBackoff(() => runner.run(companyProfiler, profilerInput));
-        if (!profilerRes.finalOutput) throw new Error("Profiler failed");
+            // Construct prompt for this iteration
+            let currentPrompt = originalPrompt;
+            // Inject strict instruction override for this specific batch
+            currentPrompt += `\n\n[SYSTEM INJECTION]: You are in iteration ${attempts}. Your GOAL is to find exactly ${needed} NEW companies.`;
 
-        const profilerOutput = profilerRes.finalOutput;
-        logStep('Company Profiler', `Profiled ${profilerOutput?.results?.length} qualified companies.`);
+            if (qualifiedCompanies.length > 0) {
+                const excludedNames = qualifiedCompanies.map(c => c.company_name).join(", ");
+                currentPrompt += `\n\n[EXCLUSION]: You MUST exclude these companies found in previous steps: ${excludedNames}.`;
+            }
+
+            // 1. Company Finder
+            const finderInput = [{ role: "user", content: [{ type: "input_text", text: currentPrompt }] }];
+            const finderRes = await retryWithBackoff(() => runner.run(companyFinder, finderInput));
+
+            if (!finderRes.finalOutput) {
+                logStep('Company Finder', 'Agent failed to return output. Retrying...');
+                continue;
+            }
+
+            const finderResults = finderRes.finalOutput.results || [];
+            if (finderResults.length === 0) {
+                logStep('Company Finder', 'No new companies found in this search.');
+                // If we found nothing new, breaking might be safer than looping infinitely, 
+                // but let's give it one more chance if we haven't hit max attempts, 
+                // reliant on the agent's creativity or "Creative Discovery" instruction.
+                if (attempts >= MAX_ATTEMPTS) break;
+                continue;
+            }
+
+            logStep('Company Finder', `Found ${finderResults.length} candidates. Profiling...`);
+
+            // 2. Profiler
+            // Run Profiler only on the new candidates
+            const profilerInput = [{ role: "user", content: [{ type: "input_text", text: JSON.stringify({ results: finderResults }) }] }];
+            const profilerRes = await retryWithBackoff(() => runner.run(companyProfiler, profilerInput));
+
+            if (!profilerRes.finalOutput) {
+                logStep('Company Profiler', 'Agent failed. Skipping this batch.');
+                continue;
+            }
+
+            const profilerResults = profilerRes.finalOutput.results || [];
+            const qualifiedInBatch = [];
+
+            // Filter out empty profiles (rejected)
+            for (const company of profilerResults) {
+                if (company.company_profile && company.company_name) {
+                    // Check local duplicate
+                    if (!qualifiedCompanies.some(c => c.company_name === company.company_name)) {
+                        qualifiedInBatch.push(company);
+                    }
+                }
+            }
+
+            if (qualifiedInBatch.length === 0) {
+                logStep('Company Profiler', `None of the ${finderResults.length} candidates passed qualification.`);
+            } else {
+                logStep('Company Profiler', `Qualified ${qualifiedInBatch.length} companies in this batch.`);
+                qualifiedCompanies = [...qualifiedCompanies, ...qualifiedInBatch];
+            }
+        }
+
+        // --- Post-Loop Checks ---
+        if (qualifiedCompanies.length === 0) {
+            throw new Error(`Workflow failed: Could not find any qualified companies after ${attempts} attempts.`);
+        }
+
+        logStep('Workflow', `Loop complete. Proceeding with ${qualifiedCompanies.length} qualified companies.`);
 
         // 3. Lead Finder
         logStep('Apollo Lead Finder', 'Finding decision makers...');
-        // Pass clean input from previous output
-        const leadInput = [{ role: "user", content: [{ type: "input_text", text: JSON.stringify(profilerOutput) }] }];
+        const leadInput = [{ role: "user", content: [{ type: "input_text", text: JSON.stringify({ results: qualifiedCompanies }) }] }];
 
         const leadRes = await retryWithBackoff(() => runner.run(apolloLeadFinder, leadInput));
         if (!leadRes.finalOutput) throw new Error("Apollo Lead Finder failed");
@@ -479,7 +550,6 @@ No additional text.`;
 
         // 4. Outreach Creator
         logStep('Outreach Creator', 'Drafting personalized messages...');
-        // Pass clean input from previous output
         const outreachInput = [{ role: "user", content: [{ type: "input_text", text: JSON.stringify(leadOutput) }] }];
 
         const outreachRes = await retryWithBackoff(() => runner.run(outreachCreator, outreachInput));
@@ -490,7 +560,6 @@ No additional text.`;
 
         // 5. Sheet Builder
         logStep('Sheet Builder', 'Exporting to Google Sheets...');
-        // Pass clean input from previous output
         const sheetInput = [{ role: "user", content: [{ type: "input_text", text: JSON.stringify(outreachOutput) }] }];
 
         const sheetRes = await retryWithBackoff(() => runner.run(sheetBuilder, sheetInput));
