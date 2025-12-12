@@ -1,23 +1,75 @@
 import { useState, useEffect } from 'react'
-import { Upload, FileText, Trash2, CheckCircle, Clock } from 'lucide-react'
+import { Upload, FileText, Trash2, CheckCircle, Clock, RefreshCw } from 'lucide-react'
+import { saveFileToDB, getAllFilesFromDB, deleteFileFromDB } from '../utils/db'
 
 const KnowledgeBase = () => {
     const [files, setFiles] = useState([])
     const [uploading, setUploading] = useState(false)
+    const [syncing, setSyncing] = useState(false)
+    // Vector Store ID Persistence
+    const [vectorStoreId, setVectorStoreId] = useState('')
 
     useEffect(() => {
+        const savedId = localStorage.getItem('elvison_vector_store_id')
+        if (savedId) setVectorStoreId(savedId)
         fetchFiles()
     }, [])
 
+    const handleVectorStoreIdChange = (e) => {
+        const newVal = e.target.value
+        setVectorStoreId(newVal)
+        localStorage.setItem('elvison_vector_store_id', newVal)
+    }
+
     const fetchFiles = async () => {
         try {
+            // 1. Fetch server files
             const res = await fetch('/api/knowledge/files')
+            let serverFiles = []
             if (res.ok) {
                 const data = await res.json()
-                setFiles(data.files || [])
+                serverFiles = data.files || []
             }
+            setFiles(serverFiles)
+
+            // 2. Fetch local DB files and Sync
+            const localFiles = await getAllFilesFromDB()
+
+            // Find files that are in DB but NOT on server
+            const missingOnServer = localFiles.filter(lf =>
+                !serverFiles.some(sf => sf.name === lf.name)
+            )
+
+            if (missingOnServer.length > 0) {
+                setSyncing(true)
+                console.log(`Syncing ${missingOnServer.length} files from local cache...`)
+
+                for (const fileRec of missingOnServer) {
+                    const formData = new FormData()
+                    formData.append('file', fileRec.blob)
+
+                    try {
+                        await fetch(`/api/knowledge/upload?filename=${encodeURIComponent(fileRec.name)}`, {
+                            method: 'POST',
+                            body: formData,
+                        })
+                    } catch (e) {
+                        console.error('Auto-sync failed for', fileRec.name, e)
+                    }
+                }
+
+                // Refresh list after sync
+                const postSyncRes = await fetch('/api/knowledge/files')
+                if (postSyncRes.ok) {
+                    const data = await postSyncRes.json()
+                    setFiles(data.files || [])
+                }
+                setSyncing(false)
+            }
+
         } catch (err) {
             console.error('Failed to fetch files', err)
+            setSyncing(false)
         }
     }
 
@@ -26,11 +78,16 @@ const KnowledgeBase = () => {
         if (!selectedFiles || selectedFiles.length === 0) return
 
         setUploading(true)
+        const file = selectedFiles[0]
         const formData = new FormData()
-        formData.append('file', selectedFiles[0])
+        formData.append('file', file)
 
         try {
-            const res = await fetch(`/api/knowledge/upload?filename=${encodeURIComponent(selectedFiles[0].name)}`, {
+            // Save to Local DB first
+            await saveFileToDB(file)
+
+            // Upload to Server
+            const res = await fetch(`/api/knowledge/upload?filename=${encodeURIComponent(file.name)}`, {
                 method: 'POST',
                 body: formData, // Browser automatically sets Content-Type to multipart/form-data
             })
@@ -46,6 +103,13 @@ const KnowledgeBase = () => {
 
     const handleDelete = async (id) => {
         try {
+            // Find file name to delete from DB (hacky since we only have ID here, but in this mock ID often == name or we find by ID)
+            // For robustness in this specific dev mock setup:
+            const fileToDelete = files.find(f => f.id === id)
+            if (fileToDelete) {
+                await deleteFileFromDB(fileToDelete.name)
+            }
+
             await fetch('/api/knowledge/files/' + id, { method: 'DELETE' })
             setFiles(prev => prev.filter(f => f.id !== id))
         } catch (err) {
@@ -53,25 +117,21 @@ const KnowledgeBase = () => {
         }
     }
 
-    // Vector Store ID Persistence
-    const [vectorStoreId, setVectorStoreId] = useState('')
-
-    useEffect(() => {
-        const savedId = localStorage.getItem('elvison_vector_store_id')
-        if (savedId) setVectorStoreId(savedId)
-    }, [])
-
-    const handleVectorStoreIdChange = (e) => {
-        const newVal = e.target.value
-        setVectorStoreId(newVal)
-        localStorage.setItem('elvison_vector_store_id', newVal)
-    }
+    // ... (Vector Store ID logic moved to top in previous edit) ...
 
     return (
         <div className="space-y-8 animate-fade-in">
-            <header>
-                <h1 className="font-serif text-3xl font-medium text-primary">Knowledge Base</h1>
-                <p className="text-gray-400 mt-2">Manage documents for your AI agents to reference.</p>
+            <header className="flex items-center justify-between">
+                <div>
+                    <h1 className="font-serif text-3xl font-medium text-primary">Knowledge Base</h1>
+                    <p className="text-gray-400 mt-2">Manage documents for your AI agents to reference.</p>
+                </div>
+                {syncing && (
+                    <div className="flex items-center gap-2 text-sm text-[#139187] bg-[#139187]/10 px-3 py-1.5 rounded-full animate-pulse border border-[#139187]/20">
+                        <RefreshCw className="h-4 w-4 animate-spin" />
+                        Restoring files from cache...
+                    </div>
+                )}
             </header>
 
             {/* Vector Store ID Input */}
