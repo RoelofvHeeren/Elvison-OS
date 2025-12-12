@@ -357,7 +357,7 @@ No additional text.`;
     
     Step 1: Resolve Org Identity (organization_search).
     Step 2: Retrieve Decision Makers (employees_of_company or people_search).
-       Rank: CIO > Founder > Partner > Head > VP.
+       Rank: CIO > Founder > Partner > Head > VP > Principal > President > Director > MD.
        Location: North America (US, Canada).
        Limit: 3 leads per company.
     Step 3: Enrich & Get Email (people_enrichment, get_person_email).
@@ -473,6 +473,7 @@ No additional text.`;
             let currentPrompt = originalPrompt;
             // Inject strict instruction override for this specific batch
             currentPrompt += `\n\n[SYSTEM INJECTION]: You are in iteration ${attempts}. Your GOAL is to find exactly ${needed} NEW companies.`;
+            currentPrompt += `\n\n[CRITICAL]: You MUST verify you have read the 'Companies' sheet (using 'read_all_from_sheet') to exclude any firms we have already contacted. Do not skip this step.`;
 
             if (qualifiedCompanies.length > 0) {
                 const excludedNames = qualifiedCompanies.map(c => c.company_name).join(", ");
