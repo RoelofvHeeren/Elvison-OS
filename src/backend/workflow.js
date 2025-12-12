@@ -154,7 +154,7 @@ export const runAgentWorkflow = async (input, config) => {
     const companyFinder = new Agent({
         name: "Company Finder",
         instructions: getInstructions('company_finder', finderDefaultInst),
-        model: "gpt-4o", // High reasoning for initial discovery
+        model: "gpt-5.2", // Superior reasoning (500k TPM limit)
         tools: getToolsForAgent('company_finder'),
         outputType: CompanyFinderSchema,
     });
@@ -176,7 +176,7 @@ export const runAgentWorkflow = async (input, config) => {
     const companyProfiler = new Agent({
         name: "Company Profiler",
         instructions: getInstructions('company_profiler', profilerDefaultInst),
-        model: "gpt-4o-mini", // Heavy tool usage (search) - keeps cost/rate limits in check
+        model: "gpt-5-mini", // High volume/throughput (500k TPM)
         tools: getToolsForAgent('company_profiler'),
         outputType: CompanyProfilerSchema,
     });
@@ -208,7 +208,7 @@ export const runAgentWorkflow = async (input, config) => {
     const apolloLeadFinder = new Agent({
         name: "Apollo Lead Finder",
         instructions: getInstructions('apollo_lead_finder', leadDefaultInst),
-        model: "gpt-4o-mini", // Efficient for structured tool calling
+        model: "gpt-5-mini", // High volume/throughput
         tools: getToolsForAgent('apollo_lead_finder'),
         outputType: ApolloLeadFinderSchema,
     });
@@ -226,7 +226,7 @@ export const runAgentWorkflow = async (input, config) => {
     const outreachCreator = new Agent({
         name: "Outreach Creator",
         instructions: getInstructions('outreach_creator', outreachDefaultInst),
-        model: "gpt-4o", // High quality for creative writing
+        model: "gpt-5.2", // Best quality for writing
         tools: getToolsForAgent('outreach_creator'),
         outputType: OutreachCreatorSchema,
     });
@@ -243,7 +243,7 @@ export const runAgentWorkflow = async (input, config) => {
     const sheetBuilder = new Agent({
         name: "Sheet Builder",
         instructions: getInstructions('sheet_builder', sheetBuilderDefaultInst),
-        model: "gpt-4o-mini", // Simple utility task
+        model: "gpt-5-mini", // Simple utility task
         tools: getToolsForAgent('sheet_builder'),
         outputType: SheetBuilderSchema,
     });
