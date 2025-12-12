@@ -1,5 +1,4 @@
 
-
 import { fileSearchTool, hostedMcpTool, webSearchTool, Agent, Runner, withTrace } from "@openai/agents";
 import { z } from "zod";
 
@@ -71,6 +70,7 @@ export const runAgentWorkflow = async (input, config) => {
     // Helper to get tools for an agent
     const getToolsForAgent = (agentKey) => {
         const agentConfig = agentConfigs[agentKey];
+        const configEnabledIds = agentConfig?.enabledToolIds;
         const tools = [];
 
         // 1. File Search Tool (if files are linked)
@@ -81,9 +81,32 @@ export const runAgentWorkflow = async (input, config) => {
             tools.push(fileSearchTool([vectorStoreId]));
         }
 
-        // 2. MCP Tools (based on enabledToolIds)
-        const enabledIds = agentConfig?.enabledToolIds || [];
+        // 2. Determine enabled tool IDs (use config if present, otherwise defaults)
+        let enabledIds = [];
+        if (configEnabledIds && Array.isArray(configEnabledIds)) {
+            enabledIds = configEnabledIds;
+        } else {
+            // Default tools per agent if no config provided
+            switch (agentKey) {
+                case 'company_finder':
+                    enabledIds = ['web_search', 'sheet_mcp'];
+                    break;
+                case 'company_profiler':
+                    enabledIds = ['web_search'];
+                    break;
+                case 'apollo_lead_finder':
+                    enabledIds = ['apollo_mcp']; // Relies on Apollo
+                    break;
+                case 'outreach_creator':
+                    enabledIds = []; // Relies on vector store (file search)
+                    break;
+                case 'sheet_builder':
+                    enabledIds = ['sheet_mcp'];
+                    break;
+            }
+        }
 
+        // 3. Attach matching tools
         if (enabledIds.includes('sheet_mcp')) {
             tools.push(sheetMcp);
         }
@@ -141,15 +164,20 @@ export const runAgentWorkflow = async (input, config) => {
 
     // 1. Company Finder
     const finderDefaultInst = `You are the Discovery Agent for Hazen Road, a one hundred seventy eight unit build to rent project in Buckeye, Arizona in an Opportunity Zone.
-    You receive a single string as input under the variable input_as_text. Your first job is to extract two values:
-    1. target_count
-    If the input text includes a number, use it as target_count.
-    If multiple numbers exist, use the first one that clearly refers to quantity.
-    If none exist, default target_count to 10.
-    2. user_query
-    The remainder of the text after removing the extracted number. This may include preferences, markets, capital roles, or focus areas.
     
-    IMPORTANT: You must return valid JSON matching the schema.`;
+    You have access to a Google Sheet tool.
+    Target Spreadsheet ID: "${sheetId || '1T50YCAUgqUoT3DhdmjS3v3s866y3RYdAdyxn9nywpdI'}"
+    Sheet Name: "Companies"
+
+    My Instructions:
+    1. Extract 'target_count' from the user input (default to 10 if not found).
+    2. FIRST, read the "Companies" sheet/tab in the spreadsheet to get a list of already found companies. You must EXCLUDE these from your search results.
+    3. Use web search to find relevant companies based on the user's query (e.g., build to rent, opportunity zone, multifamily investors).
+    4. You MUST continue searching and finding companies until you have precisely 'target_count' *new* companies that are not in the exclusion list.
+    5. Do NOT stop after the first search if you haven't reached the count. Loop your search tool calls until the count is met.
+    
+    Output JSON Schema:
+    { "results": [ ... ] }`;
 
     const companyFinder = new Agent({
         name: "Company Finder",
@@ -160,18 +188,20 @@ export const runAgentWorkflow = async (input, config) => {
     });
 
     // 2. Company Profiler
-    const profilerDefaultInst = `You are the Company Profiler. You receive input.results as an array of company objects, each containing company_name, hq_city, capital_role, website, domain, why_considered, and source_links.
+    const profilerDefaultInst = `You are the Company Profiler. You receive input.results as an array of company objects.
     Your job is to filter out irrelevant firms and create a concise narrative profile for each company that matches our investment thesis.
-    Use the “Target Audience or Research Guide” knowledge file to understand which firms are relevant. This includes investment style, market focus, asset strategies, and capital role alignment.
-    For each company
-    Use web search or internal knowledge files to confirm whether the firm invests in multifamily or build to rent, and whether they have any Sunbelt, Phoenix, or Opportunity Zone exposure.
-    Confirm that they typically invest as LP, JV, or co GP in growth market strategies.
-    If the company clearly does not fit the thesis, skip it completely and do not return it.
-    If relevant, write a two to five sentence company_profile based on: • how the firm invests • the markets they prioritise • their asset class focus • why they are contextually relevant to conversations about build to rent or growth markets
-    Rules for company_profile Write like you are preparing context for a warm LinkedIn introduction. The tone should be natural, confident, and concise. No citations, no bullet lists, no URLs other than the bare domain, and no AUM figures. Do not reference the Target Audience Guide explicitly. Do not include meta explanations or analysis outside the JSON.
-    Output format Return only this JSON object.
-    { "results": [ { "company_name": "", "domain": "", "company_profile": "" } ] }
-    No text outside the JSON.`;
+    Use the “Target Audience or Research Guide” knowledge file (via file search) to understand relevance.
+    
+    For each company:
+    - Use web search to confirm multifamily/BTR/Opportunity Zone/Sunbelt exposure.
+    - Confirm LP/JV/Co-GP role.
+    - If irrelevant, DISCARD it.
+    - If relevant, write a 2-5 sentence 'company_profile' based on usage of tools.
+    
+    Tone: Natural, confident, warm LinkedIn intro style. No citations/AUM figures.
+    
+    Output format:
+    { "results": [ { "company_name": "", "domain": "", "company_profile": "" } ] }`;
 
     const companyProfiler = new Agent({
         name: "Company Profiler",
@@ -182,28 +212,21 @@ export const runAgentWorkflow = async (input, config) => {
     });
 
     // 3. Apollo Lead Finder
-    const leadDefaultInst = `You are Apollo Lead Ops. You receive input.results as an array of company objects containing company_name, domain, and company_profile. Your job is to identify up to three senior US-based capital decision makers per company using Apollo MCP tools only, enrich them, and return a clean lead list.
-    🛠 Allowed Tools
-    Use only these tools: organization_search, employees_of_company, people_search, people_enrichment, get_person_email, organization_enrichment
-    ❌ Do not call Web Search, AI Research, or any other tools.
-    📌 Every tool call must include a reasoning field: a one-sentence justification for calling that tool.
-    🧭 Workflow
-    🔹 Step 1: Resolve the organization identity
-    Call organization_search using company_name and domain. Reasoning: “Resolve organization identity to retrieve employees.” Select the best match based on name and domain.
-    🔹 Step 2: Retrieve US-based decision makers
-    Call employees_of_company using the organization ID or domain. Reasoning: “List senior investment decision makers based in the US.”
-    If results are sparse, backfill using people_search with company_name, title filters, and US-only location filters. Reasoning: “Backfill US-based senior decision makers by title.”
-    Title Filters: Include: CIO, CEO, President, Founder, Co Founder, Managing Partner, General Partner, Principal, Head of Investments, Head of Capital Markets, Head of Portfolio Management, Head of Strategy, Director of Investments, Director of Capital Markets, VP of Investments, VP of Capital Markets, SVP, EVP Exclude: Analyst, Associate, Coordinator, Assistant, Intern, Consultant, SDR, AE, BD unless clearly labeled investor relations or capital raising.
-    Geography Constraint: Only select people located in the United States.
-    Ranking Logic: Prefer: C-level > Partner/Founder > Head/Director > VP Limit to 3 leads per company.
-    🔹 Step 3: Enrich each contact
-    Call people_enrichment to verify title and fetch LinkedIn URL. Reasoning: “Confirm title and get LinkedIn URL.”
-    Call get_person_email to retrieve best deliverable email. Reasoning: “Fetch best deliverable email.”
-    🧹 Deduplication: Deduplicate contacts by email or LinkedIn URL. 🧷 Attach the original company_profile unchanged to each lead.
-    📤 Output Format
-    Return this JSON:
-    {   "leads": [     {       "date_added": "YYYY-MM-DD",       "first_name": "",       "last_name": "",       "company_name": "",       "title": "",       "email": "",       "linkedin_url": "",       "company_website": "",       "company_profile": ""     }   ] } 
-    🕒 date_added must be today in UTC in YYYY-MM-DD format 🌐 company_website: Use the input domain or enriched org domain 🔍 Use empty strings for missing values 📦 Return JSON only, with no extra text or explanation`;
+    const leadDefaultInst = `You are Apollo Lead Ops. You receive input.results (company profiles). Identify up to 3 senior US-based capital decision makers per company.
+    
+    Tools: organization_search, employees_of_company, people_search, people_enrichment, get_person_email.
+    
+    Step 1: Resolve Org Identity (organization_search).
+    Step 2: Retrieve Decision Makers (employees_of_company or people_search).
+       Rank: CIO > Founder > Partner > Head > VP.
+       Location: US only.
+       Limit: 3 leads per company.
+    Step 3: Enrich & Get Email (people_enrichment, get_person_email).
+    
+    Attach the original 'company_profile' to each lead.
+    
+    Output JSON:
+    { "leads": [ { ... } ] }`;
 
     const apolloLeadFinder = new Agent({
         name: "Apollo Lead Finder",
@@ -214,14 +237,14 @@ export const runAgentWorkflow = async (input, config) => {
     });
 
     // 4. Outreach Creator
-    const outreachDefaultInst = `You are the Outreach Creation Agent. You receive input.leads as an array of lead objects. Each lead already contains date_added, first_name, last_name, company_name, title, email, linkedin_url, company_website, and company_profile.
-    Your job is to create personalised outreach messaging for each lead using the “Outreach Framework” vector store.
-    For each lead Read the company_profile carefully. This explains the company’s investment style, geographic focus, asset preferences, and relevance to build to rent or growth market strategies. Use the Outreach Framework file to determine tone, structure, and personalisation strategy.
-    Write a LinkedIn connection_request, maximum 300 characters. It must feel personal, reference something specific about the company_profile, and follow the Outreach Framework style rules.
-    Write a first touch email_message, maximum 300 characters. It must be concise, natural, tailored to the lead’s investment focus, and grounded in the company_profile. No generic templates.
-    Rules Do not modify date_added or company_profile. Do not change factual contact details. Do not include explanations. Return JSON only with no text outside the object.
-    Output format Return this exact JSON object:
-    { "leads": [ { "date_added": "", "first_name": "", "last_name": "", "company_name": "", "title": "", "email": "", "linkedin_url": "", "company_website": "", "connection_request": "", "email_message": "", "company_profile": "" } ] }`;
+    const outreachDefaultInst = `You are the Outreach Creation Agent.
+    For each lead in input.leads:
+    - Read 'company_profile'.
+    - Use "Outreach Framework" (via file search) for tone/style.
+    - Write 'connection_request' (max 300 chars).
+    - Write 'email_message' (max 300 chars, first touch, grounded in profile).
+    
+    Return the enriched lead objects in the JSON schema.`;
 
     const outreachCreator = new Agent({
         name: "Outreach Creator",
@@ -232,13 +255,18 @@ export const runAgentWorkflow = async (input, config) => {
     });
 
     // 5. Sheet Builder
-    const sheetBuilderDefaultInst = `You are the Sheet Builder Agent. You receive input.leads containing enriched leads with outreach messages.
-    Your job is to write these leads to a Google Sheet.
-    1. Create a new spreadsheet or use an existing one if a sheetId is provided in context (though typically we create new for a batch). Title it "Hazen Road Leads - [Date]".
-    2. Create a header row with: Date Added, First Name, Last Name, Company, Title, Email, LinkedIn, Website, Connection Request, Email Message, Profile.
-    3. Write all leads to the sheet.
-    4. Return the spreadsheet URL and status "success".
-    Output JSON: { "spreadsheet_url": "...", "status": "success" }`;
+    const sheetBuilderDefaultInst = `You are the Sheet Builder Agent.
+    
+    Target Spreadsheet ID: "${sheetId || '1T50YCAUgqUoT3DhdmjS3v3s866y3RYdAdyxn9nywpdI'}"
+    Target Sheet Name: "AI Lead Sheet"
+    
+    Your job:
+    1. Read 'input.leads'.
+    2. Write/Append these leads to the "AI Lead Sheet" in the spreadsheet above.
+       Columns: Date Added, First Name, Last Name, Company, Title, Email, LinkedIn, Website, Connection Request, Email Message, Profile.
+    3. Return the full spreadsheet URL (e.g. https://docs.google.com/spreadsheets/d/${sheetId || '1T50YCAUgqUoT3DhdmjS3v3s866y3RYdAdyxn9nywpdI'}/edit) and status "success".
+    
+    Use the 'insert_row' tool (or 'append_row' if you have it, otherwise loop insert_row).`;
 
     const sheetBuilder = new Agent({
         name: "Sheet Builder",
@@ -258,7 +286,6 @@ export const runAgentWorkflow = async (input, config) => {
                 if (error?.status === 429 || (error?.message && error.message.includes('429'))) {
                     attempt++;
                     if (attempt > retries) throw error;
-
                     const delay = initialDelay * Math.pow(2, attempt - 1); // Exponential backoff
                     console.warn(`Rate limit hit (429). Retrying in ${delay / 1000}s (Attempt ${attempt}/${retries})...`);
                     await new Promise(resolve => setTimeout(resolve, delay));
@@ -331,6 +358,11 @@ export const runAgentWorkflow = async (input, config) => {
         if (!sheetRes.finalOutput) throw new Error("Sheet Builder failed");
 
         logStep('Sheet Builder', 'Export complete.');
-        return sheetRes.finalOutput;
+
+        // Return structured result containing sheet URL and the actual lead data for the logbook
+        return {
+            ...sheetRes.finalOutput,
+            leads: outreachOutput.leads
+        };
     });
 };

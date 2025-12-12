@@ -1,5 +1,7 @@
+
 import { useState, useEffect, useRef } from 'react'
-import { PlayCircle, Terminal, CheckCircle, AlertCircle, Loader2, Send, FileText, Bot } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { PlayCircle, Terminal, CheckCircle, AlertCircle, Loader2, Send, FileText, Bot, Users } from 'lucide-react'
 
 const STEPS = [
     { id: 'Company Finder', label: 'Company Finder' },
@@ -10,6 +12,7 @@ const STEPS = [
 ]
 
 const AgentRunner = () => {
+    const navigate = useNavigate()
     const [prompt, setPrompt] = useState('')
     const [isRunning, setIsRunning] = useState(false)
     const [logs, setLogs] = useState([])
@@ -102,9 +105,7 @@ const AgentRunner = () => {
                             } else if (type === 'error') {
                                 setError(data.message)
                                 setIsRunning(false)
-                                saveJobToHistory(null) // Save failure is tough here because error state is set but not passed to saveJob. 
-                                // Actually, better to save failure in the catch block or here if we pass error msg.
-                                // We'll rely on the fact that result is null for failure.
+                                saveJobToHistory(null)
                             } else if (type === 'done') {
                                 setIsRunning(false)
                             }
@@ -278,19 +279,15 @@ const AgentRunner = () => {
                             <div>
                                 <h3 className="text-lg font-bold text-white">Workflow Completed Successfully</h3>
                                 <p className="text-emerald-200/80 mt-1 text-sm">
-                                    Spreadsheet created and populated with {result.status === 'success' ? 'all' : ''} leads.
+                                    {result.leads ? `Generated ${result.leads.length} leads and wrote to spreadsheet.` : 'Spreadsheet populated.'}
                                 </p>
-                                {result.spreadsheet_url && (
-                                    <a
-                                        href={result.spreadsheet_url}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="mt-3 inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-bold text-black transition-all hover:bg-emerald-400"
-                                    >
-                                        <FileText className="h-4 w-4" />
-                                        Open Spreadsheet
-                                    </a>
-                                )}
+                                <button
+                                    onClick={() => navigate('/crm')}
+                                    className="mt-3 inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-bold text-black transition-all hover:bg-emerald-400"
+                                >
+                                    <Users className="h-4 w-4" />
+                                    Go to CRM
+                                </button>
                             </div>
                         </div>
                     </div>
