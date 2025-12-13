@@ -13,7 +13,7 @@ const STEPS = [
 
 const AgentRunner = () => {
     const navigate = useNavigate()
-    const [prompt, setPrompt] = useState('')
+    const [prompt, setPrompt] = useState('Find 3 law firms in Toronto, Canada and identify 1 Partner per firm.')
     const [isRunning, setIsRunning] = useState(false)
     const [logs, setLogs] = useState([])
     const [currentStep, setCurrentStep] = useState(null)
@@ -27,7 +27,7 @@ const AgentRunner = () => {
 
     // Load prompt from local storage
     useEffect(() => {
-        const savedPrompt = localStorage.getItem('elvison_prompt')
+        const savedPrompt = localStorage.getItem('elvison_prompt_diagnostic')
         if (savedPrompt) setPrompt(savedPrompt)
 
         scrollToBottom()
@@ -52,7 +52,7 @@ const AgentRunner = () => {
         if (!prompt.trim()) return
 
         // Persist prompt
-        localStorage.setItem('elvison_prompt', prompt)
+        localStorage.setItem('elvison_prompt_diagnostic', prompt)
 
         setIsRunning(true)
         setLogs([])
