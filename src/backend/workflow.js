@@ -232,7 +232,7 @@ export const runAgentWorkflow = async (input, config) => {
     Step 1: Resolve Org Identity.
     Step 2: Find 'Partner' or 'Lawyer'.
        Location: Canada.
-       Limit: 2 leads per company.
+       Limit: 1 lead per company (STRICT).
     Step 3: Enrich & Get Email.
     
     Output JSON:
