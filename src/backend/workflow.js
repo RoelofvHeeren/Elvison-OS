@@ -356,7 +356,10 @@ No additional text.`;
     Tools: organization_search, employees_of_company, people_search, people_enrichment, get_person_email.
     
     Step 1: Resolve Org Identity (organization_search).
-    Step 2: Retrieve Decision Makers (employees_of_company or people_search).
+    Step 2: Retrieve Decision Makers.
+       STRATEGY A: Use 'employees_of_company' with title keywords (Partner, Principal, Director, VP, Head, Founder, President, MD).
+       STRATEGY B (Fallback): If A yields < 3 leads, use 'people_search' filtering by Organization ID/Domain and keywords ("Real Estate", "Capital", "Investment", "Acquisitions", "Development").
+       
        Rank: CIO > Founder > Partner > Head > VP > Principal > President > Director > MD.
        Location: North America (US, Canada).
        Limit: 3 leads per company.
@@ -458,6 +461,7 @@ No additional text.`;
         const originalPrompt = input.input_as_text;
 
         let lastRoundFound = 0; // Track previous success to adapt strategy
+        const debugLog = { discovery: [], qualification: [], apollo: [] };
 
         // --- LOOP: Discovery & Profiling ---
         while (qualifiedCompanies.length < targetCount && attempts < MAX_ATTEMPTS) {
@@ -498,6 +502,7 @@ No additional text.`;
 
             const finderResults = finderRes.finalOutput.results || [];
             lastRoundFound = finderResults.length; // Update for next iteration check
+            debugLog.discovery.push({ round: attempts, results: finderResults });
 
             if (finderResults.length === 0) {
                 logStep('Company Finder', 'No new companies found in this search.');
@@ -532,6 +537,7 @@ No additional text.`;
                     }
                 }
             }
+            debugLog.qualification.push({ round: attempts, approved: qualifiedInBatch, rejectedCount: finderResults.length - qualifiedInBatch.length });
 
             if (qualifiedInBatch.length === 0) {
                 logStep('Company Profiler', `None of the ${finderResults.length} candidates passed qualification.`);
@@ -558,6 +564,7 @@ No additional text.`;
         const leadOutput = leadRes.finalOutput;
         const leadCount = leadOutput.leads ? leadOutput.leads.length : 0;
         logStep('Apollo Lead Finder', `Found ${leadCount} enriched leads.`);
+        debugLog.apollo = leadOutput.leads || [];
 
         // 4. Outreach Creator
         logStep('Outreach Creator', 'Drafting personalized messages...');
@@ -582,7 +589,8 @@ No additional text.`;
         // Return structured result containing sheet URL and the actual lead data for the logbook
         return {
             ...sheetRes.finalOutput,
-            leads: outreachOutput.leads
+            leads: outreachOutput.leads,
+            debug: debugLog
         };
     });
 };

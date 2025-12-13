@@ -1,6 +1,6 @@
 
 import { useState, useEffect } from 'react'
-import { Book, Clock, CheckCircle, AlertCircle, Trash2, FileText, ChevronRight, User, Building, Mail } from 'lucide-react'
+import { Book, Clock, CheckCircle, AlertCircle, Trash2, FileText, ChevronRight, ChevronDown, User, Building, Mail } from 'lucide-react'
 
 const Logbook = () => {
     const [jobs, setJobs] = useState([])
@@ -115,31 +115,136 @@ const Logbook = () => {
                                         )}
 
                                         {/* Expanded Leads View */}
-                                        {expandedJobId === job.id && job.result?.leads && (
-                                            <div className="mt-4 space-y-2 border-t border-white/10 pt-4 animate-in slide-in-from-top-2 duration-200">
-                                                {job.result.leads.map((lead, i) => (
-                                                    <div key={i} className="flex flex-col md:flex-row md:items-center gap-4 p-3 rounded-lg bg-white/5 border border-white/5">
-                                                        <div className="flex-1 min-w-0">
-                                                            <div className="flex items-center gap-2 text-white font-bold text-sm">
-                                                                <User className="h-3.5 w-3.5 text-gray-400" />
-                                                                {lead.first_name} {lead.last_name}
+                                        {expandedJobId === job.id && (
+                                            <div className="mt-4 space-y-6 border-t border-white/10 pt-4 animate-in slide-in-from-top-2 duration-200">
+
+                                                {/* Leads List */}
+                                                {job.result?.leads && job.result.leads.length > 0 ? (
+                                                    <div className="space-y-2">
+                                                        <h4 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3">Generated Leads</h4>
+                                                        {job.result.leads.map((lead, i) => (
+                                                            <div key={i} className="flex flex-col md:flex-row md:items-center gap-4 p-3 rounded-lg bg-white/5 border border-white/5 hover:bg-white/10 transition-colors">
+                                                                <div className="flex-1 min-w-0">
+                                                                    <div className="flex items-center gap-2 text-white font-bold text-sm">
+                                                                        <User className="h-3.5 w-3.5 text-gray-400" />
+                                                                        {lead.first_name} {lead.last_name}
+                                                                    </div>
+                                                                    <div className="text-xs text-gray-400 mt-0.5">{lead.title}</div>
+                                                                </div>
+                                                                <div className="flex-1 min-w-0">
+                                                                    <div className="flex items-center gap-2 text-sm text-gray-300">
+                                                                        <Building className="h-3.5 w-3.5 text-gray-400" />
+                                                                        {lead.company_name}
+                                                                    </div>
+                                                                </div>
+                                                                <div className="flex-1 min-w-0">
+                                                                    <div className="flex items-center gap-2 text-sm text-gray-300">
+                                                                        <Mail className="h-3.5 w-3.5 text-gray-400" />
+                                                                        {lead.email || 'N/A'}
+                                                                    </div>
+                                                                </div>
                                                             </div>
-                                                            <div className="text-xs text-gray-400 mt-0.5">{lead.title}</div>
-                                                        </div>
-                                                        <div className="flex-1 min-w-0">
-                                                            <div className="flex items-center gap-2 text-sm text-gray-300">
-                                                                <Building className="h-3.5 w-3.5 text-gray-400" />
-                                                                {lead.company_name}
-                                                            </div>
-                                                        </div>
-                                                        <div className="flex-1 min-w-0">
-                                                            <div className="flex items-center gap-2 text-sm text-gray-300">
-                                                                <Mail className="h-3.5 w-3.5 text-gray-400" />
-                                                                {lead.email || 'N/A'}
-                                                            </div>
-                                                        </div>
+                                                        ))}
                                                     </div>
-                                                ))}
+                                                ) : (
+                                                    <div className="text-center p-4 text-gray-500 italic text-sm">No final leads generated in this run.</div>
+                                                )}
+
+                                                {/* Debug / Execution Trace */}
+                                                {job.result?.debug && (
+                                                    <div className="space-y-2">
+                                                        <h4 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3">Execution Details</h4>
+
+                                                        {/* Phase 1: Discovery */}
+                                                        <details className="group bg-black/20 rounded-lg border border-white/5 open:bg-black/30 transition-all">
+                                                            <summary className="flex items-center justify-between p-3 cursor-pointer select-none">
+                                                                <div className="flex items-center gap-2 text-sm font-medium text-purple-300">
+                                                                    <div className="h-2 w-2 rounded-full bg-purple-400" />
+                                                                    Phase 1: Discovery Rounds
+                                                                </div>
+                                                                <ChevronDown className="h-4 w-4 text-gray-500 group-open:rotate-180 transition-transform" />
+                                                            </summary>
+                                                            <div className="p-3 pt-0 text-sm space-y-3 border-t border-white/5 mt-2 pt-3">
+                                                                {job.result.debug.discovery.map((round, idx) => (
+                                                                    <div key={idx} className="bg-white/5 p-2 rounded">
+                                                                        <div className="text-xs text-gray-400 font-mono mb-1">Round {round.round}</div>
+                                                                        <div className="text-gray-200">Found {round.results.length} candidates</div>
+                                                                        <ul className="mt-1 space-y-1">
+                                                                            {round.results.map((c, ci) => (
+                                                                                <li key={ci} className="text-xs text-gray-400 pl-2 border-l border-gray-600">
+                                                                                    {c.company_name} <span className="opacity-50">({c.hq_city})</span>
+                                                                                </li>
+                                                                            ))}
+                                                                        </ul>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </details>
+
+                                                        {/* Phase 2: Qualification */}
+                                                        <details className="group bg-black/20 rounded-lg border border-white/5 open:bg-black/30 transition-all">
+                                                            <summary className="flex items-center justify-between p-3 cursor-pointer select-none">
+                                                                <div className="flex items-center gap-2 text-sm font-medium text-emerald-300">
+                                                                    <div className="h-2 w-2 rounded-full bg-emerald-400" />
+                                                                    Phase 2: Qualification
+                                                                </div>
+                                                                <ChevronDown className="h-4 w-4 text-gray-500 group-open:rotate-180 transition-transform" />
+                                                            </summary>
+                                                            <div className="p-3 pt-0 text-sm space-y-3 border-t border-white/5 mt-2 pt-3">
+                                                                {job.result.debug.qualification.map((round, idx) => (
+                                                                    <div key={idx} className="bg-white/5 p-2 rounded">
+                                                                        <div className="flex justify-between items-center text-xs mb-2">
+                                                                            <span className="text-gray-400 font-mono">Round {round.round}</span>
+                                                                            <span className="text-gray-500">{round.rejectedCount} Rejected</span>
+                                                                        </div>
+                                                                        {round.approved.length > 0 ? (
+                                                                            <ul className="space-y-2">
+                                                                                {round.approved.map((c, ci) => (
+                                                                                    <li key={ci} className="text-xs bg-emerald-500/5 p-2 rounded border border-emerald-500/10">
+                                                                                        <div className="font-bold text-emerald-300">{c.company_name}</div>
+                                                                                        <div className="opacity-70 mt-1 line-clamp-2">{c.company_profile}</div>
+                                                                                    </li>
+                                                                                ))}
+                                                                            </ul>
+                                                                        ) : (
+                                                                            <div className="text-xs text-rose-400 italic">No companies passed qualification in this round.</div>
+                                                                        )}
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </details>
+
+                                                        {/* Phase 3: Apollo Search */}
+                                                        <details className="group bg-black/20 rounded-lg border border-white/5 open:bg-black/30 transition-all">
+                                                            <summary className="flex items-center justify-between p-3 cursor-pointer select-none">
+                                                                <div className="flex items-center gap-2 text-sm font-medium text-blue-300">
+                                                                    <div className="h-2 w-2 rounded-full bg-blue-400" />
+                                                                    Phase 3: Apollo Lead Search
+                                                                </div>
+                                                                <ChevronDown className="h-4 w-4 text-gray-500 group-open:rotate-180 transition-transform" />
+                                                            </summary>
+                                                            <div className="p-3 pt-0 text-sm border-t border-white/5 mt-2 pt-3">
+                                                                <div className="text-gray-300 mb-2">
+                                                                    Total Leads Found: <span className="font-mono text-white">{job.result.debug.apollo?.length || 0}</span>
+                                                                </div>
+                                                                {job.result.debug.apollo && job.result.debug.apollo.length > 0 ? (
+                                                                    <div className="grid grid-cols-1 gap-2">
+                                                                        {job.result.debug.apollo.map((lead, li) => (
+                                                                            <div key={li} className="text-xs text-gray-400 flex items-center gap-2">
+                                                                                <div className="h-1.5 w-1.5 rounded-full bg-blue-500/50" />
+                                                                                {lead.first_name} {lead.last_name} @ {lead.company_name}
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className="text-xs text-yellow-400 bg-yellow-500/5 p-2 rounded border border-yellow-500/10">
+                                                                        No leads were returned by Apollo. Check the agent logs or refine search criteria.
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </details>
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
                                     </div>
