@@ -249,10 +249,8 @@ export const runAgentWorkflow = async (input, config) => {
     // 4. Outreach Creator
     const outreachDefaultInst = `You are the Outreach Creation Agent.
     For each lead in input.leads:
-    - Read 'company_profile'.
-    - Use "Outreach Framework" (via file search) for tone/style.
     - Write 'connection_request' (max 300 chars).
-    - Write 'email_message' (max 300 chars, first touch, grounded in profile).
+    - Write 'email_message' (max 300 chars, first touch, professional).
     
     Return the enriched lead objects in the JSON schema.`;
 
@@ -351,7 +349,7 @@ export const runAgentWorkflow = async (input, config) => {
 
             // Smart Retry Logic for 0 results
             if (attempts > 1 && lastRoundFound === 0) {
-                currentPrompt += `\n\n[ADAPTATION]: Your previous search yielded 0 results. You MUST use different, broader search terms now (e.g., "Top real estate investors Canada", "Major residential developers Canada", "Real estate private equity Toronto"). Do NOT repeat the same failed search queries.`;
+                currentPrompt += `\n\n[ADAPTATION]: Your previous search yielded 0 results. You MUST use different, broader search terms now. Do NOT repeat the same failed search queries. Try variations of the target industry or location.`;
             }
 
             if (qualifiedCompanies.length > 0) {
