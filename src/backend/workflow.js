@@ -513,17 +513,17 @@ Return the enriched lead objects in the JSON schema.`;
         logStep('Workflow', `Loop complete. Proceeding with ${qualifiedCompanies.length} qualified companies.`);
 
         // 3. Lead Finder
-        logStep('Apollo Lead Finder', 'Finding decision makers (Bulk Mode)...');
+        logStep('Apollo Lead Finder', 'Finding decision makers (Reliability Mode)...');
 
         let allLeads = [];
-        const BATCH_SIZE = 5; // Reduced from 25 to prevent timeouts
+        const BATCH_SIZE = 3; // Reduced to 3 to prevent 424 Errors (Server Overload)
 
         // Filter for valid domains only
         const companiesWithDomains = qualifiedCompanies.filter(c => c.domain && c.domain.includes('.'));
 
         for (let i = 0; i < companiesWithDomains.length; i += BATCH_SIZE) {
             const batch = companiesWithDomains.slice(i, i + BATCH_SIZE);
-            logStep('Apollo Lead Finder', `Processing bulk batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(companiesWithDomains.length / BATCH_SIZE)} (${batch.length} companies)...`);
+            logStep('Apollo Lead Finder', `Processing batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(companiesWithDomains.length / BATCH_SIZE)} (${batch.length} companies)...`);
 
             // Just pass the list of companies, the agent instruction now handles the bulk search
             const batchInput = [{ role: "user", content: [{ type: "input_text", text: JSON.stringify({ results: batch }) }] }];
