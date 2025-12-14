@@ -42,10 +42,10 @@ const AgentConfig = () => {
             }
 
             // Merge with local storage (Local persistence overrides for simplicity in this dev tool)
-            const localConfigs = localStorage.getItem('elvison_agent_configs_diagnostic')
-            if (localConfigs) {
+            const savedConfigs = localStorage.getItem('elvison_agent_configs_prod')
+            if (savedConfigs) {
                 try {
-                    const parsedLocal = JSON.parse(localConfigs)
+                    const parsedLocal = JSON.parse(savedConfigs)
                     setConfigs({ ...serverConfigs, ...parsedLocal })
                 } catch (e) {
                     setConfigs(serverConfigs)
