@@ -15,6 +15,11 @@ export const deleteLead = async (index) => {
   return data
 }
 
+export const clearLeads = async () => {
+  const { data } = await client.post('/api/leads/clear')
+  return data
+}
+
 export const startJob = async (prompt) => {
   const { data } = await client.post('/api/start-job', { prompt })
   return data

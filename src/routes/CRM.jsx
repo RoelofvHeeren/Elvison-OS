@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { CalendarDays, Building2, RefreshCw } from 'lucide-react'
+import { CalendarDays, Building2, RefreshCw, Trash2 } from 'lucide-react'
 import SheetTable from '../components/SheetTable'
-import { fetchHealth, fetchLeads, deleteLead } from '../utils/api'
+import { fetchHealth, fetchLeads, deleteLead, clearLeads } from '../utils/api'
 
 const CRM = () => {
   const [rows, setRows] = useState([])
@@ -51,6 +51,19 @@ const CRM = () => {
     } catch (err) {
       console.error(err)
       setError('Failed to delete row')
+      setLoading(false)
+    }
+  }
+
+  const handleClearSheet = async () => {
+    if (!window.confirm('WARNING: This will delete ALL leads from the Google Sheet.\n\nAre you sure you want to proceed?')) return
+    try {
+      setLoading(true)
+      await clearLeads()
+      await fetchRows()
+    } catch (err) {
+      console.error(err)
+      setError('Failed to clear sheet')
       setLoading(false)
     }
   }
@@ -110,6 +123,14 @@ const CRM = () => {
             />
             Agent
           </div>
+          <button
+            type="button"
+            onClick={handleClearSheet}
+            className="chip text-sm font-semibold text-rose-500 hover:text-rose-600 hover:bg-rose-50 border-rose-200"
+          >
+            <Trash2 className="h-4 w-4" />
+            Clear All
+          </button>
           <button
             type="button"
             onClick={refreshAll}

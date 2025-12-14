@@ -828,6 +828,38 @@ app.delete('/api/leads/:index', async (req, res) => {
   }
 })
 
+// POST /api/leads/clear - Clear all leads (except headers)
+app.post('/api/leads/clear', async (req, res) => {
+  const active = getActiveConnection()
+  try {
+    const accessToken = await ensureGoogleAccessToken()
+    if (!accessToken) {
+      return res.status(401).json({ error: 'Not connected to Google' })
+    }
+
+    // Clear from Row 2 (A2) onwards to preserve headers
+    const range = `${active.sheetName || 'AI Lead Sheet'}!A2:ZZ`
+    const apiUrl = `https://sheets.googleapis.com/v4/spreadsheets/${active.sheetId}/values/${encodeURIComponent(range)}:clear`
+
+    const clearRes = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+
+    if (!clearRes.ok) {
+      const text = await clearRes.text()
+      console.error('Clear failed:', text)
+      return res.status(502).json({ error: 'Failed to clear sheet', detail: text })
+    }
+
+    res.json({ success: true })
+
+  } catch (err) {
+    console.error('Clear sheet error:', err)
+    res.status(500).json({ error: 'Failed to clear sheet' })
+  }
+})
+
 // POST /api/start-job (uses saved connection workflow + key)
 app.post('/api/start-job', async (req, res) => {
   const prompt = req.body?.prompt
