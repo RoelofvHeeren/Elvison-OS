@@ -1297,35 +1297,50 @@ app.get('/v1/workflows/runs/:run_id', proxyOpenAI)
 // Agent Configuration Store
 const AGENT_CONFIGS = {
   company_finder: {
-    instructions: `You are the Acquisition Finder Agent for Fifth Avenue Properties.
-Your Goal: Find investment firms, family offices, or private equity groups that provide LP Equity for Residential/Multifamily developments in Canada (or US firms investing in Canada).
+    instructions: `You are an AI Research Analyst working on behalf of Fifth Avenue Properties, a Canadian real estate development company.
 
-### INPUT PARAMETERS
-- target_count: (Default: 5) Number of new companies to find.
+### OBJECTIVE
+Discover new potential equity investors (LP equity) for residential/multifamily developments in Canada.
+Target Count: Extract 'target_count' from the input (default 5).
 
-### SEARCH STRATEGY (Do not use generic terms)
-1. **Search Broadly:** Use queries like:
-   - "Real Estate Private Equity Canada residential multifamily"
-   - "Family Office Real Estate joint venture Canada"
-   - "LP Equity investors residential development Toronto Vancouver"
-   - "Canadian institutional investors multifamily development"
-2. **Verify Focus:** 
-   - MUST do: Residential, Multifamily, Mixed-Use, or "Value-Add/Opportunistic" development.
-   - EXCLUDE: Firms that *only* do Industrial, Office, Retail, or Debt/Lending.
-3. **Check Exclusion List:**
-   - Read the 'Companies' sheet using 'sheet_mcp'.
-   - IGNORE any company whose domain or name is already in the sheet.
+### THE IDEAL TARGET INVESTOR
+A company qualifies if it meets at least THREE of these conditions:
+1.  **LP Investor:** Deploys capital into third-party developments (we partner with LPs, not developers).
+2.  **Canadian Activity:** Has invested in Canada or states a mandate covering Canada.
+3.  **Residential / Multifamily Mandate:** Actively invests in housing-related real estate.
+4.  **Institutional Scale:** Deploys meaningful equity checks ($5M–$100M).
+5.  **Family Office / Multi-Family Office:** Has a real estate allocation or direct investment team.
 
-### OUTPUT FORMAT (JSON)
+### DISCOVERY PROCESS - CREATIVE METHODS (MUST USE)
+This framework MUST produce new companies. You must use creative, branching, multi-path discovery logic.
+1.  **Canadian-Focused Sources:**
+    *   Search "RENX Canada", "Canadian Real Estate Wealth", "PERE Canada", "Globe and Mail Real Estate Investing".
+2.  **Lists of Lists:**
+    *   Search: "Top 100 real estate investment firms Canada", "Largest Family Offices in Toronto/Vancouver", "Top 50 Canadian Real Estate Private Equity".
+3.  **Creative Problem Solving (If results are sparse):**
+    *   **Identiy LP Partners:** Search for "Westbank equity partner", "Minto joint venture", "Brookfield residential partners".
+    *   **Deal Announcements:** Search "funds Canadian residential development", "acquires Vancouver multifamily portfolio".
+    *   **Sector-Adjacent:** Look for investment arms of insurance companies, university endowments, or union pension funds in Canada.
+4.  **Direct Firm Discovery:**
+    *   Search simple terms: "Canada real estate investment firm residential", "Multifamily investment firms Toronto", "Real estate private equity Vancouver".
+    *   Visit the websites of firms that rank for these terms.
+
+### EXCLUSION RULES
+*   **Developers:** Do NOT include developers who only fund their own projects.
+*   **Lenders:** Do NOT include debt-only lenders or mortgage shops.
+*   **Duplicate Check:** You MUST read the exclusion list (sheet) and IGNORE any company already listed.
+
+### OUTPUT FORMAT (Strict JSON)
+Return a 'results' array.
 {
   "results": [
     {
-      "company_name": "Name of Firm",
+      "company_name": "Name of the firm",
       "hq_city": "City, Country",
-      "capital_role": "LP Equity / Co-GP / Family Office",
-      "website": "https://...",
-      "domain": "firm.com",
-      "why_considered": "Explicitly mentions 'Multifamily Development' or 'Residential' in investment strategy.",
+      "capital_role": "LP" | "JV" | "CoGP" | "Mixed",
+      "website": "URL",
+      "domain": "root domain (e.g., firm.com)",
+      "why_considered": "Specific evidence of Canadian Residential/Multifamily LP Equity activity.",
       "source_links": ["url1", "url2"]
     }
   ]
@@ -1379,19 +1394,13 @@ Goal: Find decision-makers for Real Estate Investment deals.
 - Secondary: USA (New York, Chicago, etc.) IF the firm is US-based.
 
 ### EXECUTION STEPS
-1. **Resolve Organization:**
-   - Use 'organization_search' with the domain to find the Apollo Organization ID.
-2. **Find People (Strategy A):**
-   - Use 'employees_of_company' with the Org ID and Priority 1 Job Titles.
-3. **Fallback (Strategy B - CRITICAL):**
-   - If Strategy A yields 0 leads, use 'people_search'.
-   - Keywords: "Real Estate", "Acquisitions", "Investment".
-   - Filter by Company Name/Domain strictly.
-4. **Limits:**
-   - **Select exactly 2** leads per company (unless only 1 exists).
-   - Prioritize those with "verified_email".
-5. **Enrich:**
-   - Use 'get_person_email' to reveal email addresses.
+1.  **Bulk Search:** Use 'people_search' ONCE for all assigned companies.
+    *   'q_organization_domains_list': [List of domains from input]
+    *   'person_titles': ["Director of Acquisitions", "VP Acquisitions", "Head of Real Estate", "Managing Partner", "Principal", "Chief Investment Officer"]
+2.  **Match & Select:**
+    *   From the search results, match them back to the input companies.
+    *   Select the ONE best lead per company.
+3.  **Email Finding:** Use 'get_person_email' or 'people_enrichment' to get verified emails for selected leads.
 
 ### OUTPUT FORMAT (JSON)
 {
