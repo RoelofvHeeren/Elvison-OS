@@ -20,15 +20,15 @@ const CRM = () => {
         .filter(row => row[0] !== 'Date Added' && (row[1] || row[2] || row[3])) // Filter headers and empty rows
         .map((row) => ({
           date: row[0] || '',
-          name: [row[1], row[2]].filter(Boolean).join(' ').trim() || row[1] || row[2] || '',
+          name: row[1] || '',
+          title: row[2] || '',
           company: row[3] || '',
-          title: row[4] || '',
-          email: row[5] || '',
-          linkedin: row[6] || '',
-          website: row[7] || '',
-          connectionRequest: row[8] || '',
-          emailMessage: row[9] || '',
-          companyProfile: row[10] || '',
+          email: row[4] || '',
+          linkedin: row[5] || '',
+          website: row[6] || '',
+          connectionRequest: row[7] || '',
+          emailMessage: row[8] || '',
+          companyProfile: row[9] || '',
         }))
         .sort((a, b) => new Date(b.date) - new Date(a.date)) // Sort newest first
       setRows(normalized)
