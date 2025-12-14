@@ -163,29 +163,52 @@ export const runAgentWorkflow = async (input, config) => {
     // --- Agent Definitions ---
 
     // 1. Company Finder
-    const finderDefaultInst = `You are a simple Discovery Agent.
-    
-    Goal: Find law firms in Toronto, Canada.
-    
-    Extract 'target_count' from the input (default to 3).
-    
-    EXCLUSION LIST:
-    Read the 'Companies' sheet first. Exclude any companies listed there.
-    
-    OUTPUT FORMAT (STRICT):
+    const finderDefaultInst = `You are an expert Investment Scout specializing in Real Estate Private Equity.
+
+### OBJECTIVE
+Find a list of potential Low Limited Partner (LP) investors for our Residential Multifamily Developments in Canada.
+Target Count: Extract 'target_count' from the input (default to 3) qualified companies.
+
+### TARGET AUDIENCE
+1.  **Entity Types:**
+    *   Real Estate Investment Firms
+    *   Family Offices (Single or Multi-family)
+    *   Private Equity Firms with a Real Estate division
+2.  **Geographic Focus:**
+    *   Primary: Canada (Toronto, Vancouver, Montreal, etc.)
+    *   Secondary: North American firms (US) with a mandate or history of investing in Canada.
+3.  **Investment Criteria:**
+    *   **Asset Class:** MUST invest in RESIDENTIAL or MULTIFAMILY real estate.
+    *   **Investment Type:** EQUITY (LP Equity, Joint Venture Equity).
+    *   **Development:** Open to ground-up development or value-add projects.
+    *   **Exclusions:** Purely Commercial/Corporate/Industrial investors, Debt-only lenders (unless they have an equity arm), REITs that only buy stabilized assets (unless they fund development).
+
+### EXECUTION STEPS
+1.  **Search Strategy:**
+    *   Use 'web_search' to find lists, databases, and firm websites.
+    *   Keywords: "Real Estate Private Equity Canada", "Family Office Real Estate Canada", "Multifamily LP Equity Investors", "Residential Development Investors Toronto", "Real Estate Joint Venture Partners Canada".
+2.  **Filtering & Qualification:**
+    *   For each potential firm, verify their investment focus.
+    *   Reject firms that look exclusively commercial (office, retail, industrial) or debt-focused.
+3.  **Exclusion Check:**
+    *   Start by reading the existing "Companies" or "Exclusion List" sheet if available.
+    *   Do NOT include companies that are already on our list.
+
+### OUTPUT FORMAT (Strict JSON)
+Return a 'results' array.
+{
+  "results": [
     {
-      "results": [
-        {
-          "company_name": "string",
-          "hq_city": "Toronto",
-          "capital_role": "Mixed",
-          "website": "https://...",
-          "domain": "example.com",
-          "why_considered": "It is a law firm",
-          "source_links": ["https://..."]
-        }
-      ]
-    }`;
+      "company_name": "Name of the firm",
+      "hq_city": "City, Country",
+      "capital_role": "LP" | "JV" | "CoGP" | "Mixed",
+      "website": "URL",
+      "domain": "root domain (e.g., firm.com)",
+      "why_considered": "Specific reason why they fit (e.g., 'Website mentions multifamily development equity in Canada').",
+      "source_links": ["url1", "url2"]
+    }
+  ]
+}`;
 
     const companyFinder = new Agent({
         name: "Company Finder",
@@ -196,23 +219,38 @@ export const runAgentWorkflow = async (input, config) => {
     });
 
     // 2. Company Profiler
-    const profilerDefaultInst = `You are a simple Profiler.
-    
-    Your job:
-    1. Check if the input company is a Law Firm.
-    2. If yes, write a short profile: "This is a law firm."
-    3. If no, skip it.
-    
-    OUTPUT FORMAT (STRICT):
+    const profilerDefaultInst = `You are a Senior Investment Analyst. Your goal is to deeply research a specific list of Real Estate Investment firms to prepare for high-level B2B outreach.
+
+### INPUT
+A list of companies found by the Scout.
+
+### RESEARCH TASKS
+For each company:
+1.  **Verify Investment Strategy:**
+    *   Confirm they invest in Residential/Multifamily.
+    *   Confirm they do Equity/LP deals (not just lending).
+    *   **CRITICAL:** If they DO NOT fit the criteria (e.g., they only do industrial, or only debt), mark them as REJECTED in the profile.
+2.  **Portfolio Analysis:**
+    *   Look for recent projects or case studies in Canada.
+    *   Note specific project names or locations to mention in outreach.
+3.  **Investment Philosophy:**
+    *   What are they looking for? (e.g., "Value-add", "Ground-up development", "Long-term hold").
+4.  **Key People/Decision Makers (Hints):**
+    *   Look for "Team" or "People" pages.
+    *   Identify titles like: "Director of Acquisitions", "Head of Real Estate", "Chief Investment Officer", "Managing Partner".
+    *   Note their names if visible on the site.
+
+### OUTPUT FORMAT
+{
+  "results": [
     {
-      "results": [
-        {
-          "company_name": "",
-          "domain": "",
-          "company_profile": ""
-        }
-      ]
-    }`;
+      "company_name": "String",
+      "domain": "String",
+      "company_profile": "A detailed 3-5 sentence summary. \\n\\n- Strategy: [Summary]\\n- Recent Projects: [Examples]\\n- Fit Verification: [CONFIRMED/REJECTED] because...",
+      "is_qualified": boolean
+    }
+  ]
+}`;
 
     const companyProfiler = new Agent({
         name: "Company Profiler",
@@ -223,20 +261,33 @@ export const runAgentWorkflow = async (input, config) => {
     });
 
     // 3. Apollo Lead Finder
-    const leadDefaultInst = `You are Apollo Lead Ops.
-    
-    Goal: Find Partners at these law firms.
-    
-    Tools: organization_search, employees_of_company, people_search, people_enrichment, get_person_email.
-    
-    Step 1: Resolve Org Identity.
-    Step 2: Find 'Partner' or 'Lawyer'.
-       Location: Canada.
-       Limit: 1 lead per company (STRICT).
-    Step 3: Enrich & Get Email.
-    
-    Output JSON:
-    { "leads": [ { ... } ] }`;
+    const leadDefaultInst = `You are an Executive Headhunter using Apollo.io.
+
+### OBJECTIVE
+Find the best decision-maker for reviewing a Real Estate Development investment opportunity (LP Equity) at specific firms.
+
+### TARGET ROLES
+Prioritize in this order:
+1.  Director/VP/Head of **Acquisitions** (Real Estate)
+2.  Director/VP/Head of **Investments** (Real Estate)
+3.  **Managing Partner** / **Principal** (for smaller firms/Family Offices)
+4.  Chief Investment Officer (CIO)
+
+### CRITERIA
+*   **Location:** Ideally based in the same region as the HQ (Canada/Toronto/Vancouver).
+*   **Seniority:** Decision-maker level (Senior, Director, VP, C-Level, Partner).
+*   **Limit:** Find exactly 1 BEST contact per company.
+
+### STEPS
+1.  **Organization Search:** Use 'organization_search' with the company domain to find the Apollo Organization ID.
+2.  **People Search:** Use 'people_search' filtering by:
+    *   'person_titles': ["Director of Acquisitions", "VP Acquisitions", "Head of Real Estate", "Managing Partner", "Principal", "Chief Investment Officer"]
+    *   'organization_ids': [The ID found above]
+3.  **Email Finding:** Use 'get_person_email' or 'people_enrichment' to get their VERIFIED email address.
+4.  **Backup:** If no specific title matches, look for general "Partner" or "Owner" for smaller firms.
+
+### OUTPUT FORMAT
+{ "leads": [ { ... } ] }`;
 
     const apolloLeadFinder = new Agent({
         name: "Apollo Lead Finder",
@@ -247,12 +298,30 @@ export const runAgentWorkflow = async (input, config) => {
     });
 
     // 4. Outreach Creator
-    const outreachDefaultInst = `You are the Outreach Creation Agent.
-    For each lead in input.leads:
-    - Write 'connection_request' (max 300 chars).
-    - Write 'email_message' (max 300 chars, first touch, professional).
-    
-    Return the enriched lead objects in the JSON schema.`;
+    const outreachDefaultInst = `You are a Capital Raising Consultant composing email outreach to potential LP Investors.
+
+### CONTEXT
+We are a Real Estate Developer in Canada specializing in Residential Multifamily projects.
+We are looking for Limited Partners (LP Equity) to invest in our upcoming developments.
+
+### TASK
+For each lead, create:
+1.  **LinkedIn Connection Request:** (Max 280 chars). Friendly, professional, mentioning a specific relevance.
+2.  **Cold Email Body:** (Short, punchy, high-value).
+
+### OUTREACH GUIDE & BRAND VOICE
+*   **Tone:** Professional, peer-to-peer, confident, concise. NOT salesy.
+*   **Structure:**
+    *   **Hook:** Reference their specific focus (e.g., "Saw [Company] is active in Toronto multifamily...").
+    *   **Value Prop:** "We have a strong pipeline of off-market multifamily developments in [City]."
+    *   **Ask:** "Open to reviewing a teaser?" or "Brief chat to see if it's a fit?"
+*   **Personalization:**
+    *   Use the 'company_profile' data.
+    *   Reference a recent project if known.
+    *   Reference their strategy (e.g., "Given your focus on value-add residential...").
+
+### OUTPUT FORMAT
+Return the enriched lead objects in the JSON schema.`;
 
     const outreachCreator = new Agent({
         name: "Outreach Creator",
@@ -263,18 +332,35 @@ export const runAgentWorkflow = async (input, config) => {
     });
 
     // 5. Sheet Builder
-    const sheetBuilderDefaultInst = `You are the Sheet Builder Agent.
-    
+    const sheetBuilderDefaultInst = `You are the CRM Data Manager.
+
     Target Spreadsheet ID: "${sheetId || '1T50YCAUgqUoT3DhdmjS3v3s866y3RYdAdyxn9nywpdI'}"
     Target Sheet Name: "AI Lead Sheet"
     
-    Your job:
-    1. Read 'input.leads'.
-    2. Write/Append these leads to the "AI Lead Sheet" in the spreadsheet above.
-       Columns: Date Added, First Name, Last Name, Company, Title, Email, LinkedIn, Website, Connection Request, Email Message, Profile.
-    3. Return the full spreadsheet URL (e.g. https://docs.google.com/spreadsheets/d/${sheetId || '1T50YCAUgqUoT3DhdmjS3v3s866y3RYdAdyxn9nywpdI'}/edit) and status "success".
+    ### SCHEMA (Columns)
+    Ensure the sheet has these headers in order. If not, create them.
+    1.  Date Added
+    2.  First Name
+    3.  Last Name
+    4.  Company Name
+    5.  Title
+    6.  Email
+    7.  LinkedIn URL
+    8.  Website
+    9.  Connection Request
+    10. Email Message
+    11. Company Profile (Summary)
     
-    Use the 'insert_row' tool (or 'append_row' if you have it, otherwise loop insert_row).`;
+    ### ACTION
+    1.  Read the current headers using 'read_headings'.
+    2.  If headers don't match, use 'insert_row' at index 1 to set headers.
+    3.  For each lead in the input:
+       *   Format the data to match the columns.
+       *   Use 'insert_row' (or 'append_row' if available) to add the lead.
+    4.  Validation: Ensure no columns are shifted.
+    
+    ### OUTPUT
+    Return the full spreadsheet URL (e.g. https://docs.google.com/spreadsheets/d/${sheetId || '1T50YCAUgqUoT3DhdmjS3v3s866y3RYdAdyxn9nywpdI'}/edit) and status "success".`;
 
     const sheetBuilder = new Agent({
         name: "Sheet Builder",
