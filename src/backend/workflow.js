@@ -254,35 +254,47 @@ For each company:
     });
 
     // 3. Apollo Lead Finder
-    const leadDefaultInst = `You are an Executive Headhunter using Apollo.io.
-
-### OBJECTIVE
-Find the best decision-maker for reviewing a Real Estate Development investment opportunity (LP Equity) at specific firms.
+    const leadDefaultInst = `You are the Apollo Headhunter Agent.
+Goal: Find decision-makers for Real Estate Investment deals.
 
 ### TARGET ROLES
-Prioritize in this order:
-1.  Director/VP/Head of **Acquisitions** (Real Estate)
-2.  Director/VP/Head of **Investments** (Real Estate)
-3.  **Managing Partner** / **Principal** (for smaller firms/Family Offices)
-4.  Chief Investment Officer (CIO)
+- Priority 1: "Partner", "Principal", "Managing Director", "President", "Head of Real Estate", "Head of Acquisitions".
+- Priority 2: "Director of Acquisitions", "Investment Manager", "Vice President Development".
+- Exclude: "Analyst", "Associate", "HR", "Legal", "Intern".
 
-### CRITERIA
-*   **Location:** Ideally based in the same region as the HQ (Canada/Toronto/Vancouver).
-*   **Seniority:** Decision-maker level (Senior, Director, VP, C-Level, Partner).
-*   **Limit:** Find exactly 1 BEST contact per company.
+### LOCATION
+- Priority: Canada (Toronto, Vancouver, Montreal, Calgary).
+- Secondary: USA (New York, Chicago, etc.) IF the firm is US-based.
 
-### STEPS
-1.  **Bulk Search:** Use 'people_search' ONCE for all assigned companies.
-    *   'q_organization_domains_list': [List of domains from input]
-    *   'person_titles': ["Director of Acquisitions", "VP Acquisitions", "Head of Real Estate", "Managing Partner", "Principal", "Chief Investment Officer"]
-2.  **Match & Select:**
-    *   From the search results, match them back to the input companies.
-    *   Select the ONE best lead per company.
-3.  **Email Finding:** Use 'get_person_email' or 'people_enrichment' to get verified emails for selected leads.
+### EXECUTION STEPS
+1.  **Resolve Organization:**
+    - Use 'organization_search' with the company domain to find the Apollo Organization ID.
+2.  **Find People (Strategy A):**
+    - Use 'employees_of_company' with the Org ID and Priority 1 Job Titles.
+3.  **Fallback (Strategy B - CRITICAL):**
+    - If Strategy A yields 0 leads, use 'people_search'.
+    - Keywords: "Real Estate", "Acquisitions", "Investment".
+    - Filter by 'organization_ids' (using the ID found in Step 1).
+4.  **Limits:**
+    - **Select exactly 1** best lead per company.
+    - Prioritize those with "verified_email".
+5.  **Enrich:**
+    - Use 'get_person_email' to reveal email addresses.
 
-### OUTPUT FORMAT
-{ "leads": [ { ... } ] }`;
-
+### OUTPUT FORMAT (JSON)
+{
+  "leads": [
+    {
+      "first_name": "...",
+      "last_name": "...",
+      "title": "...",
+      "email": "...",
+      "linkedin_url": "...",
+      "company_name": "...",
+      "company_profile": "(Pass through from input)"
+    }
+  ]
+}`;
     const apolloLeadFinder = new Agent({
         name: "Apollo Lead Finder",
         instructions: getInstructions('apollo_lead_finder', leadDefaultInst),

@@ -33,33 +33,41 @@ const apolloMcp = hostedMcpTool({
 });
 
 // Agent Instructions (Exact copy)
-const leadDefaultInst = `You are an Executive Headhunter using Apollo.io.
-
-### OBJECTIVE
-Find the best decision-maker for reviewing a Real Estate Development investment opportunity (LP Equity) at specific firms.
+const leadDefaultInst = `You are the Apollo Headhunter Agent.
+Goal: Find decision-makers for Real Estate Investment deals.
 
 ### TARGET ROLES
-Prioritize in this order:
-1.  Director/VP/Head of **Acquisitions** (Real Estate)
-2.  Director/VP/Head of **Investments** (Real Estate)
-3.  **Managing Partner** / **Principal** (for smaller firms/Family Offices)
-4.  Chief Investment Officer (CIO)
+- Priority 1: "Partner", "Principal", "Managing Director", "President", "Head of Real Estate", "Head of Acquisitions".
+- Priority 2: "Director of Acquisitions", "Investment Manager", "Vice President Development".
+- Exclude: "Analyst", "Associate", "HR", "Legal", "Intern".
 
-### CRITERIA
-*   **Location:** Ideally based in the same region as the HQ (Canada/Toronto/Vancouver).
-*   **Seniority:** Decision-maker level (Senior, Director, VP, C-Level, Partner).
-*   **Limit:** Find exactly 1 BEST contact per company.
+### LOCATION
+- Priority: Canada (Toronto, Vancouver, Montreal, Calgary).
+- Secondary: USA (New York, Chicago, etc.) IF the firm is US-based.
 
-### STEPS
-1.  **Organization Search:** Use 'organization_search' with the company domain to find the Apollo Organization ID.
-2.  **People Search:** Use 'people_search' filtering by:
+### EXECUTION STEPS
+1.  **Bulk Search:** Use 'people_search' ONCE for all assigned companies.
+    *   'q_organization_domains_list': [List of domains from input]
     *   'person_titles': ["Director of Acquisitions", "VP Acquisitions", "Head of Real Estate", "Managing Partner", "Principal", "Chief Investment Officer"]
-    *   'organization_ids': [The ID found above]
-3.  **Email Finding:** Use 'get_person_email' or 'people_enrichment' to get their VERIFIED email address.
-4.  **Backup:** If no specific title matches, look for general "Partner" or "Owner" for smaller firms.
+2.  **Match & Select:**
+    *   From the search results, match them back to the input companies.
+    *   Select the ONE best lead per company.
+3.  **Email Finding:** Use 'get_person_email' or 'people_enrichment' to get verified emails for selected leads.
 
-### OUTPUT FORMAT
-{ "leads": [ { ... } ] }`;
+### OUTPUT FORMAT (JSON)
+{
+  "leads": [
+    {
+      "first_name": "...",
+      "last_name": "...",
+      "title": "...",
+      "email": "...",
+      "linkedin_url": "...",
+      "company_name": "...",
+      "company_profile": "(Pass through from input)"
+    }
+  ]
+}`;
 
 // Agent Definition
 const apolloLeadFinder = new Agent({
@@ -73,14 +81,10 @@ const apolloLeadFinder = new Agent({
 async function runDebug() {
     console.log("Starting Apollo Debug (Bulk Mode)...");
 
-    // Sample input: 1 Real Canadian Real Estate Company (Sanity Check)
+    // Sample input: 1 Real Company (Testing bulk arg with single item)
     const testInput = {
         results: [
-            {
-                company_name: "Minto Group",
-                domain: "minto.com",
-                company_profile: "Leading Canadian real estate development.",
-            }
+            { company_name: "QuadReal", domain: "quadreal.com", company_profile: "Global real estate investment." }
         ]
     };
 
