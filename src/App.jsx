@@ -7,6 +7,7 @@ import AgentRunner from './routes/AgentRunner'
 import CRM from './routes/CRM'
 import Connections from './routes/Connections'
 import Logbook from './routes/Logbook'
+import Onboarding from './routes/Onboarding'
 
 const App = () => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
@@ -33,6 +34,7 @@ const App = () => {
             <Route path="/crm" element={<CRM />} />
             <Route path="/connections" element={<Connections />} />
             <Route path="/logbook" element={<Logbook />} />
+            <Route path="/onboarding" element={<Onboarding />} />
           </Routes>
         </div>
       </main>

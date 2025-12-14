@@ -687,38 +687,60 @@ app.post('/api/mcp/google-sheets/activate', async (req, res) => {
   const timeoutMs = 45000
   let authNotified = false
 
+  // Wait for it to become healthy
   while (Date.now() - startTime < timeoutMs) {
-    if (!authNotified && sheetMcpAuthNotified) {
-      authNotified = true
-      return res.status(202).json({
-        status: 'auth',
-        message: 'Launching Google auth flow... complete login in your browser.',
-        authPopup: true,
-      })
+    try {
+      const resp = await axios.get(healthUrl, { timeout: 2000 })
+      if (resp.status === 200) {
+        logSheetMcpOutput('Server is healthy and responding.')
+        return res.json({ status: 'started', message: 'Google Sheets MCP server started successfully.' })
+      }
+    } catch (e) {
+      // ignore
     }
-
-    const healthy = await checkSheetMcpHealth()
-    if (healthy) {
-      const probe = await runMcpReadinessProbe()
-      const status = probe?.status === 'reauth' ? 'reauth' : probe?.status === 'error' ? 'error' : 'ok'
-      return res.json({
-        status,
-        message: 'Sheets MCP server is healthy',
-        running: true,
-        probe,
-        authPopup: sheetMcpAuthNotified,
-      })
-    }
-
     await sleep(2000)
   }
 
-  res.status(504).json({
-    error: 'Timed out waiting for Sheets MCP health check',
-    running: false,
-    authPopup: sheetMcpAuthNotified,
-  })
+  return res.status(500).json({ error: 'Timeout waiting for Google Sheets MCP server to start.' })
 })
+
+// --- Agent Prompts Storage ---
+const AGENT_PROMPTS_FILE = path.join(process.cwd(), 'agent-prompts.json')
+let AGENT_PROMPTS = {}
+
+// Load prompts from file on startup
+try {
+  if (fs.existsSync(AGENT_PROMPTS_FILE)) {
+    const data = fs.readFileSync(AGENT_PROMPTS_FILE, 'utf8')
+    AGENT_PROMPTS = JSON.parse(data)
+    console.log('Loaded agent prompts from agent-prompts.json')
+  }
+} catch (err) {
+  console.error('Failed to load agent prompts:', err)
+}
+
+app.get('/api/agent-prompts', (req, res) => {
+  res.json(AGENT_PROMPTS)
+})
+
+app.post('/api/agent-prompts', (req, res) => {
+  const { prompts } = req.body
+  if (!prompts) return res.status(400).json({ error: 'Missing prompts data' })
+
+  AGENT_PROMPTS = { ...AGENT_PROMPTS, ...prompts }
+
+  // Persist to file
+  try {
+    fs.writeFileSync(AGENT_PROMPTS_FILE, JSON.stringify(AGENT_PROMPTS, null, 2))
+    console.log('Saved agent prompts to agent-prompts.json')
+    res.json({ success: true, prompts: AGENT_PROMPTS })
+  } catch (err) {
+    console.error('Failed to save agent prompts:', err)
+    res.status(500).json({ error: 'Failed to save prompts' })
+  }
+})
+
+
 
 // GET /api/leads using Google Sheets API
 app.get('/api/leads', async (req, res) => {

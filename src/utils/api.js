@@ -85,3 +85,13 @@ export const activateGoogleSheetsMcp = async () => {
   const { data } = await client.post('/api/mcp/google-sheets/activate')
   return data
 }
+
+export const fetchAgentPrompts = async () => {
+  const { data } = await client.get('/api/agent-prompts')
+  return data
+}
+
+export const saveAgentPrompts = async (prompts) => {
+  const { data } = await client.post('/api/agent-prompts', { prompts })
+  return data
+}

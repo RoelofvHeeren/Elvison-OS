@@ -9,6 +9,7 @@ const navItems = [
   { to: '/connections', label: 'Connections', icon: Plug },
   { to: '/knowledge', label: 'Knowledge Base', icon: BookOpen },
   { to: '/logbook', label: 'Logbook', icon: BookOpen },
+  { to: '/onboarding', label: 'Onboarding', icon: Sparkles },
 ]
 
 const Sidebar = ({ collapsed, onToggle }) => (
