@@ -258,9 +258,11 @@ For each company:
 Goal: Find decision-makers for Real Estate Investment deals.
 
 ### TARGET ROLES
-- Priority 1: "Partner", "Principal", "Managing Director", "President", "Head of Real Estate", "Head of Acquisitions".
-- Priority 2: "Director of Acquisitions", "Investment Manager", "Vice President Development".
-- Exclude: "Analyst", "Associate", "HR", "Legal", "Intern".
+**BROAD SEARCH STRATEGY:** We need to find *someone* relevant at each firm.
+- **Tier 1 (Executives):** "Partner", "Principal", "Managing Director", "President", "CEO", "Founder", "Co-Founder", "Owner".
+- **Tier 2 (Real Estate Leaders):** "Head of Real Estate", "Head of Acquisitions", "Head of Investments", "Chief Investment Officer", "CIO", "Director of Development", "VP Development".
+- **Tier 3 (Managers):** "Director of Acquisitions", "Investment Manager", "Acquisitions Manager", "Development Manager", "Asset Manager", "Senior Associate".
+- **Do NOT Exclude:** We want *anyone* with decision-making power. Only exclude obvious non-relevant roles like "Intern", "Receptionist", "Legal Counsel", "HR".
 
 ### LOCATION
 - Priority: Canada (Toronto, Vancouver, Montreal, Calgary).
@@ -269,16 +271,17 @@ Goal: Find decision-makers for Real Estate Investment deals.
 ### EXECUTION STEPS
 1.  **Resolve Organization:**
     - Use 'organization_search' with the company domain to find the Apollo Organization ID.
-2.  **Find People (Strategy A):**
-    - Use 'employees_of_company' with the Org ID and Priority 1 Job Titles.
-3.  **Fallback (Strategy B - CRITICAL):**
-    - If Strategy A yields 0 leads, use 'people_search'.
-    - Keywords: "Real Estate", "Acquisitions", "Investment".
+2.  **Find People (Strategy A - Tier 1 & 2):**
+    - Use 'employees_of_company' with the Org ID and Tier 1 & Tier 2 Job Titles.
+3.  **Fallback (Strategy B - Tier 3):**
+    - If Strategy A yields 0 leads, search for Tier 3 titles.
+4.  **Fallback (Strategy C - "Brute Force"):**
+    - If needed, use 'people_search' with just keywords: "Real Estate", "Acquisitions", "Investment".
     - Filter by 'organization_ids' (using the ID found in Step 1).
-4.  **Limits:**
-    - **Select exactly 1** best lead per company.
+5.  **Limits:**
+    - **Select up to 3** leads per company if possible (User requested "rather too many than too little").
     - Prioritize those with "verified_email".
-5.  **Enrich:**
+6.  **Enrich:**
     - Use 'get_person_email' to reveal email addresses.
 
 ### OUTPUT FORMAT (JSON)
@@ -562,7 +565,8 @@ Return the enriched lead objects in the JSON schema.`;
 
         // 5. Sheet Builder
         logStep('Sheet Builder', 'Exporting to Google Sheets...');
-        const sheetInput = [{ role: "user", content: [{ type: "input_text", text: JSON.stringify(outreachOutput) }] }];
+        const currentTimestamp = new Date().toLocaleString('en-US', { hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(',', '');
+        const sheetInput = [{ role: "user", content: [{ type: "input_text", text: JSON.stringify({ ...outreachOutput, system_timestamp: currentTimestamp }) }] }];
 
         const sheetRes = await retryWithBackoff(() => runner.run(sheetBuilder, sheetInput));
         if (!sheetRes.finalOutput) throw new Error("Sheet Builder failed");
