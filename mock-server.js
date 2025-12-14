@@ -1242,8 +1242,26 @@ Output JSON:
     linkedFileIds: [],
     enabledToolIds: ['apollo_mcp']
   },
-  outreach_creator: { instructions: '', linkedFileIds: [], enabledToolIds: [] },
-  sheet_builder: { instructions: '', linkedFileIds: [], enabledToolIds: ['sheet_mcp'] }
+  outreach_creator: {
+    instructions: `You are the Outreach Creation Agent.
+For each lead in input.leads:
+- Write 'connection_request' (max 300 chars).
+- Write 'email_message' (max 300 chars, first touch, professional).
+Return the enriched lead objects in the JSON schema.`,
+    linkedFileIds: [],
+    enabledToolIds: []
+  },
+  sheet_builder: {
+    instructions: `You are the Sheet Builder Agent.
+Target Spreadsheet ID: "1T50YCAUgqUoT3DhdmjS3v3s866y3RYdAdyxn9nywpdI"
+Target Sheet Name: "AI Lead Sheet"
+Your job:
+1. Read 'input.leads'.
+2. Write/Append these leads to the "AI Lead Sheet".
+3. Return the full spreadsheet URL and status "success".`,
+    linkedFileIds: [],
+    enabledToolIds: ['sheet_mcp']
+  }
 }
 
 // GET /api/agents/config
