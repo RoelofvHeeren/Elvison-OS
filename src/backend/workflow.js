@@ -279,12 +279,13 @@ Prioritize in this order:
 *   **Limit:** Find exactly 1 BEST contact per company.
 
 ### STEPS
-1.  **Organization Search:** Use 'organization_search' with the company domain to find the Apollo Organization ID.
-2.  **People Search:** Use 'people_search' filtering by:
+1.  **Bulk Search:** Use 'people_search' ONCE for all assigned companies.
+    *   'q_organization_domains_list': [List of domains from input]
     *   'person_titles': ["Director of Acquisitions", "VP Acquisitions", "Head of Real Estate", "Managing Partner", "Principal", "Chief Investment Officer"]
-    *   'organization_ids': [The ID found above]
-3.  **Email Finding:** Use 'get_person_email' or 'people_enrichment' to get their VERIFIED email address.
-4.  **Backup:** If no specific title matches, look for general "Partner" or "Owner" for smaller firms.
+2.  **Match & Select:**
+    *   From the search results, match them back to the input companies.
+    *   Select the ONE best lead per company.
+3.  **Email Finding:** Use 'get_person_email' or 'people_enrichment' to get verified emails for selected leads.
 
 ### OUTPUT FORMAT
 { "leads": [ { ... } ] }`;
@@ -507,16 +508,41 @@ Return the enriched lead objects in the JSON schema.`;
         logStep('Workflow', `Loop complete. Proceeding with ${qualifiedCompanies.length} qualified companies.`);
 
         // 3. Lead Finder
-        logStep('Apollo Lead Finder', 'Finding decision makers...');
-        const leadInput = [{ role: "user", content: [{ type: "input_text", text: JSON.stringify({ results: qualifiedCompanies }) }] }];
+        logStep('Apollo Lead Finder', 'Finding decision makers (Bulk Mode)...');
 
-        const leadRes = await retryWithBackoff(() => runner.run(apolloLeadFinder, leadInput));
-        if (!leadRes.finalOutput) throw new Error("Apollo Lead Finder failed");
+        let allLeads = [];
+        const BATCH_SIZE = 25; // Can handle much larger batches with bulk search
 
-        const leadOutput = leadRes.finalOutput;
-        const leadCount = leadOutput.leads ? leadOutput.leads.length : 0;
-        logStep('Apollo Lead Finder', `Found ${leadCount} enriched leads.`);
-        debugLog.apollo = leadOutput.leads || [];
+        // Filter for valid domains only
+        const companiesWithDomains = qualifiedCompanies.filter(c => c.domain && c.domain.includes('.'));
+
+        for (let i = 0; i < companiesWithDomains.length; i += BATCH_SIZE) {
+            const batch = companiesWithDomains.slice(i, i + BATCH_SIZE);
+            logStep('Apollo Lead Finder', `Processing bulk batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(companiesWithDomains.length / BATCH_SIZE)} (${batch.length} companies)...`);
+
+            // Just pass the list of companies, the agent instruction now handles the bulk search
+            const batchInput = [{ role: "user", content: [{ type: "input_text", text: JSON.stringify({ results: batch }) }] }];
+
+            try {
+                const leadRes = await retryWithBackoff(() => runner.run(apolloLeadFinder, batchInput));
+
+                if (leadRes.finalOutput && leadRes.finalOutput.leads) {
+                    allLeads = [...allLeads, ...leadRes.finalOutput.leads];
+                    logStep('Apollo Lead Finder', `Batch complete. Found ${leadRes.finalOutput.leads.length} leads.`);
+                } else {
+                    logStep('Apollo Lead Finder', 'Batch returned no leads.');
+                }
+            } catch (err) {
+                logStep('Apollo Lead Finder', `Error processing batch: ${err.message}`);
+            }
+        }
+
+        const leadCount = allLeads.length;
+        logStep('Apollo Lead Finder', `Total: Found ${leadCount} enriched leads.`);
+
+        // Construct a composite output for the next step
+        const leadOutput = { leads: allLeads };
+        debugLog.apollo = allLeads;
 
         // 4. Outreach Creator
         logStep('Outreach Creator', 'Drafting personalized messages...');
