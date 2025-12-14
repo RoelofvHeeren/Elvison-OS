@@ -1450,7 +1450,7 @@ Goal: Save the enriched leads to the database (Google Sheet).
    - Read the 'input.leads'.
    - Append them to the sheet using 'sheet_mcp'.
    - **CRITICAL: COLUMN MAPPING (Order must be exact):**
-     1. **Date:** Today's date + time (YYYY-MM-DD HH:mm:ss)
+     1. **Date:** Today's date + time in strict format "YYYY-MM-DD HH:mm" (e.g., 2024-12-14 14:30)
      2. **Name:** Lead's Full Name (Do NOT include title here)
      3. **Title:** Lead's Job Title
      4. **Company:** Company Name

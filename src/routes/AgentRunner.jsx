@@ -43,9 +43,26 @@ const AgentRunner = () => {
             error: error
         }
 
-        const existingHistory = JSON.parse(localStorage.getItem('elvison_job_history') || '[]')
-        const newHistory = [...existingHistory, historyItem]
-        localStorage.setItem('elvison_job_history', JSON.stringify(newHistory))
+        try {
+            const existingHistory = JSON.parse(localStorage.getItem('elvison_job_history') || '[]')
+            const newHistory = [...existingHistory, historyItem]
+            localStorage.setItem('elvison_job_history', JSON.stringify(newHistory))
+        } catch (e) {
+            console.error('Failed to save job history', e)
+            if (e.name === 'QuotaExceededError' || e.code === 22) {
+                // Determine if we should clear old items or just not save the huge result
+                try {
+                    // Try saving just the metadata without the massive result
+                    const success = { ...historyItem, result: { ...historyItem.result, debug: null, leads: historyItem.result?.leads?.slice(0, 5) } }
+                    const existingHistory = JSON.parse(localStorage.getItem('elvison_job_history') || '[]')
+                    // Keep only last 10
+                    const trimmedHistory = existingHistory.slice(-10);
+                    localStorage.setItem('elvison_job_history', JSON.stringify([...trimmedHistory, success]))
+                } catch (retryErr) {
+                    console.error('Could not save even trimmed history', retryErr);
+                }
+            }
+        }
     }
 
     const handleRun = async () => {

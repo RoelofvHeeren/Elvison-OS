@@ -19,19 +19,30 @@ const CRM = () => {
       const normalized = (data?.rows ?? data ?? [])
         .map((row, idx) => ({ row, idx }))
         .filter(({ row }) => row[0] !== 'Date Added' && (row[1] || row[2] || row[3])) // Filter headers and empty rows
-        .map(({ row, idx }) => ({
-          originalIndex: idx,
-          date: row[0] || '',
-          name: row[1] || '',
-          title: row[2] || '',
-          company: row[3] || '',
-          email: row[4] || '',
-          linkedin: row[5] || '',
-          website: row[6] || '',
-          connectionRequest: row[7] || '',
-          emailMessage: row[8] || '',
-          companyProfile: row[9] || '',
-        }))
+        .map(({ row, idx }) => {
+          // Format date if possible, otherwise keep raw
+          let dateStr = row[0] || '';
+          try {
+            const d = new Date(dateStr);
+            if (!isNaN(d.getTime())) {
+              dateStr = d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+            }
+          } catch (e) { }
+
+          return {
+            originalIndex: idx,
+            date: dateStr,
+            name: row[1] || '',
+            title: row[2] || '',
+            company: row[3] || '',
+            email: row[4] || '',
+            linkedin: row[5] || '',
+            website: row[6] || '',
+            connectionRequest: row[7] || '',
+            emailMessage: row[8] || '',
+            companyProfile: row[9] || '',
+          };
+        })
         .sort((a, b) => new Date(b.date) - new Date(a.date)) // Sort newest first
       setRows(normalized)
     } catch (err) {
