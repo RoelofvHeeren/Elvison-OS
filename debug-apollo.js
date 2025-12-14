@@ -71,16 +71,15 @@ const apolloLeadFinder = new Agent({
 });
 
 async function runDebug() {
-    console.log("Starting Apollo Debug...");
+    console.log("Starting Apollo Debug (Bulk Mode)...");
 
-    // Sample input that mimics the output of the Profiler
+    // Sample input: 1 Real Canadian Real Estate Company (Sanity Check)
     const testInput = {
         results: [
             {
                 company_name: "Minto Group",
                 domain: "minto.com",
-                company_profile: "Leading Canadian real estate development and management company involved in residential and commercial properties.",
-                is_qualified: true
+                company_profile: "Leading Canadian real estate development.",
             }
         ]
     };

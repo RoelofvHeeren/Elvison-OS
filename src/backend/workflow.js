@@ -228,19 +228,15 @@ A list of companies found by the Scout.
 
 ### RESEARCH TASKS
 For each company:
-1.  **Verify Investment Strategy:**
-    *   Confirm they invest in Residential/Multifamily.
-    *   Confirm they do Equity/LP deals (not just lending).
-    *   **CRITICAL:** If they DO NOT fit the criteria (e.g., they only do industrial, or only debt), mark them as REJECTED in the profile.
+1.  **Broad Qualification (Lenient):**
+    *   Does the firm invest in Real Estate? (Commercial, Residential, Mixed-Use).
+    *   **DEFAULT TO QUALIFIED:** Unless the website explicitly says "We DO NOT do equity" or "We are strictly a lender", assume they are relevant.
+    *   **Inclusion:** Include firms that mention "Asset Management", "Capital Partners", "Private Equity", or "Developments".
 2.  **Portfolio Analysis:**
-    *   Look for recent projects or case studies in Canada.
-    *   Note specific project names or locations to mention in outreach.
+    *   Look for any Canadian presence (projects, offices, or text).
+    *   Even if they are US-based, if they mention "North America", QUALIFY them.
 3.  **Investment Philosophy:**
-    *   What are they looking for? (e.g., "Value-add", "Ground-up development", "Long-term hold").
-4.  **Key People/Decision Makers (Hints):**
-    *   Look for "Team" or "People" pages.
-    *   Identify titles like: "Director of Acquisitions", "Head of Real Estate", "Chief Investment Officer", "Managing Partner".
-    *   Note their names if visible on the site.
+    *   Note if they mention "Value-add", "Development", or "Partnerships".
 
 ### OUTPUT FORMAT
 {
@@ -248,11 +244,12 @@ For each company:
     {
       "company_name": "String",
       "domain": "String",
-      "company_profile": "A detailed 3-5 sentence summary. \\n\\n- Strategy: [Summary]\\n- Recent Projects: [Examples]\\n- Fit Verification: [CONFIRMED/REJECTED] because...",
+      "company_profile": "A 2-3 sentence summary. Focus on their investment capacity and asset classes.",
       "is_qualified": boolean
     }
   ]
-}`;
+}
+**IMPORTANT:** Your goal is to fill the funnel. When in doubt, SET is_qualified = true.`;
 
     const companyProfiler = new Agent({
         name: "Company Profiler",
@@ -513,7 +510,7 @@ Return the enriched lead objects in the JSON schema.`;
         logStep('Apollo Lead Finder', 'Finding decision makers (Bulk Mode)...');
 
         let allLeads = [];
-        const BATCH_SIZE = 25; // Can handle much larger batches with bulk search
+        const BATCH_SIZE = 5; // Reduced from 25 to prevent timeouts
 
         // Filter for valid domains only
         const companiesWithDomains = qualifiedCompanies.filter(c => c.domain && c.domain.includes('.'));
