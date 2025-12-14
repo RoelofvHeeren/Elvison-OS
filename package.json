@@ -20,6 +20,7 @@
     "eventsource": "^4.1.0",
     "express": "^5.1.0",
     "final-sheet-mcp": "github:RoelofvHeeren/Final-Sheet-MCP",
+    "framer-motion": "^12.23.26",
     "lucide-react": "^0.555.0",
     "openai": "^4.0.0",
     "prop-types": "^15.8.1",
