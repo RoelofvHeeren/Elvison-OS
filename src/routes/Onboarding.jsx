@@ -169,60 +169,104 @@ const StepCompanyInfo = ({ onNext, data, onChange }) => (
 )
 
 const StepAgentSurvey = ({ agent, answers, setAnswers, onNext, onGenerate }) => {
+    const [qIndex, setQIndex] = useState(0)
+
     const handleAnswer = (qid, val) => {
         setAnswers(prev => ({ ...prev, [agent.id]: { ...prev[agent.id], [qid]: val } }))
     }
 
-    const currentAnswers = answers[agent.id] || {}
+    const currentQuestion = agent.questions[qIndex]
+    const currentAnswer = answers[agent.id]?.[currentQuestion.id] || ''
+    const isLastQuestion = qIndex === agent.questions.length - 1
+
+    const handleNext = () => {
+        if (isLastQuestion) {
+            onGenerate()
+        } else {
+            setQIndex(prev => prev + 1)
+        }
+    }
+
+    const handleBack = () => {
+        if (qIndex > 0) {
+            setQIndex(prev => prev - 1)
+        }
+    }
+
+    const progress = ((qIndex + 1) / agent.questions.length) * 100
 
     return (
-        <div className="max-w-6xl mx-auto pt-10 flex gap-12 h-[80vh]">
-            {/* Left: Info */}
-            <div className="w-1/3">
-                <div className={`sticky top-8 ${PREMIUM_CONTAINER}`}>
-                    <div className="w-16 h-16 bg-teal-900/40 rounded-2xl flex items-center justify-center mb-6 border border-teal-500/30 shadow-[0_0_15px_rgba(20,184,166,0.2)]">
-                        <Bot className="w-8 h-8 text-teal-400" />
-                    </div>
-                    <h2 className="text-3xl font-serif font-bold mb-4 text-white">{agent.name}</h2>
-                    <p className="text-gray-300 mb-8 leading-relaxed">{agent.description}</p>
-                    <div className="bg-white/5 p-4 rounded-xl border border-white/10 text-sm">
-                        <h4 className="font-semibold mb-2 text-teal-300">Why we ask</h4>
-                        <p className="text-gray-400">Your specific answers help us fine-tune the system prompt to behave exactly as you expect.</p>
-                    </div>
+        <div className="max-w-4xl mx-auto pt-10 h-full flex flex-col relative">
+            {/* Header / Info */}
+            <div className="flex items-start gap-8 mb-12">
+                <div className="w-16 h-16 shrink-0 bg-teal-900/40 rounded-2xl flex items-center justify-center border border-teal-500/30 shadow-[0_0_15px_rgba(20,184,166,0.2)]">
+                    <Bot className="w-8 h-8 text-teal-400" />
+                </div>
+                <div>
+                    <h2 className="text-3xl font-serif font-bold mb-2 text-white">{agent.name}</h2>
+                    <p className="text-gray-300 leading-relaxed text-lg font-light">{agent.description}</p>
                 </div>
             </div>
 
-            {/* Right: Questions */}
-            <div className="w-2/3 overflow-y-auto pr-4 pb-20 scrollbar-hide">
-                <div className="space-y-8">
-                    {agent.questions.map((q, idx) => (
-                        <motion.div
-                            key={q.id}
-                            initial={{ opacity: 0, x: 20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            transition={{ delay: idx * 0.1 }}
-                            className={`${PREMIUM_CONTAINER} bg-black/60 border-l-4 border-l-teal-500`}
-                        >
-                            <label className="block text-xl font-medium text-white mb-4 flex items-center gap-3">
-                                <span className="text-teal-500/50 font-mono text-base">0{idx + 1}</span>
-                                {q.label}
-                            </label>
-                            <textarea
-                                className="w-full bg-black/80 border border-white/10 rounded-xl p-4 text-gray-100 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 outline-none transition-all shadow-inner min-h-[120px]"
-                                placeholder="Type your answer here..."
-                                value={currentAnswers[q.id] || ''}
-                                onChange={(e) => handleAnswer(q.id, e.target.value)}
-                            />
-                        </motion.div>
-                    ))}
-                </div>
-
-                <div className="flex justify-end pt-8 pb-12">
-                    <button
-                        onClick={onGenerate}
-                        className={PREMIUM_BUTTON_PRIMARY + " flex items-center gap-2"}
+            {/* Question Card */}
+            <div className="flex-1 flex flex-col justify-center pb-20">
+                <AnimatePresence mode="wait">
+                    <motion.div
+                        key={currentQuestion.id}
+                        initial={{ opacity: 0, x: 20, filter: "blur(5px)" }}
+                        animate={{ opacity: 1, x: 0, filter: "blur(0px)" }}
+                        exit={{ opacity: 0, x: -20, filter: "blur(5px)" }}
+                        transition={{ duration: 0.4, ease: "easeOut" }}
+                        className="w-full"
                     >
-                        <Sparkles className="w-5 h-5" /> Generate Instructions
+                        <label className="block text-2xl md:text-3xl font-medium text-white mb-8 flex flex-col gap-2">
+                            <span className="text-teal-500 font-mono text-sm uppercase tracking-widest font-bold">
+                                Question {qIndex + 1} of {agent.questions.length}
+                            </span>
+                            {currentQuestion.label}
+                        </label>
+
+                        <div className={`${PREMIUM_CONTAINER} p-1`}>
+                            <textarea
+                                className="w-full bg-transparent border-none rounded-xl p-6 text-xl text-white placeholder-gray-500 focus:ring-0 outline-none resize-none leading-relaxed min-h-[160px]"
+                                placeholder="Type your answer here..."
+                                value={currentAnswer}
+                                onChange={(e) => handleAnswer(currentQuestion.id, e.target.value)}
+                                autoFocus
+                            />
+                        </div>
+                    </motion.div>
+                </AnimatePresence>
+
+                {/* Navigation & Progress */}
+                <div className="mt-12 flex items-center justify-between">
+                    <button
+                        onClick={handleBack}
+                        disabled={qIndex === 0}
+                        className={`text-gray-400 hover:text-white transition-colors flex items-center gap-2 ${qIndex === 0 ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
+                    >
+                        Back
+                    </button>
+
+                    <div className="flex-1 mx-12 h-1 bg-gray-800 rounded-full overflow-hidden">
+                        <motion.div
+                            className="h-full bg-teal-500 shadow-[0_0_10px_rgba(20,184,166,0.8)]"
+                            initial={{ width: 0 }}
+                            animate={{ width: `${progress}%` }}
+                            transition={{ duration: 0.5 }}
+                        />
+                    </div>
+
+                    <button
+                        onClick={handleNext}
+                        disabled={!currentAnswer.trim()}
+                        className={`${PREMIUM_BUTTON_PRIMARY} flex items-center gap-2 disabled:opacity-50 disabled:grayscale`}
+                    >
+                        {isLastQuestion ? (
+                            <>Generate <Sparkles className="w-4 h-4" /></>
+                        ) : (
+                            <>Next <ChevronRight className="w-4 h-4" /></>
+                        )}
                     </button>
                 </div>
             </div>
