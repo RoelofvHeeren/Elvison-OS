@@ -1330,9 +1330,21 @@ Goal: Save the enriched leads to the database (Google Sheet).
 2. **Action:**
    - Read the 'input.leads'.
    - Append them to the sheet using 'sheet_mcp'.
-   - Ensure columns map correctly: Date, Name, Title, Company, Email, LinkedIn, Website, Connection Request, Email Message, Profile.
-3. **Format:**
-   - "Date Added" should be today's date (YYYY-MM-DD).
+   - **CRITICAL: COLUMN MAPPING (Order must be exact):**
+     1. **Date:** Today's date + time (YYYY-MM-DD HH:mm:ss)
+     2. **Name:** Lead's Full Name (Do NOT include title here)
+     3. **Title:** Lead's Job Title
+     4. **Company:** Company Name
+     5. **Email:** Email Address
+     6. **LinkedIn:** LinkedIn Profile URL
+     7. **Website:** Company Website
+     8. **Connection Request:** (The drafted LinkedIn message)
+     9. **Email Message:** (The drafted Email body)
+     10. **Profile:** Company Profile summary
+
+   **rules:**
+   - Do NOT merge Name and Title. they are separate columns.
+   - If a field is missing, leave it empty.
 
 ### OUTPUT FORMAT (JSON)
 {

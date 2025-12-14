@@ -182,7 +182,14 @@ const SheetTable = ({ rows, loading, error }) => {
                         className="w-full bg-white border border-accent rounded px-2 py-1 text-xs resize-none"
                       />
                     ) : (
-                      <div className="max-w-xs line-clamp-3">{row.connectionRequest || '—'}</div>
+                      <div className="relative group/cell cursor-pointer">
+                        <div className="max-w-xs line-clamp-2">{row.connectionRequest || '—'}</div>
+                        {row.connectionRequest?.length > 50 && (
+                          <span className="text-[10px] text-primary font-bold opacity-0 group-hover/cell:opacity-100 transition-opacity absolute -bottom-1 right-0 bg-white/90 px-1 shadow-sm border border-glass-border rounded">
+                            Click to view
+                          </span>
+                        )}
+                      </div>
                     )}
                   </td>
                   <td
@@ -199,7 +206,14 @@ const SheetTable = ({ rows, loading, error }) => {
                         className="w-full bg-white border border-accent rounded px-2 py-1 text-xs resize-none"
                       />
                     ) : (
-                      <div className="max-w-xs line-clamp-3">{row.emailMessage || '—'}</div>
+                      <div className="relative group/cell cursor-pointer">
+                        <div className="max-w-xs line-clamp-2">{row.emailMessage || '—'}</div>
+                        {row.emailMessage?.length > 50 && (
+                          <span className="text-[10px] text-primary font-bold opacity-0 group-hover/cell:opacity-100 transition-opacity absolute -bottom-1 right-0 bg-white/90 px-1 shadow-sm border border-glass-border rounded">
+                            Click to view
+                          </span>
+                        )}
+                      </div>
                     )}
                   </td>
                   <td
@@ -216,7 +230,14 @@ const SheetTable = ({ rows, loading, error }) => {
                         className="w-full bg-white border border-accent rounded px-2 py-1 text-xs resize-none"
                       />
                     ) : (
-                      <div className="max-w-md line-clamp-4">{row.companyProfile || '—'}</div>
+                      <div className="relative group/cell cursor-pointer">
+                        <div className="max-w-md line-clamp-2">{row.companyProfile || '—'}</div>
+                        {row.companyProfile?.length > 60 && (
+                          <span className="text-[10px] text-primary font-bold opacity-0 group-hover/cell:opacity-100 transition-opacity absolute -bottom-1 right-0 bg-white/90 px-1 shadow-sm border border-glass-border rounded">
+                            Click to view
+                          </span>
+                        )}
+                      </div>
                     )}
                   </td>
                 </tr>
