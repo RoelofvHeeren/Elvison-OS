@@ -42,7 +42,7 @@ const AgentConfig = () => {
             }
 
             // Merge with local storage (Local persistence overrides for simplicity in this dev tool)
-            const localConfigs = localStorage.getItem('elvison_agent_configs')
+            const localConfigs = localStorage.getItem('elvison_agent_configs_diagnostic')
             if (localConfigs) {
                 try {
                     const parsedLocal = JSON.parse(localConfigs)
@@ -71,7 +71,7 @@ const AgentConfig = () => {
         const currentConfig = configs[selectedAgentId] || {}
 
         // Persist locally first
-        localStorage.setItem('elvison_agent_configs', JSON.stringify(configs))
+        localStorage.setItem('elvison_agent_configs_diagnostic', JSON.stringify(configs))
 
         try {
             const res = await fetch('/api/agents/config', {

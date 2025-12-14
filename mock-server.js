@@ -1186,11 +1186,64 @@ app.get('/v1/workflows/runs/:run_id', proxyOpenAI)
 
 // Agent Configuration Store
 const AGENT_CONFIGS = {
-  company_finder: { instructions: '', linkedFileIds: [], enabledToolIds: [] },
-  company_profiler: { instructions: '', linkedFileIds: [], enabledToolIds: [] },
-  apollo_lead_finder: { instructions: '', linkedFileIds: [], enabledToolIds: [] },
+  company_finder: {
+    instructions: `You are a simple Discovery Agent.
+Goal: Find law firms in Toronto, Canada.
+Extract 'target_count' from the input (default to 3).
+EXCLUSION LIST:
+Read the 'Companies' sheet first. Exclude any companies listed there.
+OUTPUT FORMAT (STRICT):
+{
+  "results": [
+    {
+      "company_name": "string",
+      "hq_city": "Toronto",
+      "capital_role": "Mixed",
+      "website": "https://...",
+      "domain": "example.com",
+      "why_considered": "It is a law firm",
+      "source_links": ["https://..."]
+    }
+  ]
+}`,
+    linkedFileIds: [],
+    enabledToolIds: ['web_search', 'sheet_mcp']
+  },
+  company_profiler: {
+    instructions: `You are a simple Profiler.
+Your job:
+1. Check if the input company is a Law Firm.
+2. If yes, write a short profile: "This is a law firm."
+3. If no, skip it.
+OUTPUT FORMAT (STRICT):
+{
+  "results": [
+    {
+      "company_name": "",
+      "domain": "",
+      "company_profile": ""
+    }
+  ]
+}`,
+    linkedFileIds: [],
+    enabledToolIds: ['web_search']
+  },
+  apollo_lead_finder: {
+    instructions: `You are Apollo Lead Ops.
+Goal: Find Partners at these law firms.
+Tools: organization_search, employees_of_company, people_search, people_enrichment, get_person_email.
+Step 1: Resolve Org Identity.
+Step 2: Find 'Partner' or 'Lawyer'.
+   Location: Canada.
+   Limit: 1 lead per company (STRICT).
+Step 3: Enrich & Get Email.
+Output JSON:
+{ "leads": [ { ... } ] }`,
+    linkedFileIds: [],
+    enabledToolIds: ['apollo_mcp']
+  },
   outreach_creator: { instructions: '', linkedFileIds: [], enabledToolIds: [] },
-  sheet_builder: { instructions: '', linkedFileIds: [], enabledToolIds: [] }
+  sheet_builder: { instructions: '', linkedFileIds: [], enabledToolIds: ['sheet_mcp'] }
 }
 
 // GET /api/agents/config
