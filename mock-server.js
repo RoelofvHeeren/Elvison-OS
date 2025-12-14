@@ -1332,7 +1332,13 @@ Goal: Save the enriched leads to the database (Google Sheet).
    - Append them to the sheet using 'sheet_mcp'.
    - Ensure columns map correctly: Date, Name, Title, Company, Email, LinkedIn, Website, Connection Request, Email Message, Profile.
 3. **Format:**
-   - "Date Added" should be today's date (YYYY-MM-DD).`,
+   - "Date Added" should be today's date (YYYY-MM-DD).
+
+### OUTPUT FORMAT (JSON)
+{
+  "spreadsheet_url": "https://docs.google.com/...",
+  "status": "success"
+}`,
     linkedFileIds: [],
     enabledToolIds: ['sheet_mcp']
   }
@@ -1405,7 +1411,13 @@ app.post('/api/agents/run', async (req, res) => {
       }
     )
 
-    sendEvent('result', result);
+    try {
+      sendEvent('result', result);
+    } catch (serializeErr) {
+      console.error('Result serialization failed:', serializeErr)
+      sendEvent('error', { message: 'Failed to serialize workflow result', detail: serializeErr.message })
+    }
+
     sendEvent('done', {});
     res.end();
 
