@@ -29,7 +29,7 @@ const Logbook = () => {
     }
 
     return (
-        <div className="space-y-6 animate-fade-in h-[calc(100vh-8rem)] flex flex-col">
+        <div className="space-y-6 animate-fade-in">
             <header className="flex items-center justify-between">
                 <div>
                     <h1 className="font-serif text-3xl font-medium text-primary flex items-center gap-3">
@@ -49,15 +49,15 @@ const Logbook = () => {
                 )}
             </header>
 
-            <div className="flex-1 overflow-hidden rounded-2xl border border-outline bg-white/5 backdrop-blur-sm shadow-xl flex flex-col">
+            <div className="rounded-2xl border border-outline bg-white/5 backdrop-blur-sm shadow-xl">
                 {jobs.length === 0 ? (
-                    <div className="flex-1 flex flex-col items-center justify-center text-gray-500">
+                    <div className="flex flex-col items-center justify-center text-gray-500 py-12">
                         <Book className="h-16 w-16 opacity-20 mb-4" />
                         <p>No jobs recorded yet.</p>
                         <p className="text-sm opacity-60 mt-1">Run a workflow to see it here.</p>
                     </div>
                 ) : (
-                    <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                    <div className="p-4 space-y-3">
                         {jobs.map((job, index) => (
                             <div key={index} className="group rounded-xl border border-white/10 bg-black/20 p-5 hover:bg-black/30 transition-all hover:border-[#139187]/30">
                                 <div className="flex items-start justify-between gap-4">
