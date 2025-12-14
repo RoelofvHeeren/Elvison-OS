@@ -1401,11 +1401,12 @@ Your Goal: Validate alignment and extract outreach "hooks".
 Goal: Find decision-makers for Real Estate Investment deals.
 
 ### TARGET ROLES
+### TARGET ROLES
 **BROAD SEARCH STRATEGY:** We need to find *someone* relevant at each firm.
 - **Tier 1 (Executives):** "Partner", "Principal", "Managing Director", "President", "CEO", "Founder", "Co-Founder", "Owner".
 - **Tier 2 (Real Estate Leaders):** "Head of Real Estate", "Head of Acquisitions", "Head of Investments", "Chief Investment Officer", "CIO", "Director of Development", "VP Development".
-- **Tier 3 (Managers):** "Director of Acquisitions", "Investment Manager", "Acquisitions Manager", "Development Manager", "Asset Manager", "Senior Associate".
-- **Do NOT Exclude:** We want *anyone* with decision-making power. Only exclude obvious non-relevant roles like "Intern", "Receptionist", "Legal Counsel", "HR".
+- **Tier 3 (Key Decision Makers):** "Director of Acquisitions", "Investment Manager", "Acquisitions Manager", "Development Manager", "Asset Manager".
+- **Strictly EXCLUDE:** "Associate", "Senior Associate", "Analyst", "Intern", "Receptionist", "Legal", "HR", "Controller", "Accountant".
 
 ### LOCATION
 - Priority: Canada (Toronto, Vancouver, Montreal, Calgary).

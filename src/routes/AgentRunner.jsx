@@ -33,14 +33,14 @@ const AgentRunner = () => {
         scrollToBottom()
     }, [logs])
 
-    const saveJobToHistory = (jobResult) => {
+    const saveJobToHistory = (jobResult, jobError = null) => {
         const historyItem = {
             id: Date.now(),
             timestamp: new Date().toISOString(),
             prompt: prompt,
             status: jobResult ? 'success' : 'failed',
             result: jobResult,
-            error: error
+            error: jobError
         }
 
         try {
@@ -118,11 +118,11 @@ const AgentRunner = () => {
                             } else if (type === 'result') {
                                 setResult(data)
                                 setCurrentStep('Complete')
-                                saveJobToHistory(data) // Save success
+                                saveJobToHistory(data, null) // Save success
                             } else if (type === 'error') {
                                 setError(data.message)
                                 setIsRunning(false)
-                                saveJobToHistory(null)
+                                saveJobToHistory(null, data.message)
                             } else if (type === 'done') {
                                 setIsRunning(false)
                             }
@@ -136,15 +136,7 @@ const AgentRunner = () => {
             setError(err.message)
             setIsRunning(false)
             // Save failure to history
-            const historyItem = {
-                id: Date.now(),
-                timestamp: new Date().toISOString(),
-                prompt: prompt,
-                status: 'failed',
-                error: err.message
-            }
-            const existingHistory = JSON.parse(localStorage.getItem('elvison_job_history') || '[]')
-            localStorage.setItem('elvison_job_history', JSON.stringify([...existingHistory, historyItem]))
+            saveJobToHistory(null, err.message)
         }
     }
 
