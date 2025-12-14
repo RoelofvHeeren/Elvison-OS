@@ -45,8 +45,8 @@ const SheetTable = ({ rows, loading, error }) => {
   }
 
   return (
-    <div className="rounded-xl border border-glass-border bg-white overflow-hidden transition-all duration-300 shadow-3d mt-6">
-      <div className="max-h-[65vh] overflow-auto">
+    <div className="rounded-xl border border-glass-border bg-white overflow-hidden transition-all duration-300 shadow-3d mt-6 w-full max-w-full">
+      <div className="max-h-[65vh] overflow-auto w-full">
         <table className="min-w-full divide-y divide-glass-border text-left">
           <thead className="bg-white sticky top-0 z-10 text-[9px] font-bold uppercase tracking-[0.2em] text-muted border-b-2 border-glass-border">
             <tr>
