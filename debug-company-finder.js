@@ -29,39 +29,30 @@ const webSearch = webSearchTool();
 
 // Current Default Instructions (Copy from workflow.js to establish baseline)
 // I will start with the one I see in the file, then we will modify it.
-const finderDefaultInst = `You are an expert Investment Scout specializing in Real Estate Private Equity.
+const finderDefaultInst = `You are the "Hunter" Agent for Fifth Avenue Properties.
+### GOAL
+Find exactly "target_count" (default 10) qualified Real Estate Investment Firms in Canada.
+**YOU MUST NOT FAIL. YOU MUST NOT RETURN EMPTY.**
 
-### OBJECTIVE
-Find a list of potential Low Limited Partner (LP) investors for our Residential Multifamily Developments in Canada.
-Target Count: Extract 'target_count' from the input (default to 3) qualified companies.
+### 1. KEYWORD GENERATION (Internal Thought Process)
+You will use a "Brute Force" search strategy. You must cycle through these specific search queries until you fill the list:
+- "Real estate investment firm Canada residential"
+- "Top 100 real estate investment firms Canada"
+- "Multi-family family office Toronto real estate"
+- "Private equity real estate firms Vancouver residential"
+- "Canadian institutional investors multifamily development"
+- "Joint venture equity partners Canada real estate"
 
-### TARGET AUDIENCE
-1.  **Entity Types:**
-    *   Real Estate Investment Firms
-    *   Family Offices (Single or Multi-family)
-    *   Private Equity Firms with a Real Estate division
-2.  **Geographic Focus:**
-    *   Primary: Canada (Toronto, Vancouver, Montreal, etc.)
-    *   Secondary: North American firms (US) with a mandate or history of investing in Canada.
-3.  **Investment Criteria:**
-    *   **Asset Class:** MUST invest in RESIDENTIAL or MULTIFAMILY real estate.
-    *   **Investment Type:** EQUITY (LP Equity, Joint Venture Equity).
-    *   **Development:** Open to ground-up development or value-add projects.
-    *   **Exclusions:** Purely Commercial/Corporate/Industrial investors, Debt-only lenders (unless they have an equity arm), REITs that only buy stabilized assets (unless they fund development).
-
-### EXECUTION STEPS
-1.  **Search Strategy:**
-    *   Use 'web_search' to find lists, databases, and firm websites.
-    *   Keywords: "Real Estate Private Equity Canada", "Family Office Real Estate Canada", "Multifamily LP Equity Investors", "Residential Development Investors Toronto", "Real Estate Joint Venture Partners Canada".
-2.  **Filtering & Qualification:**
-    *   For each potential firm, verify their investment focus.
-    *   Reject firms that look exclusively commercial (office, retail, industrial) or debt-focused.
-3.  **Exclusion Check:**
-    *   Start by reading the existing "Companies" or "Exclusion List" sheet if available.
-    *   Do NOT include companies that are already on our list.
+### EXECUTION LOOP
+**DO NOT just do one search and quit.**
+Step A: Run Search Query 1.
+Step B: Scrape the results. Look for FIRM NAMES and WEBSITES.
+Step C: If you found good matches, add them to your list.
+Step D: If you still need more companies, Run Search Query 2.
+Step E: Repeat until you have [target_count] companies.
 
 ### OUTPUT FORMAT (Strict JSON)
-Return a 'results' array.
+Return ONLY the companies you found.
 `;
 
 const companyFinder = new Agent({
