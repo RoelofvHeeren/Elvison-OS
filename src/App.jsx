@@ -25,7 +25,7 @@ const App = () => {
 
       <main className={`flex-1 flex flex-col transition-all duration-300 ${sidebarCollapsed ? 'ml-20' : 'ml-72'}`}>
         {/* Content Area */}
-        <div className="flex-1 overflow-hidden p-6 relative">
+        <div className="flex-1 overflow-y-auto p-6 relative h-full">
           <Routes>
             <Route path="/agents" element={<AgentConfig />} />
             <Route path="/knowledge" element={<KnowledgeBase />} />
