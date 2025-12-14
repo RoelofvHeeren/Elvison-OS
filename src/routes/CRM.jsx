@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { CalendarDays, Building2, RefreshCw } from 'lucide-react'
 import SheetTable from '../components/SheetTable'
-import { fetchHealth, fetchLeads } from '../utils/api'
+import { fetchHealth, fetchLeads, deleteLead } from '../utils/api'
 
 const CRM = () => {
   const [rows, setRows] = useState([])
@@ -17,8 +17,10 @@ const CRM = () => {
       setError('')
       const data = await fetchLeads()
       const normalized = (data?.rows ?? data ?? [])
-        .filter(row => row[0] !== 'Date Added' && (row[1] || row[2] || row[3])) // Filter headers and empty rows
-        .map((row) => ({
+        .map((row, idx) => ({ row, idx }))
+        .filter(({ row }) => row[0] !== 'Date Added' && (row[1] || row[2] || row[3])) // Filter headers and empty rows
+        .map(({ row, idx }) => ({
+          originalIndex: idx,
           date: row[0] || '',
           name: row[1] || '',
           title: row[2] || '',
@@ -36,6 +38,19 @@ const CRM = () => {
       console.error(err)
       setError('Unable to fetch sheet rows. Check the MCP connection and try again.')
     } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleDeleteRow = async (idx) => {
+    if (!window.confirm('Are you sure you want to delete this lead?')) return
+    try {
+      setLoading(true)
+      await deleteLead(idx)
+      await fetchRows()
+    } catch (err) {
+      console.error(err)
+      setError('Failed to delete row')
       setLoading(false)
     }
   }
@@ -174,7 +189,7 @@ const CRM = () => {
         </div>
       </div>
 
-      <SheetTable rows={filteredRows} loading={loading} error={error} />
+      <SheetTable rows={filteredRows} loading={loading} error={error} onDeleteRow={handleDeleteRow} />
     </div>
   )
 }

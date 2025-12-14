@@ -750,6 +750,84 @@ app.get('/api/leads', async (req, res) => {
   }
 })
 
+// DELETE /api/leads/:index - Delete a row by index (0-based from rows array)
+app.delete('/api/leads/:index', async (req, res) => {
+  const index = parseInt(req.params.index, 10)
+  if (isNaN(index) || index < 0) {
+    return res.status(400).json({ error: 'Invalid row index' })
+  }
+
+  const active = getActiveConnection()
+  try {
+    const accessToken = await ensureGoogleAccessToken()
+    if (!accessToken) {
+      return res.status(401).json({ error: 'Not connected to Google' })
+    }
+
+    // 1. Get Sheet ID (GID) for the targeted sheet name
+    const metaUrl = `https://sheets.googleapis.com/v4/spreadsheets/${active.sheetId}?fields=sheets(properties(sheetId,title))`
+    const metaRes = await fetch(metaUrl, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+
+    if (!metaRes.ok) {
+      throw new Error('Failed to fetch spreadsheet metadata')
+    }
+
+    const metaData = await metaRes.json()
+    const targetTitle = active.sheetName || 'AI Lead Sheet'
+    const sheetObj = metaData.sheets?.find(s => s.properties?.title === targetTitle)
+
+    if (!sheetObj) {
+      return res.status(404).json({ error: `Sheet "${targetTitle}" not found` })
+    }
+
+    const gid = sheetObj.properties.sheetId
+
+    // 2. Perform Batch Update to Delete Row
+    // Frontend index 0 = Sheet Row 2 (Index 1) because of header
+    const startIndex = index + 1
+    const endIndex = startIndex + 1
+
+    const updatePayload = {
+      requests: [
+        {
+          deleteDimension: {
+            range: {
+              sheetId: gid,
+              dimension: "ROWS",
+              startIndex: startIndex,
+              endIndex: endIndex
+            }
+          }
+        }
+      ]
+    }
+
+    const updateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${active.sheetId}:batchUpdate`
+    const updateRes = await fetch(updateUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(updatePayload)
+    })
+
+    if (!updateRes.ok) {
+      const text = await updateRes.text()
+      console.error('Batch update failed:', text)
+      return res.status(502).json({ error: 'Failed to delete row', detail: text })
+    }
+
+    res.json({ success: true, deletedIndex: index })
+
+  } catch (err) {
+    console.error('Delete row error:', err)
+    res.status(500).json({ error: 'Failed to delete row' })
+  }
+})
+
 // POST /api/start-job (uses saved connection workflow + key)
 app.post('/api/start-job', async (req, res) => {
   const prompt = req.body?.prompt

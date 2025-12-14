@@ -10,6 +10,11 @@ export const fetchLeads = async () => {
   return data
 }
 
+export const deleteLead = async (index) => {
+  const { data } = await client.delete(`/api/leads/${index}`)
+  return data
+}
+
 export const startJob = async (prompt) => {
   const { data } = await client.post('/api/start-job', { prompt })
   return data

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import PropTypes from 'prop-types'
+import { Trash2 } from 'lucide-react'
 
 const columns = [
   { key: 'date', label: 'Date Added', width: 'w-28' },
@@ -12,9 +13,10 @@ const columns = [
   { key: 'connectionRequest', label: 'Connection Request', width: 'min-w-[20rem]' },
   { key: 'emailMessage', label: 'Email Message', width: 'min-w-[20rem]' },
   { key: 'companyProfile', label: 'Company Profile', width: 'min-w-[24rem]' },
+  { key: 'actions', label: '', width: 'w-10' },
 ]
 
-const SheetTable = ({ rows, loading, error }) => {
+const SheetTable = ({ rows, loading, error, onDeleteRow }) => {
   const [editingCell, setEditingCell] = useState(null)
   const [editValue, setEditValue] = useState('')
 
@@ -240,6 +242,18 @@ const SheetTable = ({ rows, loading, error }) => {
                       </div>
                     )}
                   </td>
+                  <td className="px-4 py-3 text-muted flex items-center justify-center">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        if (onDeleteRow) onDeleteRow(row.originalIndex)
+                      }}
+                      className="text-muted/50 hover:text-rose-500 transition-colors p-1"
+                      title="Delete Lead"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </td>
                 </tr>
               ))
             )}
@@ -253,6 +267,7 @@ const SheetTable = ({ rows, loading, error }) => {
 SheetTable.propTypes = {
   rows: PropTypes.arrayOf(
     PropTypes.shape({
+      originalIndex: PropTypes.number,
       date: PropTypes.string,
       name: PropTypes.string,
       title: PropTypes.string,
@@ -267,6 +282,7 @@ SheetTable.propTypes = {
   ),
   loading: PropTypes.bool,
   error: PropTypes.string,
+  onDeleteRow: PropTypes.func,
 }
 
 SheetTable.defaultProps = {
