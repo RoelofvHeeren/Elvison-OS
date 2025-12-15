@@ -296,7 +296,7 @@ const StepAgentSurvey = ({ agent, answers, setAnswers, onNext, onBack, onGenerat
     }
 
     const currentQuestion = agent.questions[qIndex]
-    const currentAnswer = answers[agent.id]?.[currentQuestion.id]
+    const currentAnswer = answers[currentQuestion.id]
 
     // Determine if next is allowed
     const canProceed = () => {
