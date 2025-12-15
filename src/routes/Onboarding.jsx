@@ -814,7 +814,7 @@ const Onboarding = () => {
     if (!isLoaded) return null // Prevent flash of wrong state
 
     return (
-        <div className="bg-[#050505] min-h-screen text-white font-sans selection:bg-teal-500/30 overflow-hidden relative flex">
+        <div className="w-full h-full relative flex rounded-3xl overflow-hidden shadow-2xl bg-black">
             {/* Background Video */}
             <div className="absolute inset-0 z-0 pointer-events-none">
                 <video
@@ -822,11 +822,11 @@ const Onboarding = () => {
                     loop
                     muted
                     playsInline
-                    className="w-full h-full object-cover opacity-80"
+                    className="w-full h-full object-cover opacity-60"
                     src="https://cdn.pixabay.com/video/2020/04/18/36467-418731118_large.mp4"
                 />
-                {/* Subtle Overlay for readability */}
-                <div className="absolute inset-0 bg-black/30 backdrop-blur-[2px]" />
+                {/* Subtle Gradient Overlay for text readability without blocking video */}
+                <div className="absolute inset-0 bg-gradient-to-r from-black/80 via-black/40 to-transparent" />
             </div>
 
             {/* Sidebar (Show after welcome) */}
@@ -839,20 +839,20 @@ const Onboarding = () => {
             )}
 
             {/* Content Overlay */}
-            <div className="relative z-10 flex-1 h-screen flex flex-col p-8 overflow-y-auto">
+            <div className="relative z-10 flex-1 h-full flex flex-col p-8 overflow-y-auto custom-scrollbar">
                 <AnimatePresence mode="wait">
                     {step === 'welcome' && (
-                        <motion.div key="welcome" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                        <motion.div key="welcome" className="h-full flex flex-col justify-center" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                             <StepWelcome onNext={() => setStep('company_info')} />
                         </motion.div>
                     )}
                     {step === 'company_info' && (
-                        <motion.div key="company" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+                        <motion.div key="company" className="h-full" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
                             <StepCompanyInfo data={userData} onChange={handleUserChange} onNext={() => setStep('agent_survey')} />
                         </motion.div>
                     )}
                     {step === 'agent_survey' && (
-                        <motion.div key={`survey-${currentAgentIndex}`} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+                        <motion.div key={`survey-${currentAgentIndex}`} className="h-full" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
                             <StepAgentSurvey
                                 agent={AGENTS[currentAgentIndex]}
                                 answers={surveyAnswers[AGENTS[currentAgentIndex].id] || {}}
@@ -862,7 +862,7 @@ const Onboarding = () => {
                         </motion.div>
                     )}
                     {step === 'agent_verify' && (
-                        <motion.div key={`verify-${currentAgentIndex}`} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}>
+                        <motion.div key={`verify-${currentAgentIndex}`} className="h-full" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}>
                             <StepVerifyPrompt
                                 agent={AGENTS[currentAgentIndex]}
                                 prompt={currentDraftPrompt}
@@ -874,7 +874,7 @@ const Onboarding = () => {
                         </motion.div>
                     )}
                     {step === 'completion' && (
-                        <motion.div key="complete" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                        <motion.div key="complete" className="h-full" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
                             <StepComplete onLaunch={handleLaunch} isSaving={isSaving} />
                         </motion.div>
                     )}
