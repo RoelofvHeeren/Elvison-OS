@@ -85,6 +85,13 @@ export const runAgentWorkflow = async (input, config) => {
         console.warn("Failed to fetch agent prompts from DB, using defaults.", e);
     }
 
+    // --- Initialize Tools ---
+    const webSearch = webSearchTool();
+    // Assuming 'apollo' is the configured name in the MCP runner/server
+    const apolloMcp = hostedMcpTool({
+        serverName: "apollo"
+    });
+
     // Helper to get tools for an agent
     const getToolsForAgent = (agentKey) => {
         const agentConfig = agentConfigs[agentKey];
