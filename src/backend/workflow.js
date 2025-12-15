@@ -294,9 +294,16 @@ export const runAgentWorkflow = async (input, config) => {
             const qualifiedInBatch = [];
 
             for (const company of profilerResults) {
-                if (company.company_profile && company.company_name) {
-                    if (!qualifiedCompanies.some(c => c.company_name === company.company_name)) {
-                        qualifiedInBatch.push(company);
+                // Find original to preserve 'website' and distinct inputs
+                const original = finderResults.find(f =>
+                    f.company_name.toLowerCase().trim() === company.company_name.toLowerCase().trim()
+                ) || {};
+
+                const merged = { ...original, ...company }; // Profiler fields override, but original fields persist
+
+                if (merged.company_profile && merged.company_name) {
+                    if (!qualifiedCompanies.some(c => c.company_name === merged.company_name)) {
+                        qualifiedInBatch.push(merged);
                     }
                 }
             }
