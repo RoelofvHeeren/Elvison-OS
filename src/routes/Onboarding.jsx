@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Sparkles, ChevronRight, Check, Rocket, Bot, Edit3, Save, RotateCw, Plus, X, CheckCircle2 } from 'lucide-react'
 import Typewriter from '../components/Typewriter'
-import { saveAgentPrompts, saveCrmColumns, fetchAgentPrompts, fetchCrmColumns } from '../utils/api'
+import { saveAgentPrompts, saveCrmColumns, fetchAgentPrompts, fetchCrmColumns, optimizeAgentPrompt, createInternalKnowledgeBase } from '../utils/api'
 import VisualColumnEditor from '../components/VisualColumnEditor'
 
 // --- Configuration ---
