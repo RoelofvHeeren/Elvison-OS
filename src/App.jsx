@@ -20,6 +20,17 @@ const App = () => {
     }
   }, [location, navigate])
 
+  // Special layout for onboarding
+  if (location.pathname === '/onboarding') {
+    return (
+      <div className="h-screen w-full overflow-hidden font-sans bg-background">
+        <Routes>
+          <Route path="/onboarding" element={<Onboarding />} />
+        </Routes>
+      </div>
+    )
+  }
+
   return (
     <div className="flex h-screen w-full bg-background text-foreground overflow-hidden font-sans">
       <Sidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(prev => !prev)} />
@@ -34,7 +45,7 @@ const App = () => {
             <Route path="/crm" element={<CRM />} />
             <Route path="/connections" element={<Connections />} />
             <Route path="/logbook" element={<Logbook />} />
-            <Route path="/onboarding" element={<Onboarding />} />
+            {/* Onboarding route handled independently above */}
           </Routes>
         </div>
       </main>

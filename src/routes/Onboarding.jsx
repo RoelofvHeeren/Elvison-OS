@@ -816,15 +816,17 @@ const Onboarding = () => {
     return (
         <div className="bg-[#050505] min-h-screen text-white font-sans selection:bg-teal-500/30 overflow-hidden relative flex">
             {/* Background Video */}
-            <div className="absolute inset-0 z-0 opacity-40 mix-blend-screen pointer-events-none">
+            <div className="absolute inset-0 z-0 pointer-events-none">
                 <video
                     autoPlay
                     loop
                     muted
                     playsInline
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-cover opacity-80"
                     src="https://cdn.pixabay.com/video/2020/04/18/36467-418731118_large.mp4"
                 />
+                {/* Subtle Overlay for readability */}
+                <div className="absolute inset-0 bg-black/30 backdrop-blur-[2px]" />
             </div>
 
             {/* Sidebar (Show after welcome) */}
