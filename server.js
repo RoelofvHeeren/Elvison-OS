@@ -570,60 +570,76 @@ app.post('/api/runs/fail', async (req, res) => {
 })
 
 // Trigger Analysis Run (The Long Running Process)
-app.post('/api/runs/start-workflow', async (req, res) => {
-    const { prompt, agentConfigs } = req.body
-    console.log('Starting workflow with prompt:', prompt)
+// Trigger Analysis Run (SSE Streaming)
+app.post('/api/agents/run', async (req, res) => {
+    const { prompt, vectorStoreId, agentConfigs } = req.body
+    console.log('Starting live workflow with prompt:', prompt)
 
-    // Run asynchronously to not block the request
-    // In a real production app, this should go to a job queue (Redis/Bull)
-    // For now, we just start it and let it run in background.
+    // 1. Setup SSE Headers
+    res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive'
+    })
 
-    // Create initial run record
+    // 2. Create Run Record
     let runId = null
     try {
         const { rows } = await query(
             `INSERT INTO workflow_runs (agent_id, status, started_at, metadata) VALUES ('main_workflow', 'RUNNING', NOW(), $1) RETURNING id`,
-            [JSON.stringify({ prompt })]
+            [JSON.stringify({ prompt, vectorStoreId })]
         )
         runId = rows[0].id
-        res.json({ success: true, run_id: runId, message: "Workflow started in background" })
+        // Send initial connection confirmation
+        res.write(`event: log\ndata: {"step": "System", "detail": "Workflow initialized. Run ID: ${runId}", "timestamp": "${new Date().toISOString()}"}\n\n`)
     } catch (err) {
-        console.error('Failed to start workflow run DB entry:', err)
-        return res.status(500).json({ error: 'Database error starting run' })
+        console.error('Failed to init run:', err)
+        res.write(`event: error\ndata: {"message": "Database initialization failed"}\n\n`)
+        return res.end()
     }
 
-    // Execute Workflow
-    (async () => {
-        try {
-            const result = await runAgentWorkflow({ input_as_text: prompt }, {
-                agentConfigs: agentConfigs || {},
-                listeners: {
-                    onLog: async (logParams) => {
-                        console.log(`[Workflow Step] ${logParams.step}: ${logParams.detail}`)
-                        // Optional: Append to a logs table or update run metadata
-                    }
+    // 3. Execute Workflow with Streaming Listeners
+    try {
+        const result = await runAgentWorkflow({ input_as_text: prompt }, {
+            vectorStoreId: vectorStoreId, // Pass VS ID from request
+            agentConfigs: agentConfigs || {},
+            listeners: {
+                onLog: async (logParams) => {
+                    const eventData = JSON.stringify({
+                        step: logParams.step,
+                        detail: logParams.detail,
+                        timestamp: new Date().toISOString()
+                    })
+                    res.write(`event: log\ndata: ${eventData}\n\n`)
                 }
-            })
+            }
+        })
 
-            // On Success
-            await query(
-                `UPDATE workflow_runs SET status = 'COMPLETED', completed_at = NOW() WHERE id = $1`,
-                [runId]
-            )
-            await query(
-                `INSERT INTO agent_results (run_id, output_data) VALUES ($1, $2)`,
-                [runId, JSON.stringify(result)]
-            )
-            console.log('Workflow completed successfully:', runId)
+        // 4. Success Completion
+        await query(
+            `UPDATE workflow_runs SET status = 'COMPLETED', completed_at = NOW() WHERE id = $1`,
+            [runId]
+        )
+        await query(
+            `INSERT INTO agent_results (run_id, output_data) VALUES ($1, $2)`,
+            [runId, JSON.stringify(result)]
+        )
 
-        } catch (error) {
-            console.error('Workflow failed:', error)
+        res.write(`event: result\ndata: ${JSON.stringify(result)}\n\n`)
+        res.write(`event: done\ndata: {}\n\n`)
+    } catch (error) {
+        console.error('Workflow failed:', error)
+        try {
             await query(
                 `UPDATE workflow_runs SET status = 'FAILED', completed_at = NOW(), error_log = $2 WHERE id = $1`,
                 [runId, error.message || String(error)]
             )
-        }
-    })()
+        } catch (dbErr) { console.error("DB update failed during error handling", dbErr) }
+
+        res.write(`event: error\ndata: {"message": "${error.message || 'Workflow execution failed'}"}\n\n`)
+    } finally {
+        res.end()
+    }
 })
 
 // Helper to format agent ID to Name
