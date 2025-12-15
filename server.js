@@ -428,7 +428,54 @@ app.get(/.*/, (req, res) => {
     res.sendFile(path.join(__dirname, 'dist', 'index.html'))
 })
 
+// --- Database Initialization ---
+const initDB = async () => {
+    try {
+        console.log('Initializing Database Schema...')
+
+        // System Config
+        await query(`
+            CREATE TABLE IF NOT EXISTS system_config (
+                key VARCHAR(50) PRIMARY KEY,
+                value JSONB,
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+            );
+        `)
+
+        // Agent Prompts
+        await query(`
+            CREATE TABLE IF NOT EXISTS agent_prompts (
+                id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                agent_id VARCHAR(50) NOT NULL UNIQUE,
+                name VARCHAR(100) NOT NULL,
+                system_prompt TEXT NOT NULL,
+                config JSONB DEFAULT '{}'::jsonb,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+            );
+        `)
+
+        // CRM Columns
+        await query(`
+            CREATE TABLE IF NOT EXISTS crm_columns (
+                id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                column_name VARCHAR(100) NOT NULL,
+                column_type VARCHAR(50) NOT NULL,
+                is_required BOOLEAN DEFAULT FALSE,
+                description TEXT,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+            );
+        `)
+
+        console.log('Database Schema Verified.')
+    } catch (err) {
+        console.error('Failed to initialize DB:', err)
+    }
+}
+
 // Start Server
-app.listen(port, () => {
-    console.log(`Server running on port ${port}`)
+initDB().then(() => {
+    app.listen(port, () => {
+        console.log(`Server running on port ${port}`)
+    })
 })

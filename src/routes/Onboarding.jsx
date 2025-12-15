@@ -845,8 +845,9 @@ const Onboarding = () => {
             localStorage.removeItem('onboarding_state')
             navigate('/connections')
         } catch (err) {
-            console.error("Launch failed", err)
-            alert("Failed to save configuration. Check console.")
+            console.error("Launch Error:", err)
+            const msg = err.response?.data?.error || err.message || "Unknown error"
+            alert(`Failed to save configuration: ${msg}`)
         } finally {
             setIsSaving(false)
         }
