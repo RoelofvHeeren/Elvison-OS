@@ -7,94 +7,114 @@ import VisualColumnEditor from '../components/VisualColumnEditor'
 
 // --- Configuration ---
 
+// --- Configuration ---
+
 const JOB_TITLE_SUGGESTIONS = [
     "CEO", "Founder", "Co-Founder", "CTO", "CIO", "VP of Sales", "VP of Engineering",
     "Director of Marketing", "Product Manager", "Head of Growth", "Sales Director"
+]
+
+const COUNTRY_SUGGESTIONS = [
+    "United States", "United Kingdom", "Canada", "Australia", "Germany", "France", "Netherlands",
+    "Sweden", "Singapore", "United Arab Emirates"
+]
+
+const DATA_FIELD_OPTIONS = [
+    "First Name", "Last Name", "Title", "Company Name", "Company Website",
+    "LinkedIn URL", "Email", "Phone Number", "Location", "Industry"
+]
+
+const CHANNEL_OPTIONS = [
+    "LinkedIn", "Email", "Instagram", "Facebook", "Other"
 ]
 
 const AGENTS = [
     {
         id: 'company_finder',
         name: 'Company Finder',
-        description: 'Finds companies matching your Ideal Customer Profile (ICP).',
+        description: 'Discover the right companies and know how to search when results are not obvious.',
         questions: [
-            { id: 'icp_description', label: 'Describe your Ideal Customer Profile in detail.' },
-            { id: 'industries', label: 'Which industries should we target?' },
-            { id: 'location', label: 'What are the target geographic locations?' },
-            { id: 'exclusions', label: 'Any specific types of companies to exclude?' },
+            { id: 'target_companies', label: 'Who should this agent find?', placeholder: 'Describe the exact type of companies... what do they do, how do they operate?', type: 'textarea' },
+            { id: 'negative_constraints', label: 'Who should this agent NEVER return?', placeholder: 'Describe companies, roles, or edge cases to exclude...', type: 'textarea' },
+            { id: 'geography', label: 'Target geography', type: 'multi-select', options: COUNTRY_SUGGESTIONS, helper: 'Select countries where companies must have activity or exposure.' },
+            { id: 'quality_bar', label: 'Quality bar', placeholder: 'What makes a company worth contacting? (Size, reputation, etc.)', type: 'textarea' },
+            { id: 'discovery_behavior', label: 'Discovery behavior when results are weak', placeholder: 'How should the agent think creatively if obvious searches fail?', type: 'textarea' },
         ],
         template: (a) => `You are an expert lead researcher. Find companies matching this profile:
-ICP: ${a.icp_description || 'N/A'}
-Industries: ${a.industries || 'Generic'}
-Location: ${a.location || 'Global'}
-Exclusions: ${a.exclusions || 'None'}
+Target: ${a.target_companies}
+Avoid: ${a.negative_constraints}
+Geo: ${Array.isArray(a.geography) ? a.geography.join(', ') : a.geography}
+Quality Bar: ${a.quality_bar}
+Strategy: ${a.discovery_behavior}
 Output the list in JSON format.`
     },
     {
         id: 'apollo',
         name: 'Apollo Enricher',
-        description: 'Finds contact details for key decision makers.',
+        description: 'Identify the right people and return the right data.',
         questions: [
-            { id: 'job_titles', label: 'What job titles are you looking for?', type: 'multi-select' },
-            { id: 'seniority', label: 'What seniority levels (e.g., C-Suite, VP)?' },
-            { id: 'max_contacts', label: 'Maximum contacts per company?' },
-            { id: 'email_requirement', label: 'Are verified emails required?' },
+            { id: 'job_titles', label: 'Which titles should the agent target?', type: 'multi-select', options: JOB_TITLE_SUGGESTIONS },
+            { id: 'seniority', label: 'Seniority rules or exceptions', placeholder: 'e.g. "Founder or CIO only", "Director+ is fine"', type: 'textarea' },
+            { id: 'data_fields', label: 'What data should Apollo return for each contact?', type: 'multi-select', options: DATA_FIELD_OPTIONS, helper: 'These fields will become columns in your database.' },
+            { id: 'max_contacts', label: 'Maximum contacts per company', type: 'number', placeholder: '3' },
+            { id: 'email_quality', label: 'Email quality rule', type: 'radio', options: ['Only include contacts with verified emails', 'LinkedIn-only contacts are acceptable'] },
         ],
-        template: (a) => `You are a data enrichment specialist. Find contacts for the identified companies.
-Job Titles: ${Array.isArray(a.job_titles) ? a.job_titles.join(', ') : a.job_titles}
-Seniority: ${a.seniority || 'Any'}
-Max per Company: ${a.max_contacts || '3'}
-Verified Emails Only: ${a.email_requirement || 'Yes'}
-Use Apollo API to fetch these details.`
+        template: (a) => `You are a data enrichment specialist. Find contacts.
+Titles: ${Array.isArray(a.job_titles) ? a.job_titles.join(', ') : a.job_titles}
+Seniority: ${a.seniority}
+Fields: ${Array.isArray(a.data_fields) ? a.data_fields.join(', ') : a.data_fields}
+Max Contacts: ${a.max_contacts}
+Email Rule: ${a.email_quality}
+Use Apollo API.`
     },
     {
         id: 'outreach_creator',
         name: 'Outreach Creator',
-        description: 'Drafts personalized cold outreach messages.',
+        description: 'Generate outreach messages you actually want to send.',
         questions: [
-            { id: 'value_prop', label: 'What is your core value proposition?' },
-            { id: 'tone', label: 'What tone should the emails have (e.g., Professional, Casual)?' },
-            { id: 'call_to_action', label: 'What is the Call to Action (CTA)?' },
-            { id: 'pain_points', label: 'What customer pain points do you solve?' },
+            { id: 'template', label: 'Write your ideal first-message template', placeholder: 'Hi {{first_name}}, I noticed {{research_fact}}...', type: 'textarea' },
+            { id: 'channels', label: 'Messaging channels', type: 'multi-select', options: CHANNEL_OPTIONS },
+            { id: 'success_definition', label: 'What does a successful first message mean?', placeholder: 'What do you want the person to do?', type: 'textarea' },
+            { id: 'credibility', label: 'What should the message reference to feel credible?', placeholder: 'Real info so it doesn\'t feel generic...', type: 'textarea' },
+            { id: 'forbidden', label: 'Forbidden language or behavior', placeholder: 'Phrases, styles, claims to avoid...', type: 'textarea' },
         ],
-        template: (a) => `You are an expert copywriter. Draft cold outreach emails.
-Value Prop: ${a.value_prop}
-Tone: ${a.tone}
-CTA: ${a.call_to_action}
-Pain Points: ${a.pain_points}
-Create unique, high-converting drafts for each lead.`
+        template: (a) => `You are an expert copywriter. Draft outreach messages.
+Template: ${a.template}
+Channels: ${Array.isArray(a.channels) ? a.channels.join(', ') : a.channels}
+Goal: ${a.success_definition}
+Credibility: ${a.credibility}
+Forbidden: ${a.forbidden}
+Create unique drafts.`
     },
     {
         id: 'data_architect',
         name: 'Data Architect',
-        description: 'Configures your internal CRM and data structure.',
-        isVisualEditor: true, // Special flag for Visual Column Editor
-        questions: [], // No standard questions for this one
+        description: 'Confirm and extend your database structure.',
+        isVisualEditor: true,
+        questions: [],
         template: (a, columns) => `You are a CRM Data Architect.
-The user has defined the following data structure:
-${columns.map(c => `- ${c.name} (${c.type}) ${c.required ? '[Required]' : ''}`).join('\n')}
-
-Key Requirements:
-- Ensure all data is normalized.
-- Validate types strictly.
-- Map incoming data to these fields accurately.`
+Structure:
+${columns.map(c => `- ${c.name} (${c.type})`).join('\n')}
+Map incoming data to these fields.`
     },
     {
         id: 'research_framework',
         name: 'Research Framework',
-        description: 'Conducts deep-dive research on prospects.',
+        description: 'Teach the agent how to think and search.',
         questions: [
-            { id: 'research_depth', label: 'How deep should the research be (High/Medium/Low)?' },
-            { id: 'sources', label: 'Any specific sources to check (LinkedIn, News, Website)?' },
-            { id: 'key_insights', label: 'What key insights are influential for your sales process?' },
-            { id: 'report_format', label: 'How should the research summary be formatted?' },
+            { id: 'facts_to_mention', label: 'What facts would you like to mention in outreach?', placeholder: 'Facts that help personalize messages...', type: 'textarea' },
+            { id: 'research_depth', label: 'How deep should research go?', placeholder: 'When is research "enough"?', type: 'textarea' },
+            { id: 'search_keywords', label: 'Keywords, phrases, or lists to search for', placeholder: 'e.g. "Top family offices Canada"', type: 'textarea' },
+            { id: 'manual_workflow', label: 'How would you do this manually?', placeholder: 'I\'d Google X, scan websites...', type: 'textarea' },
+            { id: 'sources', label: 'Sources to prioritize or avoid', placeholder: 'Trust X, avoid Y...', type: 'textarea' },
         ],
-        template: (a) => `You are a market researcher. Conduct deep analysis on each prospect.
+        template: (a) => `You are a market researcher.
+Facts: ${a.facts_to_mention}
 Depth: ${a.research_depth}
+Keywords: ${a.search_keywords}
+Workflow: ${a.manual_workflow}
 Sources: ${a.sources}
-Key Insights to Find: ${a.key_insights}
-Format: ${a.report_format}
-Provide a comprehensive summary.`
+Conduct deep analysis.`
     }
 ]
 
@@ -263,10 +283,20 @@ const StepAgentSurvey = ({ agent, answers, setAnswers, onNext, onGenerate, crmCo
     const currentQuestion = agent.questions[qIndex]
     const currentAnswer = answers[agent.id]?.[currentQuestion.id]
 
-    // Determine if next is allowed (basic validation)
-    const canProceed = currentQuestion.type === 'multi-select'
-        ? Array.isArray(currentAnswer) && currentAnswer.length > 0
-        : currentAnswer?.trim().length > 0
+    // Determine if next is allowed
+    const canProceed = () => {
+        if (!currentQuestion) return false
+        if (currentQuestion.type === 'multi-select') {
+            return Array.isArray(currentAnswer) && currentAnswer.length > 0
+        }
+        if (currentQuestion.type === 'radio') {
+            return !!currentAnswer
+        }
+        if (currentQuestion.type === 'number') {
+            return !!currentAnswer
+        }
+        return currentAnswer?.trim().length > 0
+    }
 
     const isLastQuestion = qIndex === agent.questions.length - 1
 
@@ -310,12 +340,15 @@ const StepAgentSurvey = ({ agent, answers, setAnswers, onNext, onGenerate, crmCo
                         transition={{ duration: 0.4, ease: "easeOut" }}
                         className="w-full"
                     >
-                        <label className="block text-2xl md:text-3xl font-medium text-white mb-8 flex flex-col gap-2">
-                            <span className="text-teal-500 font-mono text-sm uppercase tracking-widest font-bold">
+                        <div className="mb-8">
+                            <div className="text-teal-500 font-mono text-sm uppercase tracking-widest font-bold mb-2">
                                 Question {qIndex + 1} of {agent.questions.length}
-                            </span>
-                            {currentQuestion.label}
-                        </label>
+                            </div>
+                            <h3 className="text-2xl md:text-3xl font-medium text-white mb-2">{currentQuestion.label}</h3>
+                            {currentQuestion.helper && (
+                                <p className="text-gray-400 text-sm">{currentQuestion.helper}</p>
+                            )}
+                        </div>
 
                         <div className={`${PREMIUM_CONTAINER} p-1`}>
                             {currentQuestion.type === 'multi-select' ? (
@@ -323,16 +356,43 @@ const StepAgentSurvey = ({ agent, answers, setAnswers, onNext, onGenerate, crmCo
                                     <TagInput
                                         value={currentAnswer}
                                         onChange={(val) => handleAnswer(currentQuestion.id, val)}
-                                        suggestions={JOB_TITLE_SUGGESTIONS}
+                                        suggestions={currentQuestion.options || []}
                                     />
+                                </div>
+                            ) : currentQuestion.type === 'radio' ? (
+                                <div className="p-6 flex flex-col gap-3">
+                                    {currentQuestion.options.map((opt) => (
+                                        <button
+                                            key={opt}
+                                            onClick={() => handleAnswer(currentQuestion.id, opt)}
+                                            className={`w-full text-left px-4 py-3 rounded-lg border transition-all ${currentAnswer === opt
+                                                ? 'bg-teal-500/20 border-teal-500 text-teal-300'
+                                                : 'bg-white/5 border-white/10 text-gray-300 hover:bg-white/10'
+                                                }`}
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${currentAnswer === opt ? 'border-teal-500' : 'border-gray-500'
+                                                    }`}>
+                                                    {currentAnswer === opt && <div className="w-2 h-2 rounded-full bg-teal-500" />}
+                                                </div>
+                                                {opt}
+                                            </div>
+                                        </button>
+                                    ))}
                                 </div>
                             ) : (
                                 <textarea
                                     className="w-full bg-transparent border-none rounded-xl p-6 text-xl text-white placeholder-gray-500 focus:ring-0 outline-none resize-none leading-relaxed min-h-[160px]"
-                                    placeholder="Type your answer here..."
+                                    placeholder={currentQuestion.placeholder || "Type your answer here..."}
                                     value={currentAnswer || ''}
                                     onChange={(e) => handleAnswer(currentQuestion.id, e.target.value)}
                                     autoFocus
+                                    onKeyDown={(e) => {
+                                        // Allow Enter to verify if number
+                                        if (currentQuestion.type === 'number' && !/^[0-9]*$/.test(e.key) && e.key.length === 1 && !e.ctrlKey) {
+                                            e.preventDefault()
+                                        }
+                                    }}
                                 />
                             )}
 
@@ -361,7 +421,7 @@ const StepAgentSurvey = ({ agent, answers, setAnswers, onNext, onGenerate, crmCo
 
                     <button
                         onClick={handleNext}
-                        disabled={!canProceed}
+                        disabled={!canProceed()}
                         className={`${PREMIUM_BUTTON_PRIMARY} flex items-center gap-2 disabled:opacity-50 disabled:grayscale`}
                     >
                         {isLastQuestion ? (
@@ -524,6 +584,42 @@ const Onboarding = () => {
         setGeneratedPrompts(prev => ({ ...prev, [agent.id]: currentDraftPrompt }))
 
         if (currentAgentIndex < AGENTS.length - 1) {
+            const nextIndex = currentAgentIndex + 1
+            const nextAgent = AGENTS[nextIndex]
+
+            // --- DATA ARCHITECT PRE-FILL LOGIC ---
+            if (nextAgent.id === 'data_architect' && crmColumns.length === 0) {
+                const apolloAnswers = surveyAnswers['apollo'] || {}
+                const outreachAnswers = surveyAnswers['outreach_creator'] || {}
+
+                const newColumns = []
+                // 1. Standard
+                newColumns.push({ id: 'c1', name: 'company_name', type: 'text', required: true })
+                newColumns.push({ id: 'c2', name: 'company_domain', type: 'link', required: false })
+                newColumns.push({ id: 'c3', name: 'company_profile', type: 'long_text', required: false })
+
+                // 2. Apollo Fields
+                const contactFields = Array.isArray(apolloAnswers.data_fields) ? apolloAnswers.data_fields : []
+                contactFields.forEach((field, i) => {
+                    const safeName = field.toLowerCase().replace(/ /g, '_')
+                    let type = 'text'
+                    if (safeName.includes('link') || safeName.includes('url')) type = 'link'
+                    if (safeName.includes('email')) type = 'email'
+                    newColumns.push({ id: `a${i}`, name: safeName, type, required: false })
+                })
+
+                // 3. Outreach Channels
+                const channels = Array.isArray(outreachAnswers.channels) ? outreachAnswers.channels : []
+                channels.forEach((ch, i) => {
+                    const safeName = ch.toLowerCase().replace(/ /g, '_')
+                    newColumns.push({ id: `o${i}`, name: `${safeName}_message`, type: 'long_text', required: false })
+                    newColumns.push({ id: `o${i}_status`, name: `${safeName}_status`, type: 'status', required: false })
+                })
+
+                setCrmColumns(newColumns)
+            }
+            // -------------------------------------
+
             setCurrentAgentIndex(prev => prev + 1)
             setStep('agent_survey')
         } else {
