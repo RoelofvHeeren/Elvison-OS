@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Sparkles, ChevronRight, Check, Rocket, Bot, Edit3, Save, RotateCw, Plus, X, CheckCircle2 } from 'lucide-react'
 import Typewriter from '../components/Typewriter'
@@ -692,6 +693,7 @@ const OnboardingSidebar = ({ currentStep, currentAgentIndex, agents }) => {
 // --- Main Container ---
 
 const Onboarding = () => {
+    const navigate = useNavigate()
     // --- State ---
     const [isLoaded, setIsLoaded] = useState(false)
     const [step, setStep] = useState('welcome')
