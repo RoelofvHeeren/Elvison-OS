@@ -740,6 +740,19 @@ app.post('/api/agent-prompts', (req, res) => {
   }
 })
 
+// --- CRM Columns (Mock) ---
+let CRM_COLUMNS = []
+
+app.get('/api/crm-columns', (req, res) => {
+  res.json(CRM_COLUMNS)
+})
+
+app.post('/api/crm-columns', (req, res) => {
+  const { columns } = req.body
+  if (!Array.isArray(columns)) return res.status(400).json({ error: 'Invalid data' })
+  CRM_COLUMNS = columns
+  res.json({ success: true })
+})
 
 
 // GET /api/leads using Google Sheets API

@@ -86,6 +86,16 @@ export const activateGoogleSheetsMcp = async () => {
   return data
 }
 
+export const fetchCrmColumns = async () => {
+  const { data } = await client.get('/api/crm-columns')
+  return data
+}
+
+export const saveCrmColumns = async (columns) => {
+  const { data } = await client.post('/api/crm-columns', { columns })
+  return data
+}
+
 export const fetchAgentPrompts = async () => {
   const { data } = await client.get('/api/agent-prompts')
   return data
