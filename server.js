@@ -301,7 +301,8 @@ function formatAgentName(id) {
 }
 
 // --- Catch-All for Frontend ---
-app.get('*', (req, res) => {
+// Express 5 requires regex for global wildcard since '*' string is reserved
+app.get(/.*/, (req, res) => {
     res.sendFile(path.join(__dirname, 'dist', 'index.html'))
 })
 
