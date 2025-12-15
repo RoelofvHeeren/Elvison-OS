@@ -852,10 +852,14 @@ const Onboarding = () => {
                 if (a.id === 'apollo_lead_finder') enabledToolIds = ['apollo_mcp']
                 if (a.id === 'outreach_creator') enabledToolIds = ['file_search'] // Per instructions
 
+                // Get answers for this agent to use in fallback template
+                const agentAnswers = surveyAnswers[a.id] || {}
+                const fallbackPrompt = a.template ? a.template(agentAnswers, crmColumns) : ''
+
                 return {
                     id: a.id,
                     name: a.name,
-                    prompt: generatedPrompts[a.id] || '',
+                    prompt: generatedPrompts[a.id] || fallbackPrompt || "Standard Agent Behavior configured.",
                     config: { enabledToolIds } // Send config to backend
                 }
             }).filter(p => p.prompt)
