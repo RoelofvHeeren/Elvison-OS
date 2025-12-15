@@ -42,6 +42,32 @@ app.get('/api/agent-prompts', async (req, res) => {
     }
 })
 
+// Save Agent Prompts
+app.post('/api/agent-prompts', async (req, res) => {
+    const { prompts } = req.body // Expects array of { id, name, prompt }
+    if (!Array.isArray(prompts)) return res.status(400).json({ error: 'Invalid data format' })
+
+    try {
+        await query('BEGIN')
+        for (const p of prompts) {
+            // Upsert
+            await query(
+                `INSERT INTO agent_prompts (agent_id, name, system_prompt) 
+                 VALUES ($1, $2, $3)
+                 ON CONFLICT (agent_id) 
+                 DO UPDATE SET system_prompt = $3, name = $2, updated_at = NOW()`,
+                [p.id, p.name, p.prompt]
+            )
+        }
+        await query('COMMIT')
+        res.json({ success: true })
+    } catch (err) {
+        await query('ROLLBACK')
+        console.error('Failed to save prompts:', err)
+        res.status(500).json({ error: 'Database error' })
+    }
+})
+
 import OpenAI from 'openai'
 
 const openai = new OpenAI({

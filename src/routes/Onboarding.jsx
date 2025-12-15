@@ -827,7 +827,13 @@ const Onboarding = () => {
         setIsSaving(true)
         try {
             // 1. Save Prompts
-            await saveAgentPrompts(generatedPrompts)
+            const promptsToSave = AGENTS.map(a => ({
+                id: a.id,
+                name: a.name,
+                prompt: generatedPrompts[a.id] || ''
+            })).filter(p => p.prompt)
+
+            await saveAgentPrompts(promptsToSave)
 
             // 2. Save CRM Columns
             await saveCrmColumns(crmColumns)
