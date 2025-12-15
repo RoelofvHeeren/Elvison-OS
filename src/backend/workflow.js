@@ -74,6 +74,17 @@ export const runAgentWorkflow = async (input, config) => {
         }
     }
 
+    // --- Fetch Prompts from DB ---
+    let agentPrompts = {};
+    try {
+        const { rows } = await query("SELECT agent_id, system_prompt FROM agent_prompts");
+        rows.forEach(row => {
+            agentPrompts[row.agent_id] = row.system_prompt;
+        });
+    } catch (e) {
+        console.warn("Failed to fetch agent prompts from DB, using defaults.", e);
+    }
+
     // Helper to get tools for an agent
     const getToolsForAgent = (agentKey) => {
         const agentConfig = agentConfigs[agentKey];
@@ -119,7 +130,47 @@ export const runAgentWorkflow = async (input, config) => {
         return tools;
     };
 
-    // ... (rest of function) ...
+    // --- Agent Definitions (Dynamic) ---
+
+    // 1. Company Finder
+    const finderInst = agentPrompts['company_finder'] || `You are the "Hunter" Agent for Fifth Avenue Properties... (Default)`;
+    const companyFinder = new Agent({
+        name: "Company Finder",
+        instructions: finderInst,
+        model: "gpt-4o",
+        tools: getToolsForAgent('company_finder'),
+        outputType: CompanyFinderSchema,
+    });
+
+    // 2. Company Profiler
+    const profilerInst = agentPrompts['company_profiler'] || `You are the Research Analyst... (Default)`;
+    const companyProfiler = new Agent({
+        name: "Company Profiler",
+        instructions: profilerInst,
+        model: "gpt-4o",
+        tools: getToolsForAgent('company_profiler'),
+        outputType: CompanyProfilerSchema,
+    });
+
+    // 3. Lead Finder
+    const leadInst = agentPrompts['apollo'] || `You are the Apollo Headhunter Agent... (Default)`;
+    const apolloLeadFinder = new Agent({
+        name: "Apollo Lead Finder",
+        instructions: leadInst,
+        model: "gpt-4o-mini", // Cost efficient
+        tools: getToolsForAgent('apollo_lead_finder'),
+        outputType: ApolloLeadFinderSchema,
+    });
+
+    // 4. Outreach Creator
+    const outreachInst = agentPrompts['outreach_creator'] || `You are the Setup Expert... (Default)`;
+    const outreachCreator = new Agent({
+        name: "Outreach Creator",
+        instructions: outreachInst,
+        model: "gpt-4o",
+        tools: getToolsForAgent('outreach_creator'),
+        outputType: OutreachCreatorSchema,
+    });
 
     // --- Runner Execution ---
 
