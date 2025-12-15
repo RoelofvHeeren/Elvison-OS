@@ -119,10 +119,10 @@ Conduct deep analysis.`
 ]
 
 // --- Styles ---
-const PREMIUM_CONTAINER = "bg-black/40 backdrop-blur-md border border-teal-500/30 rounded-2xl shadow-[0_0_15px_rgba(255,255,255,0.1)] p-8 text-white transition-all duration-300 hover:shadow-[0_0_20px_rgba(20,184,166,0.15)]"
-const PREMIUM_INPUT = "w-full bg-black/60 border border-white/20 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:border-teal-400 focus:ring-1 focus:ring-teal-400 transition-all outline-none"
-const PREMIUM_BUTTON_PRIMARY = "px-8 py-3 bg-teal-500 hover:bg-teal-400 text-black font-bold rounded-lg shadow-[0_0_10px_rgba(20,184,166,0.5)] transition-all hover:scale-105"
-const PREMIUM_BUTTON_SECONDARY = "px-6 py-3 border border-white/30 hover:bg-white/10 text-white rounded-lg transition-all"
+const PREMIUM_CONTAINER = "bg-transparent backdrop-blur-sm border-none shadow-none p-8 text-white transition-all duration-300"
+const PREMIUM_INPUT = "w-full bg-white/5 border border-white/20 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:border-teal-400 focus:ring-1 focus:ring-teal-400 transition-all outline-none shadow-[0_4px_30px_rgba(0,0,0,0.1)] backdrop-blur-sm"
+const PREMIUM_BUTTON_PRIMARY = "px-8 py-3 bg-teal-500 hover:bg-teal-400 text-black font-bold rounded-lg shadow-[0_0_20px_rgba(20,184,166,0.3)] transition-all hover:scale-105 backdrop-blur-sm"
+const PREMIUM_BUTTON_SECONDARY = "px-6 py-3 border border-white/30 hover:bg-white/10 text-white rounded-lg transition-all backdrop-blur-sm"
 
 
 // --- Sub-Components ---
@@ -144,7 +144,7 @@ const TagInput = ({ value, onChange, suggestions }) => {
 
     return (
         <div className="space-y-4">
-            <div className="flex flex-wrap gap-2 p-3 bg-black/60 border border-white/20 rounded-lg min-h-[50px]">
+            <div className="flex flex-wrap gap-2 p-3 bg-white/5 border border-white/20 rounded-lg min-h-[50px] shadow-[0_4px_30px_rgba(0,0,0,0.1)]">
                 {tags.map(tag => (
                     <span key={tag} className="flex items-center gap-1 bg-teal-500/20 text-teal-300 px-3 py-1 rounded-full text-sm border border-teal-500/30">
                         {tag} <button onClick={() => removeTag(tag)}><X className="w-3 h-3 hover:text-white" /></button>
@@ -165,7 +165,7 @@ const TagInput = ({ value, onChange, suggestions }) => {
                     <button
                         key={s}
                         onClick={() => addTag(s)}
-                        className="text-xs bg-white/5 hover:bg-white/10 border border-white/10 px-3 py-1.5 rounded-full text-gray-400 hover:text-white transition-colors"
+                        className="text-xs bg-white/5 hover:bg-white/10 border border-white/10 px-3 py-1.5 rounded-full text-gray-400 hover:text-white transition-colors backdrop-blur-sm"
                     >
                         + {s}
                     </button>
@@ -175,17 +175,17 @@ const TagInput = ({ value, onChange, suggestions }) => {
     )
 }
 
-const StepWelcome = ({ onNext, userName }) => (
-    <div className="flex flex-col items-center justify-center p-12 text-center h-full max-w-3xl mx-auto">
-        <div className="mb-8 p-6 rounded-full bg-black/50 border border-teal-500/50 shadow-[0_0_30px_rgba(20,184,166,0.3)] animate-pulse">
-            <Sparkles className="w-16 h-16 text-teal-400" />
+const StepWelcome = ({ onNext }) => (
+    <div className="flex flex-col items-center justify-center p-12 text-center h-full max-w-4xl mx-auto drop-shadow-lg">
+        <div className="mb-8 p-6 rounded-2xl bg-black/40 border border-teal-500/30 shadow-[0_0_30px_rgba(20,184,166,0.2)] animate-pulse backdrop-blur-md">
+            <img src="/logo-columns.png" alt="Elvison" className="w-16 h-16 object-contain" />
         </div>
-        <h1 className="text-5xl font-serif font-bold mb-8 text-white drop-shadow-lg tracking-wide">
-            <Typewriter text={`Hello, ${userName || 'User'}. Time to set this up.`} delay={50} />
+        <h1 className="text-6xl font-serif font-bold mb-8 text-white drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)] tracking-wide">
+            <Typewriter text="Welcome to Elvison OS." delay={50} />
         </h1>
-        <p className="text-2xl text-gray-200 mb-12 max-w-2xl font-light leading-relaxed drop-shadow-md">
+        <p className="text-2xl text-gray-100 mb-12 max-w-2xl font-light leading-relaxed drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
             <Typewriter
-                text="We'll configure your AI agents one by one to ensure they perform perfectly for your needs."
+                text="Let's configure your AI agents to ensure they perform perfectly for your needs."
                 delay={30}
                 onComplete={() => { }}
             />
@@ -193,7 +193,7 @@ const StepWelcome = ({ onNext, userName }) => (
         <motion.button
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 3 }}
+            transition={{ delay: 2.5 }}
             onClick={onNext}
             className={PREMIUM_BUTTON_PRIMARY + " flex items-center gap-2 group text-lg"}
         >
@@ -203,13 +203,15 @@ const StepWelcome = ({ onNext, userName }) => (
 )
 
 const StepCompanyInfo = ({ onNext, data, onChange }) => (
-    <div className={`max-w-xl mx-auto mt-20 ${PREMIUM_CONTAINER}`}>
-        <h2 className="text-3xl font-serif font-bold mb-2 text-white">Company Information</h2>
-        <p className="text-gray-300 mb-8 border-b border-white/10 pb-4">First, tell us a little about who you are.</p>
+    <div className="flex flex-col items-center justify-center h-full w-full max-w-2xl mx-auto">
+        <div className="w-full text-center mb-12">
+            <h2 className="text-4xl font-serif font-bold mb-4 text-white drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)]">Company Information</h2>
+            <p className="text-gray-200 text-lg drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]">First, tell us a little about who you are.</p>
+        </div>
 
-        <div className="space-y-6">
+        <div className="w-full space-y-8 backdrop-blur-sm p-4 rounded-xl">
             <div>
-                <label className="block text-sm font-medium text-teal-400 mb-2 uppercase tracking-wider">Your Name</label>
+                <label className="block text-sm font-bold text-teal-400 mb-2 uppercase tracking-wider drop-shadow-md">Your Name</label>
                 <input
                     type="text"
                     value={data.userName}
@@ -219,7 +221,7 @@ const StepCompanyInfo = ({ onNext, data, onChange }) => (
                 />
             </div>
             <div>
-                <label className="block text-sm font-medium text-teal-400 mb-2 uppercase tracking-wider">Company Name</label>
+                <label className="block text-sm font-bold text-teal-400 mb-2 uppercase tracking-wider drop-shadow-md">Company Name</label>
                 <input
                     type="text"
                     value={data.companyName}
@@ -230,10 +232,10 @@ const StepCompanyInfo = ({ onNext, data, onChange }) => (
             </div>
         </div>
 
-        <div className="mt-12 flex justify-end">
+        <div className="mt-12 flex justify-center">
             <button
                 onClick={onNext}
-                disabled={!data.userName || !data.companyName}
+                disabled={!data.companyName}
                 className={`${PREMIUM_BUTTON_PRIMARY} disabled:opacity-50 disabled:cursor-not-allowed`}
             >
                 Next Step
@@ -252,23 +254,23 @@ const StepAgentSurvey = ({ agent, answers, setAnswers, onNext, onGenerate, crmCo
     if (agent.isVisualEditor) {
         // Special render for Data Architect
         return (
-            <div className="max-w-5xl mx-auto pt-10 h-full flex flex-col relative">
-                <div className="flex items-start gap-8 mb-8">
-                    <div className="w-16 h-16 shrink-0 bg-teal-900/40 rounded-2xl flex items-center justify-center border border-teal-500/30 shadow-[0_0_15px_rgba(20,184,166,0.2)]">
+            <div className="max-w-5xl mx-auto h-full flex flex-col relative justify-center">
+                <div className="flex items-center gap-6 mb-8 drop-shadow-lg">
+                    <div className="w-16 h-16 shrink-0 bg-white/10 rounded-2xl flex items-center justify-center border border-white/20 backdrop-blur-md shadow-lg">
                         <Bot className="w-8 h-8 text-teal-400" />
                     </div>
                     <div>
-                        <h2 className="text-3xl font-serif font-bold mb-2 text-white">{agent.name}</h2>
-                        <p className="text-gray-300 leading-relaxed text-lg font-light">{agent.description}</p>
+                        <h2 className="text-4xl font-serif font-bold mb-2 text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">{agent.name}</h2>
+                        <p className="text-gray-100 leading-relaxed text-lg font-light drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">{agent.description}</p>
                     </div>
                 </div>
 
-                <div className={`${PREMIUM_CONTAINER} flex-1 overflow-y-auto`}>
-                    <p className="text-teal-400 text-sm font-bold uppercase tracking-wider mb-6">Database Schema Definition</p>
+                <div className="flex-1 overflow-y-auto mb-8 bg-black/20 backdrop-blur-md border border-white/10 rounded-xl p-6 shadow-2xl">
+                    <p className="text-teal-400 text-sm font-bold uppercase tracking-wider mb-6 drop-shadow-md">Database Schema Definition</p>
                     <VisualColumnEditor columns={crmColumns} onChange={setCrmColumns} />
                 </div>
 
-                <div className="mt-8 flex justify-end pb-10">
+                <div className="flex justify-end pb-4">
                     <button
                         onClick={onGenerate}
                         className={PREMIUM_BUTTON_PRIMARY + " flex items-center gap-2"}
@@ -317,20 +319,20 @@ const StepAgentSurvey = ({ agent, answers, setAnswers, onNext, onGenerate, crmCo
     const progress = ((qIndex + 1) / agent.questions.length) * 100
 
     return (
-        <div className="max-w-4xl mx-auto pt-10 h-full flex flex-col relative">
+        <div className="max-w-3xl mx-auto h-full flex flex-col justify-center relative">
             {/* Header / Info */}
-            <div className="flex items-start gap-8 mb-12">
-                <div className="w-16 h-16 shrink-0 bg-teal-900/40 rounded-2xl flex items-center justify-center border border-teal-500/30 shadow-[0_0_15px_rgba(20,184,166,0.2)]">
+            <div className="flex items-center gap-6 mb-12 drop-shadow-lg">
+                <div className="w-16 h-16 shrink-0 bg-white/10 rounded-2xl flex items-center justify-center border border-white/20 backdrop-blur-md shadow-lg">
                     <Bot className="w-8 h-8 text-teal-400" />
                 </div>
                 <div>
-                    <h2 className="text-3xl font-serif font-bold mb-2 text-white">{agent.name}</h2>
-                    <p className="text-gray-300 leading-relaxed text-lg font-light">{agent.description}</p>
+                    <h2 className="text-4xl font-serif font-bold mb-2 text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">{agent.name}</h2>
+                    <p className="text-gray-100 leading-relaxed text-xl font-light drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">{agent.description}</p>
                 </div>
             </div>
 
             {/* Question Card */}
-            <div className="flex-1 flex flex-col justify-center pb-20">
+            <div className="flex flex-col justify-center pb-8 min-h-[400px]">
                 <AnimatePresence mode="wait">
                     <motion.div
                         key={currentQuestion.id}
@@ -341,18 +343,18 @@ const StepAgentSurvey = ({ agent, answers, setAnswers, onNext, onGenerate, crmCo
                         className="w-full"
                     >
                         <div className="mb-8">
-                            <div className="text-teal-500 font-mono text-sm uppercase tracking-widest font-bold mb-2">
+                            <div className="text-teal-400 font-bold text-sm uppercase tracking-widest mb-2 drop-shadow-md">
                                 Question {qIndex + 1} of {agent.questions.length}
                             </div>
-                            <h3 className="text-2xl md:text-3xl font-medium text-white mb-2">{currentQuestion.label}</h3>
+                            <h3 className="text-3xl font-medium text-white mb-2 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]">{currentQuestion.label}</h3>
                             {currentQuestion.helper && (
-                                <p className="text-gray-400 text-sm">{currentQuestion.helper}</p>
+                                <p className="text-gray-300 text-base drop-shadow-md">{currentQuestion.helper}</p>
                             )}
                         </div>
 
-                        <div className={`${PREMIUM_CONTAINER} p-1`}>
+                        <div className="p-1">
                             {currentQuestion.type === 'multi-select' ? (
-                                <div className="p-6">
+                                <div className="p-0">
                                     <TagInput
                                         value={currentAnswer}
                                         onChange={(val) => handleAnswer(currentQuestion.id, val)}
@@ -360,29 +362,29 @@ const StepAgentSurvey = ({ agent, answers, setAnswers, onNext, onGenerate, crmCo
                                     />
                                 </div>
                             ) : currentQuestion.type === 'radio' ? (
-                                <div className="p-6 flex flex-col gap-3">
+                                <div className="flex flex-col gap-3">
                                     {currentQuestion.options.map((opt) => (
                                         <button
                                             key={opt}
                                             onClick={() => handleAnswer(currentQuestion.id, opt)}
-                                            className={`w-full text-left px-4 py-3 rounded-lg border transition-all ${currentAnswer === opt
+                                            className={`w-full text-left px-4 py-4 rounded-xl border backdrop-blur-sm transition-all shadow-lg ${currentAnswer === opt
                                                 ? 'bg-teal-500/20 border-teal-500 text-teal-300'
-                                                : 'bg-white/5 border-white/10 text-gray-300 hover:bg-white/10'
+                                                : 'bg-white/5 border-white/20 text-gray-200 hover:bg-white/10'
                                                 }`}
                                         >
                                             <div className="flex items-center gap-3">
-                                                <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${currentAnswer === opt ? 'border-teal-500' : 'border-gray-500'
+                                                <div className={`w-5 h-5 rounded-full border flex items-center justify-center ${currentAnswer === opt ? 'border-teal-500' : 'border-gray-400'
                                                     }`}>
-                                                    {currentAnswer === opt && <div className="w-2 h-2 rounded-full bg-teal-500" />}
+                                                    {currentAnswer === opt && <div className="w-2.5 h-2.5 rounded-full bg-teal-500" />}
                                                 </div>
-                                                {opt}
+                                                <span className="text-lg">{opt}</span>
                                             </div>
                                         </button>
                                     ))}
                                 </div>
                             ) : (
                                 <textarea
-                                    className="w-full bg-transparent border-none rounded-xl p-6 text-xl text-white placeholder-gray-500 focus:ring-0 outline-none resize-none leading-relaxed min-h-[160px]"
+                                    className="w-full bg-white/5 border border-white/10 backdrop-blur-sm rounded-xl p-6 text-xl text-white placeholder-gray-400 focus:ring-1 focus:ring-teal-500/50 outline-none resize-none leading-relaxed min-h-[160px] shadow-[0_4px_30px_rgba(0,0,0,0.1)]"
                                     placeholder={currentQuestion.placeholder || "Type your answer here..."}
                                     value={currentAnswer || ''}
                                     onChange={(e) => handleAnswer(currentQuestion.id, e.target.value)}
@@ -405,12 +407,12 @@ const StepAgentSurvey = ({ agent, answers, setAnswers, onNext, onGenerate, crmCo
                     <button
                         onClick={handleBack}
                         disabled={qIndex === 0}
-                        className={`text-gray-400 hover:text-white transition-colors flex items-center gap-2 ${qIndex === 0 ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
+                        className={`text-gray-400 hover:text-white transition-colors flex items-center gap-2 backdrop-blur-none ${qIndex === 0 ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
                     >
                         Back
                     </button>
 
-                    <div className="flex-1 mx-12 h-1 bg-gray-800 rounded-full overflow-hidden">
+                    <div className="flex-1 mx-12 h-1.5 bg-gray-700/50 backdrop-blur-sm rounded-full overflow-hidden border border-white/5">
                         <motion.div
                             className="h-full bg-teal-500 shadow-[0_0_10px_rgba(20,184,166,0.8)]"
                             initial={{ width: 0 }}
@@ -445,10 +447,10 @@ const StepVerifyPrompt = ({ agent, prompt, setPrompt, onConfirm, onBack, isOptim
                     transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
                     className="mb-8"
                 >
-                    <RotateCw className="w-16 h-16 text-teal-500" />
+                    <RotateCw className="w-16 h-16 text-teal-500 drop-shadow-[0_0_15px_rgba(20,184,166,0.6)]" />
                 </motion.div>
-                <h2 className="text-3xl font-bold text-white mb-4">Optimizing your inputs...</h2>
-                <div className="space-y-2">
+                <h2 className="text-3xl font-bold text-white mb-4 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">Optimizing your inputs...</h2>
+                <div className="space-y-2 drop-shadow-md text-teal-100">
                     <Typewriter text="Analyzing intent..." delay={50} />
                     <Typewriter text="Structuring logic..." delay={50} startDelay={1500} />
                     <Typewriter text="Polishing formatting..." delay={50} startDelay={3000} />
@@ -458,11 +460,11 @@ const StepVerifyPrompt = ({ agent, prompt, setPrompt, onConfirm, onBack, isOptim
     }
 
     return (
-        <div className="max-w-6xl mx-auto pt-6 h-full flex flex-col">
+        <div className="max-w-6xl mx-auto h-full flex flex-col justify-center">
             <div className="mb-6 flex items-center justify-between">
                 <div>
-                    <h2 className="text-3xl font-serif font-bold text-white drop-shadow-md">Verify Instructions</h2>
-                    <p className="text-teal-400 text-base mt-1">Review the generated prompt for {agent.name}</p>
+                    <h2 className="text-3xl font-serif font-bold text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">Verify Instructions</h2>
+                    <p className="text-teal-400 text-base mt-1 drop-shadow-md">Review the generated prompt for {agent.name}</p>
                 </div>
                 <div className="flex gap-4">
                     <button onClick={onBack} className={PREMIUM_BUTTON_SECONDARY}>Back</button>
@@ -472,14 +474,14 @@ const StepVerifyPrompt = ({ agent, prompt, setPrompt, onConfirm, onBack, isOptim
                 </div>
             </div>
 
-            <div className="flex-1 bg-black/80 backdrop-blur-xl rounded-2xl p-1 overflow-hidden flex flex-col shadow-[0_0_50px_rgba(0,0,0,0.5)] border border-teal-500/30 mb-8">
+            <div className="flex-1 bg-black/40 backdrop-blur-xl rounded-2xl p-1 overflow-hidden flex flex-col shadow-2xl border border-white/10 mb-8">
                 <div className="flex items-center gap-2 px-6 py-4 bg-white/5 border-b border-white/10 text-teal-400 text-sm uppercase tracking-wider font-bold">
                     <Edit3 className="w-4 h-4" /> System Prompt Editor
                 </div>
                 <textarea
                     value={prompt}
                     onChange={(e) => setPrompt(e.target.value)}
-                    className="flex-1 w-full bg-transparent text-gray-200 font-mono text-base outline-none resize-none leading-relaxed p-8 focus:bg-white/5 transition-colors min-h-[500px]"
+                    className="flex-1 w-full bg-transparent text-gray-200 font-mono text-base outline-none resize-none leading-relaxed p-8 focus:bg-white/5 transition-colors min-h-[500px] shadow-inner"
                     spellCheck="false"
                 />
             </div>
@@ -543,14 +545,14 @@ const StepComplete = ({ onLaunch, isSaving }) => {
 
     return (
         <div className="flex flex-col items-center justify-center h-full max-w-4xl mx-auto text-center">
-            <h2 className="text-5xl font-serif font-bold mb-12 text-white">System Status</h2>
-            <div className="w-full max-w-2xl bg-black/60 border border-teal-500/30 rounded-xl p-8 mb-12 font-mono text-left shadow-[0_0_30px_rgba(20,184,166,0.1)] min-h-[300px]">
+            <h2 className="text-5xl font-serif font-bold mb-12 text-white drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)]">System Status</h2>
+            <div className="w-full max-w-2xl bg-black/40 backdrop-blur-xl border border-white/10 rounded-xl p-8 mb-12 font-mono text-left shadow-2xl min-h-[300px]">
                 {statusLines.map((line, idx) => (
                     <motion.div
                         key={idx}
                         initial={{ opacity: 0, x: -10 }}
                         animate={{ opacity: 1, x: 0 }}
-                        className={`mb-3 flex items-center gap-3 ${line === "SYSTEMS OPERATIONAL" ? "text-teal-400 font-bold mt-8 text-xl" : "text-gray-300"}`}
+                        className={`mb-3 flex items-center gap-3 ${line === "SYSTEMS OPERATIONAL" ? "text-teal-400 font-bold mt-8 text-xl drop-shadow-md" : "text-gray-300"}`}
                     >
                         {line === "SYSTEMS OPERATIONAL" ? <CheckCircle2 className="w-6 h-6" /> : <div className="w-2 h-2 bg-gray-500 rounded-full" />}
                         {line}
@@ -572,7 +574,7 @@ const StepComplete = ({ onLaunch, isSaving }) => {
                 <button
                     onClick={onLaunch}
                     disabled={isSaving || !isReady}
-                    className="px-12 py-5 bg-teal-500 hover:bg-teal-400 text-black text-xl rounded-lg font-bold shadow-[0_0_20px_rgba(20,184,166,0.6)] hover:shadow-[0_0_40px_rgba(20,184,166,0.8)] transition-all hover:scale-105 disabled:opacity-50 disabled:scale-100 flex items-center gap-3"
+                    className="px-12 py-5 bg-teal-500 hover:bg-teal-400 text-black text-xl rounded-lg font-bold shadow-[0_0_20px_rgba(20,184,166,0.6)] hover:shadow-[0_0_40px_rgba(20,184,166,0.8)] transition-all hover:scale-105 disabled:opacity-50 disabled:scale-100 flex items-center gap-3 backdrop-blur-sm"
                 >
                     {isSaving ? 'Launching...' : (
                         <>
@@ -607,10 +609,12 @@ const OnboardingSidebar = ({ currentStep, currentAgentIndex, agents }) => {
     ]
 
     return (
-        <div className="w-80 h-screen sticky top-0 bg-black/40 backdrop-blur-xl border-r border-white/10 flex flex-col p-6 z-20 hidden lg:flex">
-            <div className="mb-8 flex items-center gap-3 text-teal-400">
-                <Sparkles className="w-6 h-6" />
-                <span className="font-serif font-bold text-xl tracking-wide text-white">Elvison OS</span>
+        <div className="w-80 h-screen sticky top-0 bg-transparent backdrop-blur-xl border-r border-white/10 flex flex-col p-6 z-20 hidden lg:flex">
+            <div className="mb-8 flex items-center gap-3">
+                <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-black shadow-lg overflow-hidden border border-white/10">
+                    <img src="/logo-columns.png" alt="Logo" className="h-6 w-6 object-contain opacity-90" />
+                </div>
+                <span className="font-serif font-bold text-xl tracking-wide text-white drop-shadow-md">Onboarding</span>
             </div>
 
             <div className="flex-1 overflow-y-auto space-y-1 pr-2 custom-scrollbar">
