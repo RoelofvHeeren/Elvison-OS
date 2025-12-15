@@ -202,7 +202,7 @@ const StepWelcome = ({ onNext }) => (
     </div>
 )
 
-const StepCompanyInfo = ({ onNext, data, onChange }) => (
+const StepCompanyInfo = ({ onNext, onBack, data, onChange }) => (
     <div className="flex flex-col items-center justify-center h-full w-full max-w-2xl mx-auto">
         <div className="w-full text-center mb-12">
             <h2 className="text-4xl font-serif font-bold mb-4 text-white drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)]">Company Information</h2>
@@ -232,7 +232,13 @@ const StepCompanyInfo = ({ onNext, data, onChange }) => (
             </div>
         </div>
 
-        <div className="mt-12 flex justify-center">
+        <div className="mt-12 flex justify-between gap-4">
+            <button
+                onClick={onBack}
+                className={PREMIUM_BUTTON_SECONDARY}
+            >
+                Back
+            </button>
             <button
                 onClick={onNext}
                 disabled={!data.companyName}
@@ -244,7 +250,7 @@ const StepCompanyInfo = ({ onNext, data, onChange }) => (
     </div>
 )
 
-const StepAgentSurvey = ({ agent, answers, setAnswers, onNext, onGenerate, crmColumns, setCrmColumns }) => {
+const StepAgentSurvey = ({ agent, answers, setAnswers, onNext, onBack, onGenerate, crmColumns, setCrmColumns }) => {
     const [qIndex, setQIndex] = useState(0)
 
     const handleAnswer = (qid, val) => {
@@ -270,7 +276,13 @@ const StepAgentSurvey = ({ agent, answers, setAnswers, onNext, onGenerate, crmCo
                     <VisualColumnEditor columns={crmColumns} onChange={setCrmColumns} />
                 </div>
 
-                <div className="flex justify-end pb-4">
+                <div className="flex justify-between pb-4">
+                    <button
+                        onClick={onBack} // Global back
+                        className={PREMIUM_BUTTON_SECONDARY}
+                    >
+                        Back
+                    </button>
                     <button
                         onClick={onGenerate}
                         className={PREMIUM_BUTTON_PRIMARY + " flex items-center gap-2"}
@@ -313,6 +325,8 @@ const StepAgentSurvey = ({ agent, answers, setAnswers, onNext, onGenerate, crmCo
     const handleBack = () => {
         if (qIndex > 0) {
             setQIndex(prev => prev - 1)
+        } else {
+            onBack() // Trigger global back
         }
     }
 
@@ -406,8 +420,7 @@ const StepAgentSurvey = ({ agent, answers, setAnswers, onNext, onGenerate, crmCo
                 <div className="mt-12 flex items-center justify-between">
                     <button
                         onClick={handleBack}
-                        disabled={qIndex === 0}
-                        className={`text-gray-400 hover:text-white transition-colors flex items-center gap-2 backdrop-blur-none ${qIndex === 0 ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
+                        className={`text-gray-400 hover:text-white transition-colors flex items-center gap-2 backdrop-blur-none`}
                     >
                         Back
                     </button>
@@ -787,6 +800,28 @@ const Onboarding = () => {
         }
     }
 
+    const handleGlobalBack = () => {
+        if (step === 'completion') {
+            setStep('agent_verify') // Or agent_survey depending on flow, but verify is last step before complete
+            // Actually, before completion was agent_verify for the last agent.
+            setCurrentAgentIndex(AGENTS.length - 1)
+        } else if (step === 'agent_verify') {
+            // Go back to survey for this agent
+            setStep('agent_survey')
+        } else if (step === 'agent_survey') {
+            if (currentAgentIndex > 0) {
+                // Go to verify of PREVIOUS agent
+                setCurrentAgentIndex(prev => prev - 1)
+                setStep('agent_verify')
+            } else {
+                // Go to Company Info
+                setStep('company_info')
+            }
+        } else if (step === 'company_info') {
+            setStep('welcome')
+        }
+    }
+
     const handleLaunch = async () => {
         setIsSaving(true)
         try {
@@ -846,7 +881,7 @@ const Onboarding = () => {
                     )}
                     {step === 'company_info' && (
                         <motion.div key="company" className="h-full" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-                            <StepCompanyInfo data={userData} onChange={handleUserChange} onNext={() => setStep('agent_survey')} />
+                            <StepCompanyInfo data={userData} onChange={handleUserChange} onNext={() => setStep('agent_survey')} onBack={handleGlobalBack} />
                         </motion.div>
                     )}
                     {step === 'agent_survey' && (
@@ -856,6 +891,10 @@ const Onboarding = () => {
                                 answers={surveyAnswers[AGENTS[currentAgentIndex].id] || {}}
                                 setAnswers={(ans) => setSurveyAnswers(prev => ({ ...prev, [AGENTS[currentAgentIndex].id]: ans }))}
                                 onNext={handleGeneratePrompt}
+                                onBack={handleGlobalBack}
+                                onGenerate={handleGeneratePrompt}
+                                crmColumns={crmColumns}
+                                setCrmColumns={setCrmColumns}
                             />
                         </motion.div>
                     )}
