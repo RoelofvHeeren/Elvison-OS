@@ -113,7 +113,8 @@ export const runAgentWorkflow = async (input, config) => {
     const webSearch = webSearchTool();
     // Assuming 'apollo' is the configured name in the MCP runner/server
     const apolloMcp = hostedMcpTool({
-        serverName: "apollo"
+        serverName: "apollo", // Internal ID
+        server_label: "Apollo Lead Finder" // Required by backend API
     });
 
     // Helper to get tools for an agent
