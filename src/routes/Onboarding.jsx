@@ -814,7 +814,7 @@ const Onboarding = () => {
     if (!isLoaded) return null // Prevent flash of wrong state
 
     return (
-        <div className="bg-[#050505] min-h-screen text-white font-sans selection:bg-teal-500/30 overflow-hidden relative">
+        <div className="bg-[#050505] min-h-screen text-white font-sans selection:bg-teal-500/30 overflow-hidden relative flex">
             {/* Background Video */}
             <div className="absolute inset-0 z-0 opacity-40 mix-blend-screen pointer-events-none">
                 <video
@@ -837,7 +837,7 @@ const Onboarding = () => {
             )}
 
             {/* Content Overlay */}
-            <div className="relative z-10 w-full h-full flex flex-col p-8 overflow-y-auto">
+            <div className="relative z-10 flex-1 h-screen flex flex-col p-8 overflow-y-auto">
                 <AnimatePresence mode="wait">
                     {step === 'welcome' && (
                         <motion.div key="welcome" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
