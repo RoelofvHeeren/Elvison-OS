@@ -131,32 +131,36 @@ app.post('/api/knowledge/create-internal', async (req, res) => {
             content += `## Outreach Strategy\n${JSON.stringify(answers.outreach_creator, null, 2)}\n\n`
         }
 
-        // 2. Upload File to OpenAI
-        const fileBuffer = Buffer.from(content)
-        // We need to write to disk first because OpenAI SDK expects a file stream or path for 'fs'
+        // 2. Upload File to OpenAI (Direct Fetch)
         const tempFilePath = path.join(__dirname, 'INTERNAL_STRATEGY_GUIDE.md')
         const fs = await import('fs/promises')
         await fs.writeFile(tempFilePath, content)
 
-        // Upload
-        const file = await openai.files.create({
-            file: await import('fs').then(f => f.createReadStream(tempFilePath)),
-            purpose: "assistants",
+        const fileFormData = new FormData()
+        fileFormData.append('purpose', 'assistants')
+        // Node's native fetch requires a Blob or File for FormData, or reading the file as Blob
+        const fileBlob = new Blob([await fs.readFile(tempFilePath)])
+        fileFormData.append('file', fileBlob, 'INTERNAL_STRATEGY_GUIDE.md')
+
+        const fileResponse = await fetch('https://api.openai.com/v1/files', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+            },
+            body: fileFormData
         })
+
+        if (!fileResponse.ok) {
+            const errText = await fileResponse.text()
+            throw new Error(`OpenAI File Upload Failed: ${fileResponse.status} - ${errText}`)
+        }
+        const fileData = await fileResponse.json()
+        const fileId = fileData.id
 
         // Cleanup temp file
         await fs.unlink(tempFilePath)
 
-        // 3. Create or Update Vector Store
-        // Debugging SDK availability
-        if (!openai.beta) {
-            throw new Error("OpenAI SDK Error: 'openai.beta' is undefined. Version: " + (openai.version || 'unknown'))
-        }
-        if (!openai.beta.vectorStores) {
-            throw new Error(`OpenAI SDK Error: 'openai.beta.vectorStores' is undefined. Keys available: ${Object.keys(openai.beta).join(', ')}`)
-        }
-
-        // Check if we already have a vector store ID
+        // 3. Create or Update Vector Store (Direct Fetch)
         let vectorStoreId = null
         const { rows } = await query("SELECT value FROM system_config WHERE key = 'default_vector_store'")
 
@@ -164,10 +168,24 @@ app.post('/api/knowledge/create-internal', async (req, res) => {
             vectorStoreId = rows[0].value.id
         } else {
             // Create new
-            const vs = await openai.beta.vectorStores.create({
-                name: "Elvison OS - Knowledge Base"
+            const vsResponse = await fetch('https://api.openai.com/v1/vector_stores', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+                    'Content-Type': 'application/json',
+                    'OpenAI-Beta': 'assistants=v2' // Critical for Vector Stores
+                },
+                body: JSON.stringify({
+                    name: "Elvison OS - Knowledge Base"
+                })
             })
-            vectorStoreId = vs.id
+
+            if (!vsResponse.ok) {
+                const errText = await vsResponse.text()
+                throw new Error(`OpenAI VS Creation Failed: ${vsResponse.status} - ${errText}`)
+            }
+            const vsData = await vsResponse.json()
+            vectorStoreId = vsData.id
 
             // Save to DB
             await query(
@@ -177,13 +195,25 @@ app.post('/api/knowledge/create-internal', async (req, res) => {
             )
         }
 
-        // 4. Add File to Vector Store
-        await openai.beta.vectorStores.files.create(
-            vectorStoreId,
-            { file_id: file.id }
-        )
+        // 4. Add File to Vector Store (Direct Fetch)
+        const vsFileResponse = await fetch(`https://api.openai.com/v1/vector_stores/${vectorStoreId}/files`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+                'Content-Type': 'application/json',
+                'OpenAI-Beta': 'assistants=v2'
+            },
+            body: JSON.stringify({
+                file_id: fileId
+            })
+        })
 
-        res.json({ success: true, vectorStoreId, fileId: file.id })
+        if (!vsFileResponse.ok) {
+            const errText = await vsFileResponse.text()
+            throw new Error(`OpenAI VS File Attach Failed: ${vsFileResponse.status} - ${errText}`)
+        }
+
+        res.json({ success: true, vectorStoreId, fileId: fileId })
 
     } catch (err) {
         console.error('KB Creation Failed:', err)
