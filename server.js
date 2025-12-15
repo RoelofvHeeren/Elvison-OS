@@ -187,36 +187,7 @@ app.post('/api/knowledge/create-internal', async (req, res) => {
             content += `## Outreach Strategy\n${JSON.stringify(answers.outreach_creator, null, 2)}\n\n`
         }
 
-        // 2. Upload File to OpenAI (Direct Fetch)
-        const tempFilePath = path.join(__dirname, 'INTERNAL_STRATEGY_GUIDE.md')
-        const fs = await import('fs/promises')
-        await fs.writeFile(tempFilePath, content)
-
-        const fileFormData = new FormData()
-        fileFormData.append('purpose', 'assistants')
-        // Node's native fetch requires a Blob or File for FormData, or reading the file as Blob
-        const fileBlob = new Blob([await fs.readFile(tempFilePath)])
-        fileFormData.append('file', fileBlob, 'INTERNAL_STRATEGY_GUIDE.md')
-
-        const fileResponse = await fetch('https://api.openai.com/v1/files', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
-            },
-            body: fileFormData
-        })
-
-        if (!fileResponse.ok) {
-            const errText = await fileResponse.text()
-            throw new Error(`OpenAI File Upload Failed: ${fileResponse.status} - ${errText}`)
-        }
-        const fileData = await fileResponse.json()
-        const fileId = fileData.id
-
-        // Cleanup temp file
-        await fs.unlink(tempFilePath)
-
-        // 3. Create or Update Vector Store (Direct Fetch)
+        // 2. Get or Create Vector Store 
         let vectorStoreId = null
         const { rows } = await query("SELECT value FROM system_config WHERE key = 'default_vector_store'")
 
@@ -229,7 +200,7 @@ app.post('/api/knowledge/create-internal', async (req, res) => {
                 headers: {
                     'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
                     'Content-Type': 'application/json',
-                    'OpenAI-Beta': 'assistants=v2' // Critical for Vector Stores
+                    'OpenAI-Beta': 'assistants=v2'
                 },
                 body: JSON.stringify({
                     name: "Elvison OS - Knowledge Base"
@@ -250,6 +221,91 @@ app.post('/api/knowledge/create-internal', async (req, res) => {
                 ['default_vector_store', { id: vectorStoreId }]
             )
         }
+
+        // 3. CLEANUP: Delete old versions of the guide from VS
+        try {
+            // List files in VS
+            const vsFilesRes = await fetch(`https://api.openai.com/v1/vector_stores/${vectorStoreId}/files`, {
+                headers: {
+                    'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+                    'OpenAI-Beta': 'assistants=v2'
+                }
+            })
+
+            if (vsFilesRes.ok) {
+                const vsFilesData = await vsFilesRes.json()
+                const fileIds = vsFilesData.data.map(f => f.id)
+
+                // We need file details (names) to identifying duplicates.
+                // Since we can't get name from VS-File object directly efficiently without listing all files or storing map,
+                // And listing ALL files is heavy...
+                // Strategy: We only want to delete files named "INTERNAL_STRATEGY_GUIDE.md".
+                // We can't query by name easily.
+                // Alternative: Save the current 'internal_guide_file_id' in system_config.
+
+                // Let's try fetching the file object for each VS file to check name.
+                // Proceed with system_config approach for future, but to fix current mess, iteration is needed.
+                // Given the user likely only has a few files, listing ALL files is acceptable for now.
+
+                const allFilesRes = await fetch('https://api.openai.com/v1/files', {
+                    headers: { 'Authorization': `Bearer ${process.env.OPENAI_API_KEY}` }
+                })
+
+                if (allFilesRes.ok) {
+                    const allFilesData = await allFilesRes.json()
+                    const filesToDelete = allFilesData.data.filter(f =>
+                        fileIds.includes(f.id) && f.filename === 'INTERNAL_STRATEGY_GUIDE.md'
+                    )
+
+                    for (const f of filesToDelete) {
+                        // Remove from VS
+                        await fetch(`https://api.openai.com/v1/vector_stores/${vectorStoreId}/files/${f.id}`, {
+                            method: 'DELETE',
+                            headers: {
+                                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+                                'OpenAI-Beta': 'assistants=v2'
+                            }
+                        })
+                        // Delete File Object
+                        await fetch(`https://api.openai.com/v1/files/${f.id}`, {
+                            method: 'DELETE',
+                            headers: { 'Authorization': `Bearer ${process.env.OPENAI_API_KEY}` }
+                        })
+                    }
+                }
+            }
+        } catch (cleanupErr) {
+            console.warn("Cleanup of old guides failed, continuing:", cleanupErr)
+        }
+
+
+        // 4. Upload NEW File to OpenAI (Direct Fetch)
+        const tempFilePath = path.join(__dirname, 'INTERNAL_STRATEGY_GUIDE.md')
+        const fs = await import('fs/promises')
+        await fs.writeFile(tempFilePath, content)
+
+        const fileFormData = new FormData()
+        fileFormData.append('purpose', 'assistants')
+        const fileBlob = new Blob([await fs.readFile(tempFilePath)])
+        fileFormData.append('file', fileBlob, 'INTERNAL_STRATEGY_GUIDE.md')
+
+        const fileResponse = await fetch('https://api.openai.com/v1/files', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+            },
+            body: fileFormData
+        })
+
+        if (!fileResponse.ok) {
+            const errText = await fileResponse.text()
+            throw new Error(`OpenAI File Upload Failed: ${fileResponse.status} - ${errText}`)
+        }
+        const fileData = await fileResponse.json()
+        const fileId = fileData.id
+
+        // Cleanup temp file
+        await fs.unlink(tempFilePath)
 
         // 4. Add File to Vector Store (Direct Fetch)
         const vsFileResponse = await fetch(`https://api.openai.com/v1/vector_stores/${vectorStoreId}/files`, {
