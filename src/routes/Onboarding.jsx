@@ -609,7 +609,7 @@ const OnboardingSidebar = ({ currentStep, currentAgentIndex, agents }) => {
     ]
 
     return (
-        <div className="w-80 h-screen sticky top-0 bg-transparent backdrop-blur-xl border-r border-white/10 flex flex-col p-6 z-20 hidden lg:flex">
+        <div className="w-80 h-full sticky top-0 bg-transparent backdrop-blur-xl border-r border-white/10 flex flex-col p-6 pb-2 z-20 hidden lg:flex">
             <div className="mb-8 flex items-center gap-3">
                 <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-black shadow-lg overflow-hidden border border-white/10">
                     <img src="/logo-columns.png" alt="Logo" className="h-6 w-6 object-contain opacity-90" />
@@ -814,7 +814,8 @@ const Onboarding = () => {
     if (!isLoaded) return null // Prevent flash of wrong state
 
     return (
-        <div className="w-full h-full relative flex rounded-3xl overflow-hidden shadow-2xl bg-black">
+    return (
+        <div className="w-full h-full relative flex rounded-3xl overflow-hidden shadow-2xl bg-black/20 backdrop-blur-sm">
             {/* Background Video */}
             <div className="absolute inset-0 z-0 pointer-events-none">
                 <video
@@ -822,11 +823,11 @@ const Onboarding = () => {
                     loop
                     muted
                     playsInline
-                    className="w-full h-full object-cover opacity-60"
+                    className="w-full h-full object-cover"
                     src="https://cdn.pixabay.com/video/2020/04/18/36467-418731118_large.mp4"
                 />
                 {/* Subtle Gradient Overlay for text readability without blocking video */}
-                <div className="absolute inset-0 bg-gradient-to-r from-black/80 via-black/40 to-transparent" />
+                <div className="absolute inset-0 bg-gradient-to-r from-black/60 via-black/20 to-transparent" />
             </div>
 
             {/* Sidebar (Show after welcome) */}
