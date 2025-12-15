@@ -148,6 +148,14 @@ app.post('/api/knowledge/create-internal', async (req, res) => {
         await fs.unlink(tempFilePath)
 
         // 3. Create or Update Vector Store
+        // Debugging SDK availability
+        if (!openai.beta) {
+            throw new Error("OpenAI SDK Error: 'openai.beta' is undefined. Version: " + (openai.version || 'unknown'))
+        }
+        if (!openai.beta.vectorStores) {
+            throw new Error(`OpenAI SDK Error: 'openai.beta.vectorStores' is undefined. Keys available: ${Object.keys(openai.beta).join(', ')}`)
+        }
+
         // Check if we already have a vector store ID
         let vectorStoreId = null
         const { rows } = await query("SELECT value FROM system_config WHERE key = 'default_vector_store'")
