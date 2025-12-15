@@ -814,7 +814,6 @@ const Onboarding = () => {
     if (!isLoaded) return null // Prevent flash of wrong state
 
     return (
-    return (
         <div className="w-full h-full relative flex rounded-3xl overflow-hidden shadow-2xl bg-black/20 backdrop-blur-sm">
             {/* Background Video */}
             <div className="absolute inset-0 z-0 pointer-events-none">
