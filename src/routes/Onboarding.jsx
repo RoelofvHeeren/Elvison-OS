@@ -119,10 +119,10 @@ Conduct deep analysis.`
 ]
 
 // --- Styles ---
-const PREMIUM_CONTAINER = "bg-transparent backdrop-blur-sm border-none shadow-none p-8 text-white transition-all duration-300"
-const PREMIUM_INPUT = "w-full bg-white/5 border border-white/20 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:border-teal-400 focus:ring-1 focus:ring-teal-400 transition-all outline-none shadow-[0_4px_30px_rgba(0,0,0,0.1)] backdrop-blur-sm"
-const PREMIUM_BUTTON_PRIMARY = "px-8 py-3 bg-teal-500 hover:bg-teal-400 text-black font-bold rounded-lg shadow-[0_0_20px_rgba(20,184,166,0.3)] transition-all hover:scale-105 backdrop-blur-sm"
-const PREMIUM_BUTTON_SECONDARY = "px-6 py-3 border border-white/30 hover:bg-white/10 text-white rounded-lg transition-all backdrop-blur-sm"
+const PREMIUM_CONTAINER = "bg-transparent border-none shadow-none p-8 text-white transition-all duration-300"
+const PREMIUM_INPUT = "w-full bg-transparent border border-white/30 rounded-lg px-4 py-3 text-white placeholder-gray-300 focus:border-teal-400 focus:ring-1 focus:ring-teal-400 transition-all outline-none shadow-md backdrop-blur-none"
+const PREMIUM_BUTTON_PRIMARY = "px-8 py-3 bg-teal-500 hover:bg-teal-400 text-black font-bold rounded-lg shadow-[0_0_20px_rgba(20,184,166,0.3)] transition-all hover:scale-105"
+const PREMIUM_BUTTON_SECONDARY = "px-6 py-3 border border-white/30 hover:bg-white/10 text-white rounded-lg transition-all"
 
 
 // --- Sub-Components ---
@@ -609,7 +609,7 @@ const OnboardingSidebar = ({ currentStep, currentAgentIndex, agents }) => {
     ]
 
     return (
-        <div className="w-80 h-full sticky top-0 bg-transparent backdrop-blur-xl border-r border-white/10 flex flex-col p-6 pb-2 z-20 hidden lg:flex">
+        <div className="w-80 h-full sticky top-0 bg-transparent border-r border-white/10 flex flex-col p-6 pb-2 z-20 hidden lg:flex custom-scrollbar overflow-y-auto">
             <div className="mb-8 flex items-center gap-3">
                 <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-black shadow-lg overflow-hidden border border-white/10">
                     <img src="/logo-columns.png" alt="Logo" className="h-6 w-6 object-contain opacity-90" />
@@ -617,7 +617,7 @@ const OnboardingSidebar = ({ currentStep, currentAgentIndex, agents }) => {
                 <span className="font-serif font-bold text-xl tracking-wide text-white drop-shadow-md">Onboarding</span>
             </div>
 
-            <div className="flex-1 overflow-y-auto space-y-1 pr-2 custom-scrollbar">
+            <div className="space-y-1 pr-2">
                 {steps.map((step, idx) => {
                     // Logic for state
                     // If idx < activeGlobalIndex -> DONE (Green Check)
@@ -814,7 +814,7 @@ const Onboarding = () => {
     if (!isLoaded) return null // Prevent flash of wrong state
 
     return (
-        <div className="w-full h-full relative flex rounded-3xl overflow-hidden shadow-2xl bg-black/20 backdrop-blur-sm">
+        <div className="w-full h-full relative flex rounded-3xl overflow-hidden shadow-none bg-transparent">
             {/* Background Video */}
             <div className="absolute inset-0 z-0 pointer-events-none">
                 <video
@@ -825,8 +825,6 @@ const Onboarding = () => {
                     className="w-full h-full object-cover"
                     src="https://cdn.pixabay.com/video/2020/04/18/36467-418731118_large.mp4"
                 />
-                {/* Subtle Gradient Overlay for text readability without blocking video */}
-                <div className="absolute inset-0 bg-gradient-to-r from-black/60 via-black/20 to-transparent" />
             </div>
 
             {/* Sidebar (Show after welcome) */}
