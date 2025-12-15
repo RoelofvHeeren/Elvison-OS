@@ -77,6 +77,11 @@ export const optimizeAgentPrompt = async (agentName, inputs, baseTemplate) => {
   return data.prompt
 }
 
+export const createInternalKnowledgeBase = async (answers) => {
+  const { data } = await client.post('/api/knowledge/create-internal', { answers })
+  return data
+}
+
 // --- LEGACY / UTILS ---
 
 export const fetchHealth = async () => {

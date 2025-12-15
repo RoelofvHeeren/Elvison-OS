@@ -85,22 +85,75 @@ Rewrite the system instruction to be professional, robust, and optimized for an 
     }
 })
 
-// Save Agent Prompts
-app.post('/api/agent-prompts', async (req, res) => {
-    const { prompts } = req.body
-    if (!prompts) return res.status(400).json({ error: 'Missing prompts data' })
+// --- Knowledge Base & Files ---
+
+// 1. Create Internal Strategy Guide & Vector Store
+app.post('/api/knowledge/create-internal', async (req, res) => {
+    const { answers, agentConfigs } = req.body
+
     try {
-        for (const [agentId, promptText] of Object.entries(prompts)) {
+        // 1. Compile Strategy Guide Content
+        let content = `# Internal Strategy Guide & Agent Protocols\nGenerated: ${new Date().toISOString()}\n\n`
+
+        // Add Research Framework
+        if (answers.research_framework) {
+            content += `## Research Framework\n${JSON.stringify(answers.research_framework, null, 2)}\n\n`
+        }
+
+        // Add Outreach Strategy
+        if (answers.outreach_creator) {
+            content += `## Outreach Strategy\n${JSON.stringify(answers.outreach_creator, null, 2)}\n\n`
+        }
+
+        // 2. Upload File to OpenAI
+        const fileBuffer = Buffer.from(content)
+        // We need to write to disk first because OpenAI SDK expects a file stream or path for 'fs'
+        const tempFilePath = path.join(__dirname, 'INTERNAL_STRATEGY_GUIDE.md')
+        const fs = await import('fs/promises')
+        await fs.writeFile(tempFilePath, content)
+
+        // Upload
+        const file = await openai.files.create({
+            file: await import('fs').then(f => f.createReadStream(tempFilePath)),
+            purpose: "assistants",
+        })
+
+        // Cleanup temp file
+        await fs.unlink(tempFilePath)
+
+        // 3. Create or Update Vector Store
+        // Check if we already have a vector store ID
+        let vectorStoreId = null
+        const { rows } = await query("SELECT value FROM system_config WHERE key = 'default_vector_store'")
+
+        if (rows.length > 0 && rows[0].value?.id) {
+            vectorStoreId = rows[0].value.id
+        } else {
+            // Create new
+            const vs = await openai.beta.vectorStores.create({
+                name: "Elvison OS - Knowledge Base"
+            })
+            vectorStoreId = vs.id
+
+            // Save to DB
             await query(
-                `INSERT INTO agent_prompts (agent_id, name, system_prompt) VALUES ($1, $2, $3)
-         ON CONFLICT (agent_id) DO UPDATE SET system_prompt = $3, updated_at = NOW()`,
-                [agentId, formatAgentName(agentId), promptText]
+                `INSERT INTO system_config (key, value) VALUES ($1, $2)
+                 ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()`,
+                ['default_vector_store', { id: vectorStoreId }]
             )
         }
-        res.json({ success: true })
+
+        // 4. Add File to Vector Store
+        await openai.beta.vectorStores.files.create(
+            vectorStoreId,
+            { file_id: file.id }
+        )
+
+        res.json({ success: true, vectorStoreId, fileId: file.id })
+
     } catch (err) {
-        console.error('Failed to save prompts:', err)
-        res.status(500).json({ error: 'Database error' })
+        console.error('KB Creation Failed:', err)
+        res.status(500).json({ error: err.message })
     }
 })
 

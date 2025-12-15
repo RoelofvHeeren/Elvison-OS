@@ -484,42 +484,6 @@ const StepVerifyPrompt = ({ agent, prompt, setPrompt, onConfirm, onBack, isOptim
                 />
             </div>
         </div>
-    )
-}
-
-const StepComplete = ({ onLaunch, isSaving }) => {
-    const [statusLines, setStatusLines] = useState([])
-
-    useEffect(() => {
-        // Simulate system checks
-        const checks = [
-            "Initializing Agent Runtime...",
-            "Connecting to PostgreSQL Database...",
-            "Verifying Apollo MCP Connection...",
-            "Loading Knowledge Base Indices...",
-            "Compiling System Instructions...",
-            "SYSTEMS OPERATIONAL"
-        ]
-
-        let i = 0
-        const interval = setInterval(() => {
-            if (i < checks.length) {
-                setStatusLines(prev => [...prev, checks[i]])
-                i++
-            } else {
-                clearInterval(interval)
-            }
-        }, 800)
-
-        return () => clearInterval(interval)
-    }, [])
-
-    const isReady = statusLines.includes("SYSTEMS OPERATIONAL")
-
-    return (
-        <div className="flex flex-col items-center justify-center h-full max-w-4xl mx-auto text-center">
-            <h2 className="text-5xl font-serif font-bold mb-12 text-white">System Status</h2>
-
             <div className="w-full max-w-2xl bg-black/60 border border-teal-500/30 rounded-xl p-8 mb-12 font-mono text-left shadow-[0_0_30px_rgba(20,184,166,0.1)] min-h-[300px]">
                 {statusLines.map((line, idx) => (
                     <motion.div
@@ -557,7 +521,7 @@ const StepComplete = ({ onLaunch, isSaving }) => {
                     )}
                 </button>
             </div>
-        </div>
+        </div >
     )
 }
 
@@ -677,14 +641,21 @@ const Onboarding = () => {
     const handleLaunch = async () => {
         setIsSaving(true)
         try {
+            // 1. Save Prompts
             await saveAgentPrompts(generatedPrompts)
+
+            // 2. Save CRM Columns
             await saveCrmColumns(crmColumns)
 
-            localStorage.removeItem('onboarding_state') // Clear progress just in case
-            alert('System Launched! Configurations saved.')
+            // 3. Create Internal Knowledge Base w/ User Answers
+            const allAnswers = surveyAnswers
+            await createInternalKnowledgeBase(allAnswers)
+
+            localStorage.removeItem('onboarding_state')
+            navigate('/connections')
         } catch (err) {
-            console.error(err)
-            alert('Failed to save configurations.')
+            console.error("Launch failed", err)
+            alert("Failed to save configuration. Check console.")
         } finally {
             setIsSaving(false)
         }

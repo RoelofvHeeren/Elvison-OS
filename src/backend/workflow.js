@@ -60,7 +60,19 @@ const OutreachCreatorSchema = z.object({
  * @param {Object} config - Configuration { vectorStoreId: string, agentConfigs: Object }
  */
 export const runAgentWorkflow = async (input, config) => {
-    const { vectorStoreId, agentConfigs = {} } = config;
+    let { vectorStoreId, agentConfigs = {} } = config;
+
+    // Default Vector Store Logic
+    if (!vectorStoreId) {
+        try {
+            const result = await query("SELECT value FROM system_config WHERE key = 'default_vector_store'");
+            if (result.rows.length > 0 && result.rows[0].value?.id) {
+                vectorStoreId = result.rows[0].value.id;
+            }
+        } catch (e) {
+            console.warn("Failed to fetch default vector store", e);
+        }
+    }
 
     // Helper to get tools for an agent
     const getToolsForAgent = (agentKey) => {
