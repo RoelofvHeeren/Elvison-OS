@@ -25,10 +25,47 @@ CREATE TABLE IF NOT EXISTS crm_columns (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Table: users (Placeholder for multi-tenancy)
+-- Table: users
 CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     email VARCHAR(255) NOT NULL UNIQUE,
+    password_hash VARCHAR(255), -- For future auth
     name VARCHAR(100),
+    role VARCHAR(50) DEFAULT 'user',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Table: leads (Replacing Google Sheet)
+CREATE TABLE IF NOT EXISTS leads (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    company_name VARCHAR(255),
+    person_name VARCHAR(255),
+    email VARCHAR(255),
+    job_title VARCHAR(255),
+    linkedin_url TEXT,
+    status VARCHAR(50) DEFAULT 'NEW', -- NEW, ENRICHED, CONTACTED, etc.
+    custom_data JSONB DEFAULT '{}'::jsonb, -- dynamic columns from Data Architect
+    source VARCHAR(100), -- e.g. 'Apollo', 'Manual'
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Table: workflow_runs (Logging)
+CREATE TABLE IF NOT EXISTS workflow_runs (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    agent_id VARCHAR(50) NOT NULL,
+    status VARCHAR(50) NOT NULL, -- 'RUNNING', 'COMPLETED', 'FAILED'
+    started_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    completed_at TIMESTAMP WITH TIME ZONE,
+    error_log TEXT,
+    metadata JSONB DEFAULT '{}'::jsonb
+);
+
+-- Table: agent_results (Agent Outputs)
+CREATE TABLE IF NOT EXISTS agent_results (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    run_id UUID REFERENCES workflow_runs(id),
+    agent_id VARCHAR(50), 
+    output_data JSONB NOT NULL, -- The full JSON result from the agent
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );

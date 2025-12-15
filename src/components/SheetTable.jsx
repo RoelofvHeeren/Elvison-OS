@@ -248,7 +248,7 @@ const SheetTable = ({ rows, loading, error, onDeleteRow }) => {
                     <button
                       onClick={(e) => {
                         e.stopPropagation()
-                        if (onDeleteRow) onDeleteRow(row.originalIndex)
+                        if (onDeleteRow) onDeleteRow(row.id)
                       }}
                       className="text-muted/50 hover:text-rose-500 transition-colors p-1"
                       title="Delete Lead"

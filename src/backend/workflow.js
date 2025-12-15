@@ -1,6 +1,6 @@
-
 import { fileSearchTool, hostedMcpTool, webSearchTool, Agent, Runner, withTrace } from "@openai/agents";
 import { z } from "zod";
+import { query } from "../../db/index.js";
 
 // --- Schema Definitions ---
 const CompanyFinderSchema = z.object({
@@ -53,19 +53,14 @@ const OutreachCreatorSchema = z.object({
     }))
 });
 
-const SheetBuilderSchema = z.object({
-    spreadsheet_url: z.string(),
-    status: z.string()
-});
-
 // --- Dynamic Workflow Function ---
 /**
  * Runs the agent workflow with dynamic vector store inputs.
  * @param {Object} input - Workflow input { input_as_text: string }
- * @param {Object} config - Configuration { vectorStoreId: string, sheetId: string, agentConfigs: Object }
+ * @param {Object} config - Configuration { vectorStoreId: string, agentConfigs: Object }
  */
 export const runAgentWorkflow = async (input, config) => {
-    const { vectorStoreId, sheetId, agentConfigs = {} } = config;
+    const { vectorStoreId, agentConfigs = {} } = config;
 
     // Helper to get tools for an agent
     const getToolsForAgent = (agentKey) => {
@@ -74,9 +69,6 @@ export const runAgentWorkflow = async (input, config) => {
         const tools = [];
 
         // 1. File Search Tool (if files are linked)
-        // Note: linkedFileIds are FILE IDs. fileSearchTool expects VECTOR STORE IDs.
-        // We cannot pass file IDs directly to vector_store_ids.
-        // For now, only use the global vectorStoreId if it is valid.
         if (vectorStoreId && vectorStoreId.startsWith('vs_')) {
             tools.push(fileSearchTool([vectorStoreId]));
         }
@@ -89,7 +81,7 @@ export const runAgentWorkflow = async (input, config) => {
             // Default tools per agent if no config provided
             switch (agentKey) {
                 case 'company_finder':
-                    enabledIds = ['web_search', 'sheet_mcp'];
+                    enabledIds = ['web_search'];
                     break;
                 case 'company_profiler':
                     enabledIds = ['web_search'];
@@ -100,16 +92,10 @@ export const runAgentWorkflow = async (input, config) => {
                 case 'outreach_creator':
                     enabledIds = []; // Relies on vector store (file search)
                     break;
-                case 'sheet_builder':
-                    enabledIds = ['sheet_mcp'];
-                    break;
             }
         }
 
         // 3. Attach matching tools
-        if (enabledIds.includes('sheet_mcp')) {
-            tools.push(sheetMcp);
-        }
         if (enabledIds.includes('apollo_mcp')) {
             tools.push(apolloMcp);
         }
@@ -135,19 +121,7 @@ export const runAgentWorkflow = async (input, config) => {
     // Standard Tools
     const webSearch = webSearchTool();
 
-    // MCP Tools (Hardcoded URLs from user snippet)
-    const sheetMcp = hostedMcpTool({
-        serverLabel: "Sheet_MCP",
-        allowedTools: [
-            "refresh_auth", "create_spreadsheet", "list_sheets", "create_sheet",
-            "read_all_from_sheet", "read_headings", "read_rows", "read_columns",
-            "edit_cell", "edit_row", "edit_column", "insert_row", "insert_column",
-            "rename_sheet", "rename_doc"
-        ],
-        requireApproval: "never", // Changed to never for automated flow
-        serverUrl: "https://final-sheet-mcp-production.up.railway.app/sse"
-    });
-
+    // MCP Tools
     const apolloMcp = hostedMcpTool({
         serverLabel: "Apollo_MCP",
         allowedTools: [
@@ -258,7 +232,6 @@ For each company:
 Goal: Find decision-makers for Real Estate Investment deals.
 
 ### TARGET ROLES
-### TARGET ROLES
 **BROAD SEARCH STRATEGY:** We need to find *someone* relevant at each firm.
 - **Tier 1 (Executives):** "Partner", "Principal", "Managing Director", "President", "CEO", "Founder", "Co-Founder", "Owner".
 - **Tier 2 (Real Estate Leaders):** "Head of Real Estate", "Head of Acquisitions", "Head of Investments", "Chief Investment Officer", "CIO", "Director of Development", "VP Development".
@@ -280,7 +253,7 @@ Goal: Find decision-makers for Real Estate Investment deals.
     - If needed, use 'people_search' with just keywords: "Real Estate", "Acquisitions", "Investment".
     - Filter by 'organization_ids' (using the ID found in Step 1).
 5.  **Limits:**
-    - **Select up to 3** leads per company if possible (User requested "rather too many than too little").
+    - **Select up to 3** leads per company if possible.
     - Prioritize those with "verified_email".
 6.  **Enrich:**
     - Use 'get_person_email' to reveal email addresses.
@@ -299,6 +272,7 @@ Goal: Find decision-makers for Real Estate Investment deals.
     }
   ]
 }`;
+
     const apolloLeadFinder = new Agent({
         name: "Apollo Lead Finder",
         instructions: getInstructions('apollo_lead_finder', leadDefaultInst),
@@ -336,48 +310,9 @@ Return the enriched lead objects in the JSON schema.`;
     const outreachCreator = new Agent({
         name: "Outreach Creator",
         instructions: getInstructions('outreach_creator', outreachDefaultInst),
-        model: "gpt-5.2", // Best quality for writing
+        model: "gpt-5.2",
         tools: getToolsForAgent('outreach_creator'),
         outputType: OutreachCreatorSchema,
-    });
-
-    // 5. Sheet Builder
-    const sheetBuilderDefaultInst = `You are the CRM Data Manager.
-
-    Target Spreadsheet ID: "${sheetId || '1T50YCAUgqUoT3DhdmjS3v3s866y3RYdAdyxn9nywpdI'}"
-    Target Sheet Name: "AI Lead Sheet"
-    
-    ### SCHEMA (Columns)
-    Ensure the sheet has these headers in order. If not, create them.
-    1.  Date Added
-    2.  First Name
-    3.  Last Name
-    4.  Company Name
-    5.  Title
-    6.  Email
-    7.  LinkedIn URL
-    8.  Website
-    9.  Connection Request
-    10. Email Message
-    11. Company Profile (Summary)
-    
-    ### ACTION
-    1.  Read the current headers using 'read_headings'.
-    2.  If headers don't match, use 'insert_row' at index 1 to set headers.
-    3.  For each lead in the input:
-       *   Format the data to match the columns.
-       *   Use 'insert_row' (or 'append_row' if available) to add the lead.
-    4.  Validation: Ensure no columns are shifted.
-    
-    ### OUTPUT
-    Return the full spreadsheet URL (e.g. https://docs.google.com/spreadsheets/d/${sheetId || '1T50YCAUgqUoT3DhdmjS3v3s866y3RYdAdyxn9nywpdI'}/edit) and status "success".`;
-
-    const sheetBuilder = new Agent({
-        name: "Sheet Builder",
-        instructions: getInstructions('sheet_builder', sheetBuilderDefaultInst),
-        model: "gpt-5-mini", // Simple utility task
-        tools: getToolsForAgent('sheet_builder'),
-        outputType: SheetBuilderSchema,
     });
 
     // Helper for retry logic
@@ -439,13 +374,11 @@ Return the enriched lead objects in the JSON schema.`;
 
             // Construct prompt for this iteration
             let currentPrompt = originalPrompt;
-            // Inject strict instruction override for this specific batch
             currentPrompt += `\n\n[SYSTEM INJECTION]: You are in iteration ${attempts}. Your GOAL is to find exactly ${needed} NEW companies.`;
-            currentPrompt += `\n\n[CRITICAL]: You MUST verify you have read the 'Companies' sheet (using 'read_all_from_sheet') to exclude any firms we have already contacted. Do not skip this step.`;
 
             // Smart Retry Logic for 0 results
             if (attempts > 1 && lastRoundFound === 0) {
-                currentPrompt += `\n\n[ADAPTATION]: Your previous search yielded 0 results. You MUST use different, broader search terms now. Do NOT repeat the same failed search queries. Try variations of the target industry or location.`;
+                currentPrompt += `\n\n[ADAPTATION]: Your previous search yielded 0 results. You MUST use different, broader search terms now.`;
             }
 
             if (qualifiedCompanies.length > 0) {
@@ -463,14 +396,11 @@ Return the enriched lead objects in the JSON schema.`;
             }
 
             const finderResults = finderRes.finalOutput.results || [];
-            lastRoundFound = finderResults.length; // Update for next iteration check
+            lastRoundFound = finderResults.length;
             debugLog.discovery.push({ round: attempts, results: finderResults });
 
             if (finderResults.length === 0) {
                 logStep('Company Finder', 'No new companies found in this search.');
-                // If we found nothing new, breaking might be safer than looping infinitely, 
-                // but let's give it one more chance if we haven't hit max attempts, 
-                // reliant on the agent's creativity or "Creative Discovery" instruction.
                 if (attempts >= MAX_ATTEMPTS) break;
                 continue;
             }
@@ -478,7 +408,6 @@ Return the enriched lead objects in the JSON schema.`;
             logStep('Company Finder', `Found ${finderResults.length} candidates. Profiling...`);
 
             // 2. Profiler
-            // Run Profiler only on the new candidates
             const profilerInput = [{ role: "user", content: [{ type: "input_text", text: JSON.stringify({ results: finderResults }) }] }];
             const profilerRes = await retryWithBackoff(() => runner.run(companyProfiler, profilerInput));
 
@@ -490,10 +419,8 @@ Return the enriched lead objects in the JSON schema.`;
             const profilerResults = profilerRes.finalOutput.results || [];
             const qualifiedInBatch = [];
 
-            // Filter out empty profiles (rejected)
             for (const company of profilerResults) {
                 if (company.company_profile && company.company_name) {
-                    // Check local duplicate
                     if (!qualifiedCompanies.some(c => c.company_name === company.company_name)) {
                         qualifiedInBatch.push(company);
                     }
@@ -520,16 +447,14 @@ Return the enriched lead objects in the JSON schema.`;
         logStep('Apollo Lead Finder', 'Finding decision makers (Reliability Mode)...');
 
         let allLeads = [];
-        const BATCH_SIZE = 3; // Reduced to 3 to prevent 424 Errors (Server Overload)
+        const BATCH_SIZE = 3;
 
-        // Filter for valid domains only
         const companiesWithDomains = qualifiedCompanies.filter(c => c.domain && c.domain.includes('.'));
 
         for (let i = 0; i < companiesWithDomains.length; i += BATCH_SIZE) {
             const batch = companiesWithDomains.slice(i, i + BATCH_SIZE);
             logStep('Apollo Lead Finder', `Processing batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(companiesWithDomains.length / BATCH_SIZE)} (${batch.length} companies)...`);
 
-            // Just pass the list of companies, the agent instruction now handles the bulk search
             const batchInput = [{ role: "user", content: [{ type: "input_text", text: JSON.stringify({ results: batch }) }] }];
 
             try {
@@ -549,13 +474,9 @@ Return the enriched lead objects in the JSON schema.`;
         const leadCount = allLeads.length;
         logStep('Apollo Lead Finder', `Total: Found ${leadCount} enriched leads.`);
 
-        // Construct a composite output for the next step
-        const leadOutput = { leads: allLeads };
-        debugLog.apollo = allLeads;
-
         // 4. Outreach Creator
         logStep('Outreach Creator', 'Drafting personalized messages...');
-        const outreachInput = [{ role: "user", content: [{ type: "input_text", text: JSON.stringify(leadOutput) }] }];
+        const outreachInput = [{ role: "user", content: [{ type: "input_text", text: JSON.stringify({ leads: allLeads }) }] }];
 
         const outreachRes = await retryWithBackoff(() => runner.run(outreachCreator, outreachInput));
         if (!outreachRes.finalOutput) throw new Error("Outreach Creator failed");
@@ -564,19 +485,40 @@ Return the enriched lead objects in the JSON schema.`;
         const msgCount = outreachOutput.leads ? outreachOutput.leads.length : 0;
         logStep('Outreach Creator', `Drafted messages for ${msgCount} leads.`);
 
-        // 5. Sheet Builder
-        logStep('Sheet Builder', 'Exporting to Google Sheets...');
-        const currentTimestamp = new Date().toLocaleString('en-US', { hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(',', '');
-        const sheetInput = [{ role: "user", content: [{ type: "input_text", text: JSON.stringify({ ...outreachOutput, system_timestamp: currentTimestamp }) }] }];
+        // 5. Save to CRM (Database)
+        logStep('CRM Sync', 'Saving leads to database...');
+        try {
+            await query('BEGIN');
+            for (const lead of outreachOutput.leads) {
+                await query(
+                    `INSERT INTO leads (company_name, person_name, email, job_title, linkedin_url, status, custom_data, source)
+                     VALUES ($1, $2, $3, $4, $5, 'NEW', $6, 'Automation')`,
+                    [
+                        lead.company_name,
+                        `${lead.first_name || ''} ${lead.last_name || ''}`.trim(),
+                        lead.email,
+                        lead.title,
+                        lead.linkedin_url,
+                        JSON.stringify({
+                            company_website: lead.company_website,
+                            company_profile: lead.company_profile,
+                            connection_request: lead.connection_request,
+                            email_message: lead.email_message,
+                            verification_date: new Date().toISOString()
+                        })
+                    ]
+                );
+            }
+            await query('COMMIT');
+            logStep('CRM Sync', `Successfully saved ${outreachOutput.leads.length} leads to CRM.`);
+        } catch (dbErr) {
+            await query('ROLLBACK');
+            logStep('CRM Sync', `Failed to save leads to DB: ${dbErr.message}`);
+            // Don't fail the whole workflow check if DB fails, but log it.
+        }
 
-        const sheetRes = await retryWithBackoff(() => runner.run(sheetBuilder, sheetInput));
-        if (!sheetRes.finalOutput) throw new Error("Sheet Builder failed");
-
-        logStep('Sheet Builder', 'Export complete.');
-
-        // Return structured result containing sheet URL and the actual lead data for the logbook
         return {
-            ...sheetRes.finalOutput,
+            status: "success",
             leads: outreachOutput.leads,
             debug: debugLog
         };

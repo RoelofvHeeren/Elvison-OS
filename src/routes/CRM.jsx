@@ -16,34 +16,34 @@ const CRM = () => {
       setLoading(true)
       setError('')
       const data = await fetchLeads()
-      const normalized = (data?.rows ?? data ?? [])
-        .map((row, idx) => ({ row, idx }))
-        .filter(({ row }) => row[0] !== 'Date Added' && (row[1] || row[2] || row[3])) // Filter headers and empty rows
-        .map(({ row, idx }) => {
-          // Format date if possible, otherwise keep raw
-          let dateStr = row[0] || '';
-          try {
-            const d = new Date(dateStr);
-            if (!isNaN(d.getTime())) {
-              dateStr = d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-            }
-          } catch (e) { }
+      // Data is an array of objects: { person_name, company_name, job_title, email, linkedin_url, custom_data, ... }
 
-          return {
-            originalIndex: idx,
-            date: dateStr,
-            name: row[1] || '',
-            title: row[2] || '',
-            company: row[3] || '',
-            email: row[4] || '',
-            linkedin: row[5] || '',
-            website: row[6] || '',
-            connectionRequest: row[7] || '',
-            emailMessage: row[8] || '',
-            companyProfile: row[9] || '',
-          };
-        })
-        .sort((a, b) => new Date(b.date) - new Date(a.date)) // Sort newest first
+      const normalized = (data || []).map((lead, idx) => {
+        // Parse complex custom_data if it exists
+        let details = {}
+        if (typeof lead.custom_data === 'string') {
+          try { details = JSON.parse(lead.custom_data) } catch (e) { }
+        } else {
+          details = lead.custom_data || {}
+        }
+
+        let dateStr = new Date(lead.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+
+        return {
+          originalIndex: idx, // Not useful for deletion by index anymore, but needed for key
+          id: lead.id, // Use DB ID
+          date: dateStr,
+          name: lead.person_name || '',
+          title: lead.job_title || '',
+          company: lead.company_name || '',
+          email: lead.email || '',
+          linkedin: lead.linkedin_url || '',
+          website: details.company_website || '',
+          connectionRequest: details.connection_request || '',
+          emailMessage: details.email_message || '',
+          companyProfile: details.company_profile || '',
+        };
+      })
       setRows(normalized)
     } catch (err) {
       console.error(err)
@@ -53,11 +53,11 @@ const CRM = () => {
     }
   }
 
-  const handleDeleteRow = async (idx) => {
+  const handleDeleteRow = async (id) => {
     if (!window.confirm('Are you sure you want to delete this lead?')) return
     try {
       setLoading(true)
-      await deleteLead(idx)
+      await deleteLead(id)
       await fetchRows()
     } catch (err) {
       console.error(err)

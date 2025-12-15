@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "start": "NODE_ENV=production node mock-server.js",
+    "start": "NODE_ENV=production node server.js",
     "build": "NODE_OPTIONS='--max-old-space-size=2048' vite build",
     "lint": "eslint .",
     "preview": "vite preview"
@@ -19,7 +19,6 @@
     "dotenv": "^17.2.3",
     "eventsource": "^4.1.0",
     "express": "^5.1.0",
-    "final-sheet-mcp": "github:RoelofvHeeren/Final-Sheet-MCP",
     "framer-motion": "^12.23.26",
     "lucide-react": "^0.555.0",
     "openai": "^4.0.0",

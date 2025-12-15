@@ -2,19 +2,49 @@
 import { useState, useEffect } from 'react'
 import { Book, Clock, CheckCircle, AlertCircle, Trash2, FileText, ChevronRight, ChevronDown, User, Building, Mail } from 'lucide-react'
 
+import { fetchRuns } from '../utils/api'
+
 const Logbook = () => {
     const [jobs, setJobs] = useState([])
     const [expandedJobId, setExpandedJobId] = useState(null)
+    const [loading, setLoading] = useState(true)
+
+    const loadJobs = async () => {
+        try {
+            const data = await fetchRuns()
+            // Map DB format to UI expects
+            const mapped = data.map(run => {
+                let result = {}
+                let prompt = 'Workflow Run'
+                try {
+                    if (run.output_data) result = run.output_data // It's already JSON from pg driver usually
+                    if (typeof result === 'string') result = JSON.parse(result)
+
+                    const meta = run.metadata || {}
+                    if (meta.prompt) prompt = meta.prompt
+                } catch (e) { console.error(e) }
+
+                return {
+                    id: run.id,
+                    timestamp: run.started_at,
+                    status: run.status === 'COMPLETED' ? 'success' : run.status.toLowerCase(),
+                    prompt: prompt,
+                    result: result,
+                    error: run.error_log
+                }
+            })
+            setJobs(mapped)
+        } catch (error) {
+            console.error('Failed to load logs:', error)
+        } finally {
+            setLoading(false)
+        }
+    }
 
     useEffect(() => {
-        const savedJobs = localStorage.getItem('elvison_job_history')
-        if (savedJobs) {
-            try {
-                setJobs(JSON.parse(savedJobs).reverse()) // Newest first
-            } catch (e) {
-                console.error('Failed to parse job history', e)
-            }
-        }
+        loadJobs()
+        const interval = setInterval(loadJobs, 5000) // Poll for updates
+        return () => clearInterval(interval)
     }, [])
 
     const clearHistory = () => {
