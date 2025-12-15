@@ -53,6 +53,21 @@ const OutreachCreatorSchema = z.object({
     }))
 });
 
+// --- Helper Functions ---
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+const retryWithBackoff = async (fn, retries = 3, baseDelay = 1000) => {
+    try {
+        return await fn();
+    } catch (error) {
+        if (retries === 0) throw error;
+        // Check if error is a rate limit or 5xx, or just retry all for now in this MVP
+        console.warn(`[Retry] Operation failed: ${error.message}. Retrying in ${baseDelay}ms... (Left: ${retries})`);
+        await delay(baseDelay);
+        return retryWithBackoff(fn, retries - 1, baseDelay * 2);
+    }
+};
+
 // --- Dynamic Workflow Function ---
 /**
  * Runs the agent workflow with dynamic vector store inputs.
