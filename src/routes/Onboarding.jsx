@@ -254,7 +254,8 @@ const StepAgentSurvey = ({ agent, answers, setAnswers, onNext, onBack, onGenerat
     const [qIndex, setQIndex] = useState(0)
 
     const handleAnswer = (qid, val) => {
-        setAnswers(prev => ({ ...prev, [agent.id]: { ...prev[agent.id], [qid]: val } }))
+        const newAnswers = { ...answers, [qid]: val }
+        setAnswers(newAnswers)
     }
 
     if (agent.isVisualEditor) {
