@@ -14,6 +14,12 @@ const port = process.env.PORT || 3001
 app.use(cors())
 app.use(express.json())
 
+// --- Static Files ---
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+
+app.use(express.static(path.join(__dirname, 'dist')))
+
 // --- API Endpoints ---
 
 // Health Check
@@ -293,6 +299,11 @@ app.post('/api/runs/start-workflow', async (req, res) => {
 function formatAgentName(id) {
     return id.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
 }
+
+// --- Catch-All for Frontend ---
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'dist', 'index.html'))
+})
 
 // Start Server
 app.listen(port, () => {
