@@ -153,7 +153,7 @@ export const runAgentWorkflow = async (input, config) => {
     });
 
     // 3. Lead Finder
-    const leadInst = agentPrompts['apollo'] || `You are the Apollo Headhunter Agent... (Default)`;
+    const leadInst = agentPrompts['apollo_lead_finder'] || `You are the Apollo Headhunter Agent... (Default)`;
     const apolloLeadFinder = new Agent({
         name: "Apollo Lead Finder",
         instructions: leadInst,

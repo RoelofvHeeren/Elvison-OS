@@ -50,8 +50,23 @@ Strategy: ${a.discovery_behavior}
 Output the list in JSON format.`
     },
     {
-        id: 'apollo',
-        name: 'Apollo Enricher',
+        id: 'company_profiler',
+        name: 'Company Profiler',
+        description: 'Analyze companies to confirm they match criteria.',
+        questions: [
+            { id: 'key_attributes', label: 'Key attributes to verify', placeholder: 'e.g. "Must be an LP", "Must have invested in Canada"', type: 'textarea' },
+            { id: 'red_flags', label: 'Red flags / Exclusion criteria', placeholder: 'e.g. "Focuses only on Tech", "Defunct website"', type: 'textarea' },
+            { id: 'depth', label: 'Analysis depth', type: 'radio', options: ['Quick Scan (Homepage)', 'Deep Dive (News, LinkedIn, Reports)'] },
+        ],
+        template: (a) => `You are a Research Analyst. Profile these companies.
+Attributes: ${a.key_attributes}
+Red Flags: ${a.red_flags}
+Depth: ${a.depth}
+Verify against criteria.`
+    },
+    {
+        id: 'apollo_lead_finder',
+        name: 'Apollo Lead Finder',
         description: 'Identify the right people and return the right data.',
         questions: [
             { id: 'job_titles', label: 'Which titles should the agent target?', type: 'multi-select', options: JOB_TITLE_SUGGESTIONS },
@@ -828,12 +843,22 @@ const Onboarding = () => {
     const handleLaunch = async () => {
         setIsSaving(true)
         try {
-            // 1. Save Prompts
-            const promptsToSave = AGENTS.map(a => ({
-                id: a.id,
-                name: a.name,
-                prompt: generatedPrompts[a.id] || ''
-            })).filter(p => p.prompt)
+            // 1. Save Prompts & Configs
+            const promptsToSave = AGENTS.map(a => {
+                // Determine Default Tools
+                let enabledToolIds = []
+                if (a.id === 'company_finder') enabledToolIds = ['file_search', 'web_search']
+                if (a.id === 'company_profiler') enabledToolIds = ['file_search', 'web_search']
+                if (a.id === 'apollo_lead_finder') enabledToolIds = ['apollo_mcp']
+                if (a.id === 'outreach_creator') enabledToolIds = ['file_search'] // Per instructions
+
+                return {
+                    id: a.id,
+                    name: a.name,
+                    prompt: generatedPrompts[a.id] || '',
+                    config: { enabledToolIds } // Send config to backend
+                }
+            }).filter(p => p.prompt)
 
             await saveAgentPrompts(promptsToSave)
 
@@ -844,7 +869,7 @@ const Onboarding = () => {
             const allAnswers = surveyAnswers
             await createInternalKnowledgeBase(allAnswers)
 
-            localStorage.removeItem('onboarding_state')
+            // localStorage.removeItem('onboarding_state') // DEBUG: Keep state for user convenience
             navigate('/connections')
         } catch (err) {
             console.error("Launch Error:", err)

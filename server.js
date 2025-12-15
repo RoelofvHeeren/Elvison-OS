@@ -52,11 +52,11 @@ app.post('/api/agent-prompts', async (req, res) => {
         for (const p of prompts) {
             // Upsert
             await query(
-                `INSERT INTO agent_prompts (agent_id, name, system_prompt) 
-                 VALUES ($1, $2, $3)
+                `INSERT INTO agent_prompts (agent_id, name, system_prompt, config) 
+                 VALUES ($1, $2, $3, $4)
                  ON CONFLICT (agent_id) 
-                 DO UPDATE SET system_prompt = $3, name = $2, updated_at = NOW()`,
-                [p.id, p.name, p.prompt]
+                 DO UPDATE SET system_prompt = $3, name = $2, config = CASE WHEN $4::jsonb IS NOT NULL THEN $4 ELSE agent_prompts.config END, updated_at = NOW()`,
+                [p.id, p.name, p.prompt, p.config || {}]
             )
         }
         await query('COMMIT')
