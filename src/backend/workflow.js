@@ -60,7 +60,16 @@ const OutreachCreatorSchema = z.object({
  * @param {Object} config - Configuration { vectorStoreId: string, agentConfigs: Object }
  */
 export const runAgentWorkflow = async (input, config) => {
-    let { vectorStoreId, agentConfigs = {} } = config;
+    let { vectorStoreId, agentConfigs = {}, listeners } = config;
+
+    // Helper for logging
+    const logStep = (step, detail) => {
+        if (listeners && listeners.onLog) {
+            listeners.onLog({ step, detail });
+        } else {
+            console.log(`[${step}] ${detail}`);
+        }
+    };
 
     // Default Vector Store Logic
     if (!vectorStoreId) {
