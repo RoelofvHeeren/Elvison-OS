@@ -586,6 +586,91 @@ const StepComplete = ({ onLaunch, isSaving }) => {
 }
 
 
+// --- Sidebar Component ---
+
+const OnboardingSidebar = ({ currentStep, currentAgentIndex, agents }) => {
+    // Flatten steps for the list
+    // 1. Company Profile
+    // 2. Agents (mapped)
+    // 3. Launch
+
+    // Determine active index globally
+    let activeGlobalIndex = 0
+    if (currentStep === 'welcome' || currentStep === 'company_info') activeGlobalIndex = 0
+    else if (currentStep === 'agent_survey' || currentStep === 'agent_verify') activeGlobalIndex = 1 + currentAgentIndex
+    else if (currentStep === 'completion') activeGlobalIndex = 1 + agents.length // Last step
+
+    const steps = [
+        { label: "Company Profile", id: "company_info" },
+        ...agents.map(a => ({ label: a.name, id: a.id })),
+        { label: "Launch System", id: "completion" }
+    ]
+
+    return (
+        <div className="w-80 h-screen sticky top-0 bg-black/40 backdrop-blur-xl border-r border-white/10 flex flex-col p-6 z-20 hidden lg:flex">
+            <div className="mb-8 flex items-center gap-3 text-teal-400">
+                <Sparkles className="w-6 h-6" />
+                <span className="font-serif font-bold text-xl tracking-wide text-white">Elvison OS</span>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-1 pr-2 custom-scrollbar">
+                {steps.map((step, idx) => {
+                    // Logic for state
+                    // If idx < activeGlobalIndex -> DONE (Green Check)
+                    // If idx === activeGlobalIndex -> ACTIVE (Glowing)
+                    // If idx > activeGlobalIndex -> PENDING (Dimmed)
+
+                    const isDone = idx < activeGlobalIndex
+                    const isActive = idx === activeGlobalIndex
+
+                    return (
+                        <div
+                            key={idx}
+                            className={`p-3 rounded-lg flex items-center gap-3 transition-all duration-500 border border-transparent ${isActive
+                                    ? "bg-teal-500/10 border-teal-500/30 text-white shadow-[0_0_15px_rgba(20,184,166,0.2)]"
+                                    : isDone
+                                        ? "text-teal-500/50"
+                                        : "text-gray-600"
+                                }`}
+                        >
+                            <div className={`w-6 h-6 rounded-full flex items-center justify-center border transition-all ${isActive
+                                    ? "border-teal-500 bg-teal-500 text-black animate-pulse"
+                                    : isDone
+                                        ? "border-teal-500/50 bg-teal-500/10 text-teal-500"
+                                        : "border-gray-700 bg-transparent text-gray-700"
+                                }`}>
+                                {isDone ? <Check className="w-3.5 h-3.5" /> : <span className="text-xs font-bold">{idx + 1}</span>}
+                            </div>
+                            <span className={`font-medium text-sm ${isActive ? "text-white" : ""}`}>
+                                {step.label}
+                            </span>
+                            {isActive && (
+                                <motion.div
+                                    layoutId="sidebar-active"
+                                    className="ml-auto w-1.5 h-1.5 rounded-full bg-teal-400 shadow-[0_0_10px_currentColor]"
+                                />
+                            )}
+                        </div>
+                    )
+                })}
+            </div>
+
+            <div className="mt-6 pt-6 border-t border-white/10 text-xs text-gray-500">
+                <div className="flex justify-between mb-2">
+                    <span>Progress</span>
+                    <span>{Math.round((activeGlobalIndex / (steps.length - 1)) * 100)}%</span>
+                </div>
+                <div className="h-1 bg-gray-800 rounded-full overflow-hidden">
+                    <div
+                        className="h-full bg-teal-500 transition-all duration-700"
+                        style={{ width: `${(activeGlobalIndex / (steps.length - 1)) * 100}%` }}
+                    />
+                </div>
+            </div>
+        </div>
+    )
+}
+
 // --- Main Container ---
 
 const Onboarding = () => {
@@ -694,7 +779,7 @@ const Onboarding = () => {
             setCurrentAgentIndex(prev => prev + 1)
             setStep('agent_survey')
         } else {
-            setStep('complete')
+            setStep('completion')
         }
     }
 
@@ -724,65 +809,28 @@ const Onboarding = () => {
     // Render Logic
     if (!isLoaded) return null // Prevent flash of wrong state
 
-    let content = null
-    if (step === 'welcome') {
-        content = <StepWelcome userName={userData.userName} onNext={() => setStep('company')} />
-    } else if (step === 'company') {
-        content = <StepCompanyInfo data={userData} onChange={handleUserChange} onNext={() => setStep('agent_survey')} />
-    } else if (step === 'agent_survey') {
-        content = (
-            <StepAgentSurvey
-                agent={AGENTS[currentAgentIndex]}
-                answers={surveyAnswers}
-                setAnswers={setSurveyAnswers}
-                crmColumns={crmColumns}
-                setCrmColumns={setCrmColumns}
-                onGenerate={handleGeneratePrompt}
-            />
-        )
-    } else if (step === 'agent_verify') {
-        content = (
-            <StepVerifyPrompt
-                agent={AGENTS[currentAgentIndex]}
-                prompt={currentDraftPrompt}
-                setPrompt={setCurrentDraftPrompt}
-                onConfirm={handleConfirmPrompt}
-                onBack={() => setStep('agent_survey')}
-                isOptimizing={isOptimizing}
-            />
-        )
-    } else if (step === 'complete') {
-        content = <StepComplete onLaunch={handleLaunch} isSaving={isSaving} />
-    }
+    exit = {{ opacity: 0, x: -20 }
+}
+transition = {{ duration: 0.3 }}
+className = "h-full"
+    >
+    { content }
+                    </motion.div >
+                </AnimatePresence >
+            </div >
 
-    return (
-        <div className="min-h-screen font-sans relative">
-            <div className="absolute inset-0 z-0 bg-transparent" />
-            <div className="relative z-10 h-full w-full p-6">
-                <AnimatePresence mode="wait">
-                    <motion.div
-                        key={step + (step === 'agent_survey' ? currentAgentIndex : '')}
-                        initial={{ opacity: 0, x: 20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: -20 }}
-                        transition={{ duration: 0.3 }}
-                        className="h-full"
-                    >
-                        {content}
-                    </motion.div>
-                </AnimatePresence>
-            </div>
-
-            {/* Progress Bar (Only for agent steps) */}
-            {(step === 'agent_survey' || step === 'agent_verify') && (
-                <div className="fixed bottom-0 left-0 right-0 h-1.5 bg-gray-900 border-t border-white/10 z-20">
-                    <div
-                        className="h-full bg-teal-500 shadow-[0_0_10px_rgba(20,184,166,0.8)] transition-all duration-500 ease-out"
-                        style={{ width: `${((currentAgentIndex + (step === 'agent_verify' ? 0.5 : 0)) / AGENTS.length) * 100}%` }}
-                    />
-                </div>
-            )}
+    {/* Progress Bar (Only for agent steps) */ }
+{
+    (step === 'agent_survey' || step === 'agent_verify') && (
+        <div className="fixed bottom-0 left-0 right-0 h-1.5 bg-gray-900 border-t border-white/10 z-20">
+            <div
+                className="h-full bg-teal-500 shadow-[0_0_10px_rgba(20,184,166,0.8)] transition-all duration-500 ease-out"
+                style={{ width: `${((currentAgentIndex + (step === 'agent_verify' ? 0.5 : 0)) / AGENTS.length) * 100}%` }}
+            />
         </div>
+    )
+}
+        </div >
     )
 }
 
