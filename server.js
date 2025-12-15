@@ -16,6 +16,11 @@ app.use(express.json())
 
 // --- API Endpoints ---
 
+// Health Check
+app.get('/api/health', (req, res) => {
+    res.json({ status: 'ok', timestamp: new Date().toISOString() })
+})
+
 // Get Agent Prompts
 app.get('/api/agent-prompts', async (req, res) => {
     try {
