@@ -6,13 +6,12 @@ const AGENTS = [
     { id: 'company_profiler', name: 'Company Profiler', description: 'Filters and profiles companies.' },
     { id: 'apollo_lead_finder', name: 'Apollo Lead Finder', description: 'Finds contact info for decision makers.' },
     { id: 'outreach_creator', name: 'Outreach Creator', description: 'Drafts personalized outreach messages.' },
-    { id: 'sheet_builder', name: 'Sheet Builder', description: 'Exports data to Google Sheets.' },
+    { id: 'data_architect', name: 'Data Architect', description: 'Defines CRM structure and data types.' },
 ]
 
 const AVAILABLE_TOOLS = [
     { id: 'file_search', name: 'File Search', description: 'Search knowledge base documents', icon: FileText },
     { id: 'web_search', name: 'Web Search', description: 'Search the internet for information', icon: Globe },
-    { id: 'sheet_mcp', name: 'Google Sheets MCP', description: 'Read/Write to Google Sheets', icon: Database },
     { id: 'apollo_mcp', name: 'Apollo MCP', description: 'Enrich leads and find contacts', icon: Wrench },
 ]
 

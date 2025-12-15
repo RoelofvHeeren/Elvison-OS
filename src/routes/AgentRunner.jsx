@@ -4,11 +4,11 @@ import { useNavigate } from 'react-router-dom'
 import { PlayCircle, Terminal, CheckCircle, AlertCircle, Loader2, Send, FileText, Bot, Users } from 'lucide-react'
 
 const STEPS = [
-    { id: 'Company Finder', label: 'Company Finder' },
     { id: 'Company Profiler', label: 'Company Profiler' },
     { id: 'Apollo Lead Finder', label: 'Lead Finder' },
     { id: 'Outreach Creator', label: 'Outreach Creator' },
-    { id: 'Sheet Builder', label: 'Sheet Builder' }
+    { id: 'Data Architect', label: 'Data Architect' }, // Updated
+    { id: 'CRM Sync', label: 'CRM Sync' } // Renamed from Sheet Builder conceptually
 ]
 
 const AgentRunner = () => {
