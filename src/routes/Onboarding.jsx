@@ -627,17 +627,17 @@ const OnboardingSidebar = ({ currentStep, currentAgentIndex, agents }) => {
                         <div
                             key={idx}
                             className={`p-3 rounded-lg flex items-center gap-3 transition-all duration-500 border border-transparent ${isActive
-                                    ? "bg-teal-500/10 border-teal-500/30 text-white shadow-[0_0_15px_rgba(20,184,166,0.2)]"
-                                    : isDone
-                                        ? "text-teal-500/50"
-                                        : "text-gray-600"
+                                ? "bg-teal-500/10 border-teal-500/30 text-white shadow-[0_0_15px_rgba(20,184,166,0.2)]"
+                                : isDone
+                                    ? "text-teal-500/50"
+                                    : "text-gray-600"
                                 }`}
                         >
                             <div className={`w-6 h-6 rounded-full flex items-center justify-center border transition-all ${isActive
-                                    ? "border-teal-500 bg-teal-500 text-black animate-pulse"
-                                    : isDone
-                                        ? "border-teal-500/50 bg-teal-500/10 text-teal-500"
-                                        : "border-gray-700 bg-transparent text-gray-700"
+                                ? "border-teal-500 bg-teal-500 text-black animate-pulse"
+                                : isDone
+                                    ? "border-teal-500/50 bg-teal-500/10 text-teal-500"
+                                    : "border-gray-700 bg-transparent text-gray-700"
                                 }`}>
                                 {isDone ? <Check className="w-3.5 h-3.5" /> : <span className="text-xs font-bold">{idx + 1}</span>}
                             </div>
@@ -809,28 +809,72 @@ const Onboarding = () => {
     // Render Logic
     if (!isLoaded) return null // Prevent flash of wrong state
 
-    exit = {{ opacity: 0, x: -20 }
-}
-transition = {{ duration: 0.3 }}
-className = "h-full"
-    >
-    { content }
-                    </motion.div >
-                </AnimatePresence >
-            </div >
+    return (
+        <div className="bg-[#050505] min-h-screen text-white font-sans selection:bg-teal-500/30 overflow-hidden relative">
+            {/* Background Video */}
+            <div className="absolute inset-0 z-0 opacity-40 mix-blend-screen pointer-events-none">
+                <video
+                    autoPlay
+                    loop
+                    muted
+                    playsInline
+                    className="w-full h-full object-cover"
+                    src="https://cdn.pixabay.com/video/2020/04/18/36467-418731118_large.mp4"
+                />
+            </div>
 
-    {/* Progress Bar (Only for agent steps) */ }
-{
-    (step === 'agent_survey' || step === 'agent_verify') && (
-        <div className="fixed bottom-0 left-0 right-0 h-1.5 bg-gray-900 border-t border-white/10 z-20">
-            <div
-                className="h-full bg-teal-500 shadow-[0_0_10px_rgba(20,184,166,0.8)] transition-all duration-500 ease-out"
-                style={{ width: `${((currentAgentIndex + (step === 'agent_verify' ? 0.5 : 0)) / AGENTS.length) * 100}%` }}
-            />
+            {/* Sidebar (Show after welcome) */}
+            {step !== 'welcome' && (
+                <OnboardingSidebar
+                    currentStep={step}
+                    currentAgentIndex={currentAgentIndex}
+                    agents={AGENTS}
+                />
+            )}
+
+            {/* Content Overlay */}
+            <div className="relative z-10 w-full h-full flex flex-col p-8 overflow-y-auto">
+                <AnimatePresence mode="wait">
+                    {step === 'welcome' && (
+                        <motion.div key="welcome" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                            <StepWelcome onNext={() => setStep('company_info')} />
+                        </motion.div>
+                    )}
+                    {step === 'company_info' && (
+                        <motion.div key="company" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+                            <StepCompanyInfo data={userData} onChange={handleUserChange} onNext={() => setStep('agent_survey')} />
+                        </motion.div>
+                    )}
+                    {step === 'agent_survey' && (
+                        <motion.div key={`survey-${currentAgentIndex}`} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+                            <StepAgentSurvey
+                                agent={AGENTS[currentAgentIndex]}
+                                answers={surveyAnswers[AGENTS[currentAgentIndex].id] || {}}
+                                setAnswers={(ans) => setSurveyAnswers(prev => ({ ...prev, [AGENTS[currentAgentIndex].id]: ans }))}
+                                onNext={handleGeneratePrompt}
+                            />
+                        </motion.div>
+                    )}
+                    {step === 'agent_verify' && (
+                        <motion.div key={`verify-${currentAgentIndex}`} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}>
+                            <StepVerifyPrompt
+                                agent={AGENTS[currentAgentIndex]}
+                                prompt={currentDraftPrompt}
+                                setPrompt={setCurrentDraftPrompt}
+                                onConfirm={handleConfirmPrompt}
+                                onBack={() => setStep('agent_survey')}
+                                isOptimizing={isOptimizing}
+                            />
+                        </motion.div>
+                    )}
+                    {step === 'completion' && (
+                        <motion.div key="complete" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                            <StepComplete onLaunch={handleLaunch} isSaving={isSaving} />
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+            </div>
         </div>
-    )
-}
-        </div >
     )
 }
 
