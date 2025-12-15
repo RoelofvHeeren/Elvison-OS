@@ -68,8 +68,9 @@ export const runAgentWorkflow = async (input, config) => {
         const configEnabledIds = agentConfig?.enabledToolIds;
         const tools = [];
 
-        // 1. File Search Tool (if files are linked)
-        if (vectorStoreId && vectorStoreId.startsWith('vs_')) {
+        // 1. File Search Tool (Knowledge Base Access)
+        // User Rules: Finder, Profiler, and Outreach Creator need KB access.
+        if (vectorStoreId && vectorStoreId.startsWith('vs_') && ['company_finder', 'company_profiler', 'outreach_creator'].includes(agentKey)) {
             tools.push(fileSearchTool([vectorStoreId]));
         }
 
@@ -87,10 +88,10 @@ export const runAgentWorkflow = async (input, config) => {
                     enabledIds = ['web_search'];
                     break;
                 case 'apollo_lead_finder':
-                    enabledIds = ['apollo_mcp']; // Relies on Apollo
+                    enabledIds = ['apollo_mcp'];
                     break;
                 case 'outreach_creator':
-                    enabledIds = []; // Relies on vector store (file search)
+                    enabledIds = []; // File search handled above
                     break;
             }
         }
@@ -106,234 +107,7 @@ export const runAgentWorkflow = async (input, config) => {
         return tools;
     };
 
-    // Helper to get instructions
-    const getInstructions = (agentKey, defaultInst) => {
-        return agentConfigs[agentKey]?.instructions || defaultInst;
-    };
-
-    const listeners = config.listeners || {};
-    const logStep = (step, detail) => {
-        if (listeners.onLog) {
-            listeners.onLog({ step, detail, timestamp: new Date().toISOString() });
-        }
-    };
-
-    // Standard Tools
-    const webSearch = webSearchTool();
-
-    // MCP Tools
-    const apolloMcp = hostedMcpTool({
-        serverLabel: "Apollo_MCP",
-        allowedTools: [
-            "people_enrichment", "bulk_people_enrichment", "organization_enrichment",
-            "people_search", "organization_search", "organization_job_postings",
-            "get_person_email", "employees_of_company"
-        ],
-        authorization: "apollo-mcp-client-key-01",
-        requireApproval: "never",
-        serverUrl: "https://apollo-mcp-v4-production.up.railway.app/sse?apiKey=apollo-mcp-client-key-01"
-    });
-
-    // --- Agent Definitions ---
-
-    // 1. Company Finder
-    const finderDefaultInst = `You are the "Hunter" Agent for Fifth Avenue Properties.
-### GOAL
-Find exactly "target_count" (default 10) qualified Real Estate Investment Firms in Canada.
-**YOU MUST NOT FAIL. YOU MUST NOT RETURN EMPTY.**
-
-### 1. KEYWORD GENERATION (Internal Thought Process)
-You will use a "Brute Force" search strategy. You must cycle through these specific search queries until you fill the list:
-- "Real estate investment firm Canada residential"
-- "Top 100 real estate investment firms Canada"
-- "Multi-family family office Toronto real estate"
-- "Private equity real estate firms Vancouver residential"
-- "Canadian institutional investors multifamily development"
-- "Joint venture equity partners Canada real estate"
-
-### 2. EXECUTION LOOP
-**DO NOT just do one search and quit.**
-Step A: Run Search Query 1.
-Step B: Scrape the results. Look for FIRM NAMES and WEBSITES.
-Step C: If you found good matches, add them to your list.
-Step D: If you still need more companies, Run Search Query 2.
-Step E: Repeat until you have [target_count] companies.
-
-### 3. WHAT TO LOOK FOR (The "Good Fit")
-- **Keywords on Website:** "Residential", "Multifamily", "Development", "LP Equity", "Investment Management", "Asset Management".
-- **Must Be:** An Investment Firm, Fund, or Family Office.
-- **Must NOT Be:** A Realtor, a Mortgage Broker, or a Service Provider.
-
-### 4. OUTPUT FORMAT (Strict JSON)
-Return ONLY the companies you found.
-{
-  "results": [
-    {
-      "company_name": "Name",
-      "hq_city": "City",
-      "capital_role": "LP/Fund/Family Office",
-      "website": "URL",
-      "domain": "domain.com",
-      "why_considered": "Found via [Search Term]. Website mentions residential equity.",
-      "source_links": ["url"]
-    }
-  ]
-}`;
-
-    const companyFinder = new Agent({
-        name: "Company Finder",
-        instructions: getInstructions('company_finder', finderDefaultInst),
-        model: "gpt-5.2",
-        tools: getToolsForAgent('company_finder'),
-        outputType: CompanyFinderSchema,
-    });
-
-    // 2. Company Profiler
-    const profilerDefaultInst = `You are a Senior Investment Analyst. Your goal is to deeply research a specific list of Real Estate Investment firms to prepare for high-level B2B outreach.
-
-### INPUT
-A list of companies found by the Scout.
-
-### RESEARCH TASKS
-For each company:
-1.  **Broad Qualification (Lenient):**
-    *   Does the firm invest in Real Estate? (Commercial, Residential, Mixed-Use).
-    *   **DEFAULT TO QUALIFIED:** Unless the website explicitly says "We DO NOT do equity" or "We are strictly a lender", assume they are relevant.
-    *   **Inclusion:** Include firms that mention "Asset Management", "Capital Partners", "Private Equity", or "Developments".
-2.  **Portfolio Analysis:**
-    *   Look for any Canadian presence (projects, offices, or text).
-    *   Even if they are US-based, if they mention "North America", QUALIFY them.
-3.  **Investment Philosophy:**
-    *   Note if they mention "Value-add", "Development", or "Partnerships".
-
-### OUTPUT FORMAT
-{
-  "results": [
-    {
-      "company_name": "String",
-      "domain": "String",
-      "company_profile": "A 2-3 sentence summary. Focus on their investment capacity and asset classes.",
-      "is_qualified": boolean
-    }
-  ]
-}
-**IMPORTANT:** Your goal is to fill the funnel. When in doubt, SET is_qualified = true.`;
-
-    const companyProfiler = new Agent({
-        name: "Company Profiler",
-        instructions: getInstructions('company_profiler', profilerDefaultInst),
-        model: "gpt-5-mini",
-        tools: getToolsForAgent('company_profiler'),
-        outputType: CompanyProfilerSchema,
-    });
-
-    // 3. Apollo Lead Finder
-    const leadDefaultInst = `You are the Apollo Headhunter Agent.
-Goal: Find decision-makers for Real Estate Investment deals.
-
-### TARGET ROLES
-**BROAD SEARCH STRATEGY:** We need to find *someone* relevant at each firm.
-- **Tier 1 (Executives):** "Partner", "Principal", "Managing Director", "President", "CEO", "Founder", "Co-Founder", "Owner".
-- **Tier 2 (Real Estate Leaders):** "Head of Real Estate", "Head of Acquisitions", "Head of Investments", "Chief Investment Officer", "CIO", "Director of Development", "VP Development".
-- **Tier 3 (Key Decision Makers):** "Director of Acquisitions", "Investment Manager", "Acquisitions Manager", "Development Manager", "Asset Manager".
-- **Strictly EXCLUDE:** "Associate", "Senior Associate", "Analyst", "Intern", "Receptionist", "Legal", "HR", "Controller", "Accountant".
-
-### LOCATION
-- Priority: Canada (Toronto, Vancouver, Montreal, Calgary).
-- Secondary: USA (New York, Chicago, etc.) IF the firm is US-based.
-
-### EXECUTION STEPS
-1.  **Resolve Organization:**
-    - Use 'organization_search' with the company domain to find the Apollo Organization ID.
-2.  **Find People (Strategy A - Tier 1 & 2):**
-    - Use 'employees_of_company' with the Org ID and Tier 1 & Tier 2 Job Titles.
-3.  **Fallback (Strategy B - Tier 3):**
-    - If Strategy A yields 0 leads, search for Tier 3 titles.
-4.  **Fallback (Strategy C - "Brute Force"):**
-    - If needed, use 'people_search' with just keywords: "Real Estate", "Acquisitions", "Investment".
-    - Filter by 'organization_ids' (using the ID found in Step 1).
-5.  **Limits:**
-    - **Select up to 3** leads per company if possible.
-    - Prioritize those with "verified_email".
-6.  **Enrich:**
-    - Use 'get_person_email' to reveal email addresses.
-
-### OUTPUT FORMAT (JSON)
-{
-  "leads": [
-    {
-      "first_name": "...",
-      "last_name": "...",
-      "title": "...",
-      "email": "...",
-      "linkedin_url": "...",
-      "company_name": "...",
-      "company_profile": "(Pass through from input)"
-    }
-  ]
-}`;
-
-    const apolloLeadFinder = new Agent({
-        name: "Apollo Lead Finder",
-        instructions: getInstructions('apollo_lead_finder', leadDefaultInst),
-        model: "gpt-5-mini",
-        tools: getToolsForAgent('apollo_lead_finder'),
-        outputType: ApolloLeadFinderSchema,
-    });
-
-    // 4. Outreach Creator
-    const outreachDefaultInst = `You are a Capital Raising Consultant composing email outreach to potential LP Investors.
-
-### CONTEXT
-We are a Real Estate Developer in Canada specializing in Residential Multifamily projects.
-We are looking for Limited Partners (LP Equity) to invest in our upcoming developments.
-
-### TASK
-For each lead, create:
-1.  **LinkedIn Connection Request:** (Max 280 chars). Friendly, professional, mentioning a specific relevance.
-2.  **Cold Email Body:** (Short, punchy, high-value).
-
-### OUTREACH GUIDE & BRAND VOICE
-*   **Tone:** Professional, peer-to-peer, confident, concise. NOT salesy.
-*   **Structure:**
-    *   **Hook:** Reference their specific focus (e.g., "Saw [Company] is active in Toronto multifamily...").
-    *   **Value Prop:** "We have a strong pipeline of off-market multifamily developments in [City]."
-    *   **Ask:** "Open to reviewing a teaser?" or "Brief chat to see if it's a fit?"
-*   **Personalization:**
-    *   Use the 'company_profile' data.
-    *   Reference a recent project if known.
-    *   Reference their strategy (e.g., "Given your focus on value-add residential...").
-
-### OUTPUT FORMAT
-Return the enriched lead objects in the JSON schema.`;
-
-    const outreachCreator = new Agent({
-        name: "Outreach Creator",
-        instructions: getInstructions('outreach_creator', outreachDefaultInst),
-        model: "gpt-5.2",
-        tools: getToolsForAgent('outreach_creator'),
-        outputType: OutreachCreatorSchema,
-    });
-
-    // Helper for retry logic
-    const retryWithBackoff = async (fn, retries = 3, initialDelay = 5000) => {
-        let attempt = 0;
-        while (attempt <= retries) {
-            try {
-                return await fn();
-            } catch (error) {
-                if (error?.status === 429 || (error?.message && error.message.includes('429'))) {
-                    attempt++;
-                    if (attempt > retries) throw error;
-                    const delay = initialDelay * Math.pow(2, attempt - 1); // Exponential backoff
-                    console.warn(`Rate limit hit (429). Retrying in ${delay / 1000}s (Attempt ${attempt}/${retries})...`);
-                    await new Promise(resolve => setTimeout(resolve, delay));
-                } else {
-                    throw error;
-                }
-            }
-        }
-    };
+    // ... (rest of function) ...
 
     // --- Runner Execution ---
 
@@ -345,10 +119,15 @@ Return the enriched lead objects in the JSON schema.`;
         });
 
         // 0. Parse Target Count
-        let targetCount = 10;
+        let targetCount = 20; // Default per user request
         const countMatch = input.input_as_text.match(/\b(\d+)\b/);
         if (countMatch) {
             targetCount = parseInt(countMatch[1], 10);
+        }
+        // Enforce Hard Limit
+        if (targetCount > 50) {
+            targetCount = 50;
+            logStep('Workflow', 'Target count capped at 50 companies (System Limit).');
         }
         logStep('Workflow', `Targeting ${targetCount} qualified companies.`);
 

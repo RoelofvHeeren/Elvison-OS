@@ -42,6 +42,49 @@ app.get('/api/agent-prompts', async (req, res) => {
     }
 })
 
+import OpenAI from 'openai'
+
+const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+})
+
+// --- API Endpoints ---
+
+// Prompt Optimization (LLM)
+app.post('/api/optimize-prompt', async (req, res) => {
+    const { agentName, inputs, baseTemplate } = req.body
+    if (!agentName || !inputs) return res.status(400).json({ error: 'Missing data' })
+
+    try {
+        const systemPrompt = `You are an expert AI Engineer.
+Your goal is to write a highly effective System Instruction for an AI Agent named "${agentName}".
+
+The user has provided the following configuration inputs:
+${JSON.stringify(inputs, null, 2)}
+
+And here is a basic template/intent for the agent:
+"${baseTemplate}"
+
+**TASK:**
+Rewrite the system instruction to be professional, robust, and optimized for an LLM.
+- Use clear sections (GOAL, BEHAVIOR, CONSTRAINTS).
+- Ensure specific user inputs are integrated naturally.
+- Do NOT include any placeholder brackets like {{value}}. Fill them in.
+- Return ONLY the prompt text. No markdown fences.`
+
+        const completion = await openai.chat.completions.create({
+            model: "gpt-4o",
+            messages: [{ role: "user", content: systemPrompt }],
+        })
+
+        const optimizedPrompt = completion.choices[0].message.content.trim()
+        res.json({ prompt: optimizedPrompt })
+    } catch (err) {
+        console.error('Prompt Optimization Failed:', err)
+        res.status(500).json({ error: 'Optimization failed' })
+    }
+})
+
 // Save Agent Prompts
 app.post('/api/agent-prompts', async (req, res) => {
     const { prompts } = req.body

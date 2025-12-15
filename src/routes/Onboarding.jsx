@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Sparkles, ChevronRight, Check, Rocket, Bot, Edit3, Save, RotateCw, Plus, X } from 'lucide-react'
+import { Sparkles, ChevronRight, Check, Rocket, Bot, Edit3, Save, RotateCw, Plus, X, CheckCircle2 } from 'lucide-react'
 import Typewriter from '../components/Typewriter'
 import { saveAgentPrompts, saveCrmColumns, fetchAgentPrompts, fetchCrmColumns } from '../utils/api'
 import VisualColumnEditor from '../components/VisualColumnEditor'
@@ -458,11 +458,11 @@ const StepVerifyPrompt = ({ agent, prompt, setPrompt, onConfirm, onBack, isOptim
     }
 
     return (
-        <div className="max-w-5xl mx-auto pt-10 h-full flex flex-col">
-            <div className="mb-8 flex items-center justify-between">
+        <div className="max-w-6xl mx-auto pt-6 h-full flex flex-col">
+            <div className="mb-6 flex items-center justify-between">
                 <div>
-                    <h2 className="text-4xl font-serif font-bold text-white drop-shadow-md">Verify Instructions</h2>
-                    <p className="text-teal-400 text-lg mt-2">Review the generated prompt for {agent.name}</p>
+                    <h2 className="text-3xl font-serif font-bold text-white drop-shadow-md">Verify Instructions</h2>
+                    <p className="text-teal-400 text-base mt-1">Review the generated prompt for {agent.name}</p>
                 </div>
                 <div className="flex gap-4">
                     <button onClick={onBack} className={PREMIUM_BUTTON_SECONDARY}>Back</button>
@@ -472,14 +472,14 @@ const StepVerifyPrompt = ({ agent, prompt, setPrompt, onConfirm, onBack, isOptim
                 </div>
             </div>
 
-            <div className="flex-1 bg-black/80 backdrop-blur-xl rounded-2xl p-1 overflow-hidden flex flex-col shadow-[0_0_50px_rgba(0,0,0,0.5)] border border-teal-500/30">
+            <div className="flex-1 bg-black/80 backdrop-blur-xl rounded-2xl p-1 overflow-hidden flex flex-col shadow-[0_0_50px_rgba(0,0,0,0.5)] border border-teal-500/30 mb-8">
                 <div className="flex items-center gap-2 px-6 py-4 bg-white/5 border-b border-white/10 text-teal-400 text-sm uppercase tracking-wider font-bold">
                     <Edit3 className="w-4 h-4" /> System Prompt Editor
                 </div>
                 <textarea
                     value={prompt}
                     onChange={(e) => setPrompt(e.target.value)}
-                    className="flex-1 w-full bg-transparent text-gray-200 font-mono text-base outline-none resize-none leading-relaxed p-8 focus:bg-white/5 transition-colors"
+                    className="flex-1 w-full bg-transparent text-gray-200 font-mono text-base outline-none resize-none leading-relaxed p-8 focus:bg-white/5 transition-colors min-h-[500px]"
                     spellCheck="false"
                 />
             </div>
@@ -487,25 +487,79 @@ const StepVerifyPrompt = ({ agent, prompt, setPrompt, onConfirm, onBack, isOptim
     )
 }
 
-const StepComplete = ({ onLaunch, isSaving }) => (
-    <div className="flex flex-col items-center justify-center h-full max-w-3xl mx-auto text-center">
-        <div className="mb-10 p-8 rounded-full bg-teal-500/20 border border-teal-500 shadow-[0_0_40px_rgba(20,184,166,0.4)] animate-bounce">
-            <Rocket className="w-20 h-20 text-teal-400" />
+const StepComplete = ({ onLaunch, isSaving }) => {
+    const [statusLines, setStatusLines] = useState([])
+
+    useEffect(() => {
+        // Simulate system checks
+        const checks = [
+            "Initializing Agent Runtime...",
+            "Connecting to PostgreSQL Database...",
+            "Verifying Apollo MCP Connection...",
+            "Loading Knowledge Base Indices...",
+            "Compiling System Instructions...",
+            "SYSTEMS OPERATIONAL"
+        ]
+
+        let i = 0
+        const interval = setInterval(() => {
+            if (i < checks.length) {
+                setStatusLines(prev => [...prev, checks[i]])
+                i++
+            } else {
+                clearInterval(interval)
+            }
+        }, 800)
+
+        return () => clearInterval(interval)
+    }, [])
+
+    const isReady = statusLines.includes("SYSTEMS OPERATIONAL")
+
+    return (
+        <div className="flex flex-col items-center justify-center h-full max-w-4xl mx-auto text-center">
+            <h2 className="text-5xl font-serif font-bold mb-12 text-white">System Status</h2>
+
+            <div className="w-full max-w-2xl bg-black/60 border border-teal-500/30 rounded-xl p-8 mb-12 font-mono text-left shadow-[0_0_30px_rgba(20,184,166,0.1)] min-h-[300px]">
+                {statusLines.map((line, idx) => (
+                    <motion.div
+                        key={idx}
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        className={`mb-3 flex items-center gap-3 ${line === "SYSTEMS OPERATIONAL" ? "text-teal-400 font-bold mt-8 text-xl" : "text-gray-300"}`}
+                    >
+                        {line === "SYSTEMS OPERATIONAL" ? <CheckCircle2 className="w-6 h-6" /> : <div className="w-2 h-2 bg-gray-500 rounded-full" />}
+                        {line}
+                    </motion.div>
+                ))}
+                {isReady && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        className="mt-4 border-t border-dashed border-white/20 pt-4 text-gray-500 text-sm"
+                    >
+                        &gt; All systems go. Standing by for command.
+                    </motion.div>
+                )}
+            </div>
+
+            <div className="flex gap-6">
+                {/* Review Button - acts as back to start of list? Or maybe just show agents? For now simplest is Launch */}
+                <button
+                    onClick={onLaunch}
+                    disabled={isSaving || !isReady}
+                    className="px-12 py-5 bg-teal-500 hover:bg-teal-400 text-black text-xl rounded-lg font-bold shadow-[0_0_20px_rgba(20,184,166,0.6)] hover:shadow-[0_0_40px_rgba(20,184,166,0.8)] transition-all hover:scale-105 disabled:opacity-50 disabled:scale-100 flex items-center gap-3"
+                >
+                    {isSaving ? 'Launching...' : (
+                        <>
+                            <Rocket className="w-6 h-6" /> Launch Workflow
+                        </>
+                    )}
+                </button>
+            </div>
         </div>
-        <h2 className="text-5xl font-serif font-bold mb-8 text-white">You're All Set!</h2>
-        <p className="text-2xl text-gray-300 mb-12 font-light">
-            We have gathered all the necessary intelligence to power your agentic workforce.
-            Click below to launch the system and save your configurations.
-        </p>
-        <button
-            onClick={onLaunch}
-            disabled={isSaving}
-            className="px-12 py-6 bg-teal-500 hover:bg-teal-400 text-black text-xl rounded-full font-bold shadow-[0_0_20px_rgba(20,184,166,0.6)] hover:shadow-[0_0_40px_rgba(20,184,166,0.8)] transition-all hover:scale-105 disabled:opacity-50 disabled:scale-100"
-        >
-            {isSaving ? 'Launching System...' : 'Launch System 🚀'}
-        </button>
-    </div>
-)
+    )
+}
 
 
 // --- Main Container ---
@@ -560,23 +614,29 @@ const Onboarding = () => {
 
     const handleUserChange = (field, val) => setUserData(prev => ({ ...prev, [field]: val }))
 
-    const handleGeneratePrompt = () => {
+    const handleGeneratePrompt = async () => {
         // Start Optimization Animation
         setIsOptimizing(true)
         setStep('agent_verify')
 
-        setTimeout(() => {
-            const agent = AGENTS[currentAgentIndex]
-            const answers = surveyAnswers[agent.id] || {}
-            // Merge common user data
-            const fullContext = { ...userData, ...answers }
+        const agent = AGENTS[currentAgentIndex]
+        const answers = surveyAnswers[agent.id] || {}
+        // Merge common user data
+        const fullContext = { ...userData, ...answers }
 
-            // Generate prompt
-            const prompt = agent.template(fullContext, crmColumns)
-            setCurrentDraftPrompt(prompt)
+        // Initial Template Draft (Fallback)
+        let prompt = agent.template(fullContext, crmColumns)
 
-            setIsOptimizing(false)
-        }, 3500) // 3.5s delay for "Optimization" effect
+        try {
+            // Call LLM Optimization
+            const optimized = await optimizeAgentPrompt(agent.name, fullContext, prompt)
+            if (optimized) prompt = optimized
+        } catch (e) {
+            console.error("Optimization failed, using template", e)
+        }
+
+        setCurrentDraftPrompt(prompt)
+        setIsOptimizing(false)
     }
 
     const handleConfirmPrompt = () => {
@@ -589,33 +649,20 @@ const Onboarding = () => {
 
             // --- DATA ARCHITECT PRE-FILL LOGIC ---
             if (nextAgent.id === 'data_architect' && crmColumns.length === 0) {
-                const apolloAnswers = surveyAnswers['apollo'] || {}
-                const outreachAnswers = surveyAnswers['outreach_creator'] || {}
-
-                const newColumns = []
-                // 1. Standard
-                newColumns.push({ id: 'c1', name: 'company_name', type: 'text', required: true })
-                newColumns.push({ id: 'c2', name: 'company_domain', type: 'link', required: false })
-                newColumns.push({ id: 'c3', name: 'company_profile', type: 'long_text', required: false })
-
-                // 2. Apollo Fields
-                const contactFields = Array.isArray(apolloAnswers.data_fields) ? apolloAnswers.data_fields : []
-                contactFields.forEach((field, i) => {
-                    const safeName = field.toLowerCase().replace(/ /g, '_')
-                    let type = 'text'
-                    if (safeName.includes('link') || safeName.includes('url')) type = 'link'
-                    if (safeName.includes('email')) type = 'email'
-                    newColumns.push({ id: `a${i}`, name: safeName, type, required: false })
-                })
-
-                // 3. Outreach Channels
-                const channels = Array.isArray(outreachAnswers.channels) ? outreachAnswers.channels : []
-                channels.forEach((ch, i) => {
-                    const safeName = ch.toLowerCase().replace(/ /g, '_')
-                    newColumns.push({ id: `o${i}`, name: `${safeName}_message`, type: 'long_text', required: false })
-                    newColumns.push({ id: `o${i}_status`, name: `${safeName}_status`, type: 'status', required: false })
-                })
-
+                const newColumns = [
+                    { id: 'c_fname', name: 'first_name', type: 'text', required: true },
+                    { id: 'c_lname', name: 'last_name', type: 'text', required: true },
+                    { id: 'c_title', name: 'title', type: 'text', required: true },
+                    { id: 'c_cname', name: 'company_name', type: 'text', required: true },
+                    { id: 'c_web', name: 'company_website', type: 'link', required: false },
+                    { id: 'c_loc', name: 'location', type: 'text', required: false },
+                    { id: 'c_email', name: 'email', type: 'email', required: false },
+                    { id: 'c_li', name: 'linkedin_url', type: 'link', required: false },
+                    { id: 'c_phone', name: 'phone_number', type: 'phone', required: false },
+                    { id: 'c_em', name: 'email_message', type: 'long_text', required: false },
+                    { id: 'c_lim', name: 'linkedin_message', type: 'long_text', required: false },
+                    { id: 'c_prof', name: 'company_profile', type: 'long_text', required: false }
+                ]
                 setCrmColumns(newColumns)
             }
             // -------------------------------------

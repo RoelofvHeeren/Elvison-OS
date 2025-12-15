@@ -61,6 +61,7 @@ export const saveCrmColumns = async (columns) => {
   return data
 }
 
+// --- Prompts ---
 export const fetchAgentPrompts = async () => {
   const { data } = await client.get('/api/agent-prompts')
   return data
@@ -69,6 +70,11 @@ export const fetchAgentPrompts = async () => {
 export const saveAgentPrompts = async (prompts) => {
   const { data } = await client.post('/api/agent-prompts', { prompts })
   return data
+}
+
+export const optimizeAgentPrompt = async (agentName, inputs, baseTemplate) => {
+  const { data } = await client.post('/api/optimize-prompt', { agentName, inputs, baseTemplate })
+  return data.prompt
 }
 
 // --- LEGACY / UTILS ---
