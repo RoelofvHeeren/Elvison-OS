@@ -322,7 +322,21 @@ export const runAgentWorkflow = async (input, config) => {
         let allLeads = [];
         const BATCH_SIZE = 3;
 
-        const companiesWithDomains = qualifiedCompanies.filter(c => c.domain && c.domain.includes('.'));
+        const companiesWithDomains = qualifiedCompanies.map(c => {
+            let domain = c.domain;
+            if ((!domain || !domain.includes('.')) && c.website) {
+                try {
+                    const url = new URL(c.website.startsWith('http') ? c.website : `https://${c.website}`);
+                    domain = url.hostname.replace('www.', '');
+                } catch (e) { /* ignore */ }
+            }
+            return { ...c, domain };
+        }).filter(c => c.domain && c.domain.includes('.'));
+
+        if (companiesWithDomains.length < qualifiedCompanies.length) {
+            logStep('Apollo Lead Finder', `Warning: ${qualifiedCompanies.length - companiesWithDomains.length} companies excluded due to missing/invalid domains.`);
+        }
+        logStep('Apollo Lead Finder', `Processing ${companiesWithDomains.length} companies for leads.`);
 
         for (let i = 0; i < companiesWithDomains.length; i += BATCH_SIZE) {
             const batch = companiesWithDomains.slice(i, i + BATCH_SIZE);
