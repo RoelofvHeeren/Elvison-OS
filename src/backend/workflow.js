@@ -111,10 +111,11 @@ export const runAgentWorkflow = async (input, config) => {
 
     // --- Initialize Tools ---
     const webSearch = webSearchTool();
-    // Assuming 'apollo' is the configured name in the MCP runner/server
+    // Using the hosted MCP server instance directly (bypass connector registry)
     const apolloMcp = hostedMcpTool({
-        connectorId: "apollo", // The ID linking to the hosted integration
-        serverLabel: "Apollo Lead Finder"
+        serverLabel: "Apollo Lead Finder",
+        serverUrl: "https://apollo-mcp-v4-production.up.railway.app/sse?apiKey=apollo-mcp-client-key-01",
+        authorization: "apollo-mcp-client-key-01" // Required for the internal check
     });
 
     // Helper to get tools for an agent
