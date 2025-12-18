@@ -9,7 +9,9 @@ const columns = [
   { key: 'title', label: 'Title', width: 'w-56' },
   { key: 'company', label: 'Company', width: 'w-44' },
   { key: 'email', label: 'Email', width: 'w-56' },
+  { key: 'phone', label: 'Phone', width: 'w-40' },
   { key: 'linkedin', label: 'LinkedIn', width: 'w-24' },
+
   { key: 'website', label: 'Company Website', width: 'w-28' },
   { key: 'connectionRequest', label: 'Connection Request', width: 'min-w-[20rem]' },
   { key: 'emailMessage', label: 'Email Message', width: 'min-w-[20rem]' },
@@ -142,6 +144,27 @@ const SheetTable = ({ rows, loading, error, onDeleteRow }) => {
                       </a>
                     ) : (
                       '—'
+                    )}
+                  </td>
+                  <td className="px-4 py-3.5 text-xs text-muted">
+                    {row.phoneNumbers && row.phoneNumbers.length > 0 ? (
+                      <div className="flex flex-col gap-1">
+                        {row.phoneNumbers.map((p, idx) => (
+                          <span key={idx} className="block font-mono text-[10px] bg-slate-100 px-1 rounded w-fit">
+                            {p.sanitized_number} ({p.type})
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (onEnrichRow) onEnrichRow(row.id)
+                        }}
+                        className="text-[10px] font-bold text-primary bg-primary/10 hover:bg-primary/20 px-2 py-1 rounded border border-primary/20 transition-colors"
+                      >
+                        Reveal Phone
+                      </button>
                     )}
                   </td>
                   <td className="px-4 py-3 text-muted">
@@ -285,6 +308,7 @@ SheetTable.propTypes = {
   loading: PropTypes.bool,
   error: PropTypes.string,
   onDeleteRow: PropTypes.func,
+  onEnrichRow: PropTypes.func,
 }
 
 SheetTable.defaultProps = {

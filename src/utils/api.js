@@ -22,6 +22,11 @@ export const clearLeads = async () => {
   return data
 }
 
+export const enrichLead = async (id) => {
+  const { data } = await client.post(`/api/leads/${id}/enrich-phone`)
+  return data
+}
+
 // --- WORKFLOWS ---
 
 export const startWorkflow = async (prompt, agentConfigs) => {

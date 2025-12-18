@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS leads (
     status VARCHAR(50) DEFAULT 'NEW', -- NEW, ENRICHED, CONTACTED, etc.
     custom_data JSONB DEFAULT '{}'::jsonb, -- dynamic columns from Data Architect
     source VARCHAR(100), -- e.g. 'Apollo', 'Manual'
+    phone_numbers JSONB DEFAULT '[]'::jsonb, -- New column for storing enriched phone numbers
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );

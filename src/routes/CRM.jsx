@@ -42,6 +42,7 @@ const CRM = () => {
           connectionRequest: details.connection_request || '',
           emailMessage: details.email_message || '',
           companyProfile: details.company_profile || '',
+          phoneNumbers: lead.phone_numbers || [],
         };
       })
       setRows(normalized)
@@ -62,6 +63,19 @@ const CRM = () => {
     } catch (err) {
       console.error(err)
       setError('Failed to delete row')
+      setLoading(false)
+    }
+  }
+
+  const handleEnrichRow = async (id) => {
+    try {
+      // Optimistic update or just spinner could be handled in table, but here we reload
+      setLoading(true)
+      await import('../utils/api').then(mod => mod.enrichLead(id))
+      await fetchRows()
+    } catch (err) {
+      console.error(err)
+      setError('Failed to enrich row')
       setLoading(false)
     }
   }
@@ -221,7 +235,13 @@ const CRM = () => {
         </div>
       </div>
 
-      <SheetTable rows={filteredRows} loading={loading} error={error} onDeleteRow={handleDeleteRow} />
+      <SheetTable
+        rows={filteredRows}
+        loading={loading}
+        error={error}
+        onDeleteRow={handleDeleteRow}
+        onEnrichRow={handleEnrichRow}
+      />
     </div>
   )
 }

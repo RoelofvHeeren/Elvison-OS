@@ -165,10 +165,24 @@ export const runAgentWorkflow = async (input, config) => {
     // --- Agent Definitions (Dynamic) ---
 
     // 1. Company Finder
-    const finderInst = agentPrompts['company_finder'] || `You are the "Hunter" Agent for Fifth Avenue Properties... (Default)`;
+    // 1. Company Finder
+    const finderInst = `You are the "Hunter" Agent for Fifth Avenue Properties.
+    GOAL: Find High-Net-Worth Real Estate Investment Firms (Family Offices, Private Equity, institutional investors) in Canada (Toronto, Vancouver, Montreal) and USA.
+    
+    CRITICAL CRITERIA:
+    - MUST be "Equity" investors (Limited Partners/LPs, Co-GPs).
+    - EXCLUDE purely "Debt" funds, "Lenders", "Mortgage Brokers", or "Mezzanine" providers.
+    - LOOK FOR: "Equity Partner", "Joint Venture", "Capital Placement", "Acquisitions".
+    
+    SEARCH STRATEGY:
+    1. Scan lists like "Top 100 Real Estate Investment Firms in Canada", "Family Offices in Toronto Real Estate".
+    2. Check "About Us" or "Investment Criteria" pages.
+    3. If they say "We provide debt/financing", SKIP THEM.
+    4. If they say "We partner with developers" or "We invest equity", KEEP THEM.`;
+
     const companyFinder = new Agent({
         name: "Company Finder",
-        instructions: finderInst,
+        instructions: finderInst, // Using hardcoded prompt to ensure quality compliance
         model: "gpt-4o",
         tools: getToolsForAgent('company_finder'),
         outputType: CompanyFinderSchema,
@@ -188,8 +202,16 @@ export const runAgentWorkflow = async (input, config) => {
     const leadInst = agentPrompts['apollo_lead_finder'] || `You are the Apollo Headhunter Agent... (Default)`;
     const apolloLeadFinder = new Agent({
         name: "Apollo Lead Finder",
-        instructions: leadInst,
-        model: "gpt-4o-mini", // Cost efficient
+        instructions: `You are the Apollo Headhunter Agent for Fifth Avenue Properties.
+    Goal: Find decision-makers (Partner, Principal, Director of Acquisitions) at real estate investment firms.
+
+    CRITICAL RULES:
+    1. ROLES: "Partner", "Principal", "Managing Director", "Head of Acquisitions", "VP Development".
+    2. EXCLUDE: "Loan Originator", "Lender", "Underwriter", "Analyst", "Associate", "Mortgage", "Debt".
+    3. ACTION: You MUST use 'people_enrichment' or 'get_person_email' to REVEAL the email.
+    4. Do NOT return "email_not_unlocked".
+    5. Return valid JSON.`,
+        model: "gpt-4o",
         tools: getToolsForAgent('apollo_lead_finder'),
         outputType: ApolloLeadFinderSchema,
     });
@@ -246,14 +268,27 @@ export const runAgentWorkflow = async (input, config) => {
                 logStep('Company Finder', `Identifying potential companies (Target: ${needed})...`);
             }
 
+            // Phased Search Strategy Construction
+            let strategyInstruction = "";
+            switch (attempts) {
+                case 1:
+                    strategyInstruction = `PHASE 1 (DIRECT): Search for "Residential real estate investment firm Canada" and "Real estate investment firm [City]". Check search results pages 1-3. Focus on pure equity firms.`;
+                    break;
+                case 2:
+                    strategyInstruction = `PHASE 2 (BROADER): Switch terms to "Real estate family office Canada", "Private Real Estate Equity Canada". Check pages 1-3.`;
+                    break;
+                case 3:
+                    strategyInstruction = `PHASE 3 (LISTS): Search for "Top 100 real estate investment firms Canada", "List of family offices Toronto". OPEN the list articles and extract names.`;
+                    break;
+                default:
+                    strategyInstruction = `PHASE 4 (DEEP SEARCH): Go back to broad keywords but dig deeper (Page 4, 5, 6). Look for specific niche firms missed earlier.`;
+                    break;
+            }
+
             // Construct prompt for this iteration
             let currentPrompt = originalPrompt;
             currentPrompt += `\n\n[SYSTEM INJECTION]: You are in iteration ${attempts}. Your GOAL is to find exactly ${needed} NEW companies.`;
-
-            // Smart Retry Logic for 0 results
-            if (attempts > 1 && lastRoundFound === 0) {
-                currentPrompt += `\n\n[ADAPTATION]: Your previous search yielded 0 results. You MUST use different, broader search terms now.`;
-            }
+            currentPrompt += `\n\n[STRATEGY]: ${strategyInstruction}`;
 
             if (qualifiedCompanies.length > 0) {
                 const excludedNames = qualifiedCompanies.map(c => c.company_name).join(", ");
@@ -418,4 +453,52 @@ export const runAgentWorkflow = async (input, config) => {
             debug: debugLog
         };
     });
+};
+
+/**
+ * Enriches a specific lead with phone numbers using Apollo MCP.
+ * @param {Object} lead - Lead object ({ first_name, last_name, company_name, email, linkedin_url })
+ */
+export const enrichLeadWithPhone = async (lead) => {
+    // Schema for phone enrichment
+    const PhoneSchema = z.object({
+        phone_numbers: z.array(z.object({
+            sanitized_number: z.string(),
+            type: z.string()
+        })).optional()
+    });
+
+    const apolloMcp = hostedMcpTool({
+        serverLabel: "Apollo_Lead_Finder",
+        serverUrl: "https://apollo-mcp-v4-production.up.railway.app/sse?apiKey=apollo-mcp-client-key-01",
+        authorization: "apollo-mcp-client-key-01"
+    });
+
+    const enricherAgent = new Agent({
+        name: "Phone Enricher",
+        instructions: `You are an expert helper. Your ONLY goal is to find phone numbers for the provided person.
+        
+        STRATEGY:
+        1. Use 'people_enrichment' tool.
+        2. Pass the EXACT parameters from the input:
+           - email: "${lead.email}" (Primary Identifier)
+           - linkedin_url: "${lead.linkedin_url}" (Secondary Identifier)
+           - first_name: "${lead.first_name}"
+           - last_name: "${lead.last_name}"
+           - organization_name: "${lead.company_name}"
+        3. If 'people_enrichment' returns phone numbers, output them immediately.
+        
+        Input Data: ${JSON.stringify(lead)}
+        RETURN ONLY JSON with a list of phone numbers found.`,
+        model: "gpt-4o",
+        tools: [apolloMcp],
+        outputType: PhoneSchema
+    });
+
+    const runner = new Runner();
+    const result = await runner.run(enricherAgent, [
+        { role: "user", content: [{ type: "input_text", text: "Enrich this person with phone numbers." }] }
+    ]);
+
+    return result.finalOutput?.phone_numbers || [];
 };

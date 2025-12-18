@@ -692,11 +692,53 @@ const initDB = async () => {
             );
         `)
 
+        // Migration: Add phone_numbers if not exists
+        await query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS phone_numbers JSONB DEFAULT '[]'::jsonb;`)
+
         console.log('Database Schema Verified.')
     } catch (err) {
         console.error('Failed to initialize DB:', err)
     }
 }
+
+// Enrich Lead (Phone)
+import { enrichLeadWithPhone } from './src/backend/workflow.js'
+
+app.post('/api/leads/:id/enrich-phone', async (req, res) => {
+    const { id } = req.params
+    try {
+        // 1. Get Lead
+        const { rows } = await query('SELECT * FROM leads WHERE id = $1', [id])
+        if (rows.length === 0) return res.status(404).json({ error: 'Lead not found' })
+
+        const lead = rows[0]
+        // Parse name
+        const nameParts = (lead.person_name || '').split(' ')
+        const leadData = {
+            first_name: nameParts[0],
+            last_name: nameParts.slice(1).join(' '),
+            company_name: lead.company_name,
+            email: lead.email,
+            linkedin_url: lead.linkedin_url
+        }
+
+        // 2. Call Agent
+        console.log(`Enriching lead ${id} (${leadData.email})...`)
+        const phoneNumbers = await enrichLeadWithPhone(leadData)
+        console.log('Enrichment result:', phoneNumbers)
+
+        // 3. Update DB
+        const { rows: updatedRows } = await query(
+            `UPDATE leads SET phone_numbers = $1, updated_at = NOW() WHERE id = $2 RETURNING *`,
+            [JSON.stringify(phoneNumbers), id]
+        )
+
+        res.json({ success: true, lead: updatedRows[0] })
+    } catch (err) {
+        console.error('Enrichment failed:', err)
+        res.status(500).json({ error: 'Enrichment failed' })
+    }
+})
 
 // Start Server
 initDB().then(() => {
