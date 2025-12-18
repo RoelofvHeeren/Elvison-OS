@@ -12,7 +12,10 @@ export const startApifyScrape = async (token, domains) => {
     try {
         const input = {
             company_domains: domains,
-            max_results: 100 // Safe default
+            max_results: 100, // Safe default
+            // Enforce Decision Makers only (CXO, Owner, Partner, Director, VP)
+            job_title_seniority: ["cxo", "owner", "partner", "director", "vp"],
+            email_status: "verified" // Only get valid leads
         };
 
         const response = await axios.post(
