@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { CalendarDays, Building2, RefreshCw, Trash2 } from 'lucide-react'
+import { CalendarDays, Building2, RefreshCw, Trash2, Upload } from 'lucide-react'
 import SheetTable from '../components/SheetTable'
+import ImportModal from '../components/ImportModal'
 import { fetchHealth, fetchLeads, deleteLead, clearLeads } from '../utils/api'
 
 const CRM = () => {
@@ -10,6 +11,7 @@ const CRM = () => {
   const [error, setError] = useState('')
   const [filters, setFilters] = useState({ date: '', company: '' })
   const [health, setHealth] = useState({ sheet: 'pending', agent: 'pending' })
+  const [isImportOpen, setIsImportOpen] = useState(false)
 
   const fetchRows = async () => {
     try {
@@ -235,6 +237,8 @@ const CRM = () => {
         </div>
       </div>
 
+      </div>
+
       <SheetTable
         rows={filteredRows}
         loading={loading}
@@ -242,7 +246,17 @@ const CRM = () => {
         onDeleteRow={handleDeleteRow}
         onEnrichRow={handleEnrichRow}
       />
-    </div>
+
+      <ImportModal 
+        isOpen={isImportOpen} 
+        onClose={() => setIsImportOpen(false)} 
+        onImportSuccess={() => {
+          refreshAll()
+          // Optionally keep it open or close it. Logic handles "Done" click.
+          // setIsImportOpen(false) 
+        }}
+      />
+    </div >
   )
 }
 

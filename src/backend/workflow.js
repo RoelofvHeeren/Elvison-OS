@@ -359,6 +359,18 @@ export const runAgentWorkflow = async (input, config) => {
 
         logStep('Workflow', `Loop complete. Proceeding with ${qualifiedCompanies.length} qualified companies.`);
 
+        // --- LIST BUILDER MODE ---
+        // If mode is 'list_builder', we stop here and return the companies so the user can export them manually.
+        if (config.mode === 'list_builder') {
+            logStep('Workflow', 'Mode is "List Builder". Skipping enrichment. Returning company list.');
+            return {
+                status: "success",
+                type: "list_builder",
+                companies: qualifiedCompanies,
+                debug: debugLog
+            };
+        }
+
         // 3. Lead Finder
         logStep('Apollo Lead Finder', 'Finding decision makers (Reliability Mode)...');
 

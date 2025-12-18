@@ -599,16 +599,28 @@ const StepComplete = ({ onLaunch, isSaving }) => {
                 )}
             </div>
 
-            <div className="flex gap-6">
-                {/* Review Button - acts as back to start of list? Or maybe just show agents? For now simplest is Launch */}
+            <div className="flex gap-4">
+                {/* Secondary: List Builder Mode */}
                 <button
-                    onClick={onLaunch}
+                    onClick={() => onLaunch('list_builder')}
                     disabled={isSaving || !isReady}
-                    className="px-12 py-5 bg-teal-500 hover:bg-teal-400 text-black text-xl rounded-lg font-bold shadow-[0_0_20px_rgba(20,184,166,0.6)] hover:shadow-[0_0_40px_rgba(20,184,166,0.8)] transition-all hover:scale-105 disabled:opacity-50 disabled:scale-100 flex items-center gap-3 backdrop-blur-sm"
+                    className="px-6 py-5 bg-transparent border border-white/20 hover:bg-white/10 text-gray-300 hover:text-white text-lg rounded-lg font-semibold transition-all flex items-center gap-3 backdrop-blur-sm"
+                >
+                    <div className="flex flex-col items-start leading-none">
+                        <span>Generate List Only</span>
+                        <span className="text-[10px] text-gray-500 font-normal uppercase mt-1">For Apollo Export</span>
+                    </div>
+                </button>
+
+                {/* Primary: Full Auto */}
+                <button
+                    onClick={() => onLaunch('default')}
+                    disabled={isSaving || !isReady}
+                    className="px-8 py-5 bg-teal-500 hover:bg-teal-400 text-black text-xl rounded-lg font-bold shadow-[0_0_20px_rgba(20,184,166,0.6)] hover:shadow-[0_0_40px_rgba(20,184,166,0.8)] transition-all hover:scale-105 disabled:opacity-50 disabled:scale-100 flex items-center gap-3 backdrop-blur-sm"
                 >
                     {isSaving ? 'Launching...' : (
                         <>
-                            <Rocket className="w-6 h-6" /> Launch Workflow
+                            <Rocket className="w-6 h-6" /> Full Auto Enrich
                         </>
                     )}
                 </button>

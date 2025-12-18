@@ -570,10 +570,76 @@ app.post('/api/runs/fail', async (req, res) => {
 })
 
 // Trigger Analysis Run (The Long Running Process)
+// --- APIFY INTEGRATION ---
+import { startApifyScrape, checkApifyRun, getApifyResults } from './src/backend/services/apify.js';
+
+app.post('/api/integrations/apify/run', async (req, res) => {
+    const { token, domains } = req.body;
+    if (!token || !domains || !Array.isArray(domains)) return res.status(400).json({ error: 'Token and domains array required' });
+
+    try {
+        const runId = await startApifyScrape(token, domains);
+        res.json({ runId });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/integrations/apify/status/:runId', async (req, res) => {
+    const { runId } = req.params;
+    const { token } = req.query; // Pass token in query for GET
+
+    if (!token) return res.status(400).json({ error: 'Token required' });
+
+    try {
+        const { status, datasetId } = await checkApifyRun(token, runId);
+
+        if (status === 'SUCCEEDED') {
+            const items = await getApifyResults(token, datasetId);
+
+            // Auto-insert into DB
+            let importedCount = 0;
+            for (const item of items) {
+                // Map fields based on known Apify output
+                // Adjust these mappings based on actual JSON output
+                const email = item.email || item.workEmail || item.personalEmail;
+                if (!email) continue;
+
+                try {
+                    await query(
+                        `INSERT INTO leads (
+                            first_name, last_name, title, company_name, 
+                            email, linkedin_url, location, source, status
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'APIFY_IMPORT', 'NEW')
+                        ON CONFLICT (email) DO NOTHING`,
+                        [
+                            item.firstName || item.first_name,
+                            item.lastName || item.last_name,
+                            item.title || item.jobTitle,
+                            item.companyName || item.company_name,
+                            email,
+                            item.linkedinUrl || item.linkedin_url || item.profileUrl,
+                            item.location || item.city,
+                        ]
+                    );
+                    importedCount++;
+                } catch (err) {
+                    console.error('Insert error:', err);
+                }
+            }
+            return res.json({ status, importedCount, results: items });
+        }
+
+        res.json({ status });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Trigger Analysis Run (SSE Streaming)
 app.post('/api/agents/run', async (req, res) => {
-    const { prompt, vectorStoreId, agentConfigs } = req.body
-    console.log('Starting live workflow with prompt:', prompt)
+    const { prompt, vectorStoreId, agentConfigs, mode } = req.body
+    console.log(`Starting live workflow (Mode: ${mode || 'default'}) with prompt:`, prompt)
 
     // 1. Setup SSE Headers
     res.writeHead(200, {
@@ -587,7 +653,7 @@ app.post('/api/agents/run', async (req, res) => {
     try {
         const { rows } = await query(
             `INSERT INTO workflow_runs (agent_id, status, started_at, metadata) VALUES ('main_workflow', 'RUNNING', NOW(), $1) RETURNING id`,
-            [JSON.stringify({ prompt, vectorStoreId })]
+            [JSON.stringify({ prompt, vectorStoreId, mode: mode || 'default' })]
         )
         runId = rows[0].id
         // Send initial connection confirmation
@@ -603,6 +669,7 @@ app.post('/api/agents/run', async (req, res) => {
         const result = await runAgentWorkflow({ input_as_text: prompt }, {
             vectorStoreId: vectorStoreId, // Pass VS ID from request
             agentConfigs: agentConfigs || {},
+            mode: mode, // Pass mode to workflow
             listeners: {
                 onLog: async (logParams) => {
                     const eventData = JSON.stringify({
@@ -740,9 +807,72 @@ app.post('/api/leads/:id/enrich-phone', async (req, res) => {
     }
 })
 
+// CSV Import Dependencies
+import multer from 'multer'
+import { parse } from 'csv-parse/sync'
+
+const upload = multer({ storage: multer.memoryStorage() })
+
+app.post('/api/leads/import', upload.single('file'), async (req, res) => {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' })
+
+    try {
+        const fileContent = req.file.buffer.toString('utf-8')
+        const records = parse(fileContent, {
+            columns: true,
+            skip_empty_lines: true,
+            relax_quotes: true
+        })
+
+        if (records.length === 0) return res.json({ success: true, count: 0 })
+
+        // Map CSV fields to DB fields
+        // Apollo exports usually have: "First Name", "Last Name", "Title", "Company", "Email", "LinkedIn Url", "Website"
+        const leads = records.map(r => ({
+            company_name: r['Company'] || r['Company Name for Emails'] || r['Organization'] || '',
+            person_name: `${r['First Name'] || ''} ${r['Last Name'] || ''}`.trim(),
+            email: r['Email'] || r['Email Address'] || '',
+            title: r['Title'] || r['Job Title'] || '',
+            linkedin_url: r['Person Linkedin Url'] || r['Linkedin Url'] || '',
+            custom_data: {
+                company_website: r['Website'] || r['Company Website'] || '',
+                imported_at: new Date().toISOString(),
+                source_file: req.file.originalname
+            },
+            source: 'Import'
+        })).filter(l => l.email || l.linkedin_url) // Only keep valid leads
+
+        await query('BEGIN')
+        for (const lead of leads) {
+            await query(
+                `INSERT INTO leads (company_name, person_name, email, job_title, linkedin_url, status, custom_data, source)
+                 VALUES ($1, $2, $3, $4, $5, 'NEW', $6, $7)
+                 ON CONFLICT (email) DO NOTHING`, // Avoid duplicates by email if unique constraint exists (or just insert)
+                [
+                    lead.company_name,
+                    lead.person_name,
+                    lead.email,
+                    lead.title,
+                    lead.linkedin_url,
+                    JSON.stringify(lead.custom_data),
+                    lead.source
+                ]
+            )
+        }
+        await query('COMMIT')
+
+        res.json({ success: true, count: leads.length })
+    } catch (err) {
+        await query('ROLLBACK')
+        console.error('Import failed:', err)
+        res.status(500).json({ error: 'Failed to process CSV file' })
+    }
+})
+
 // Start Server
 initDB().then(() => {
     app.listen(port, () => {
         console.log(`Server running on port ${port}`)
     })
 })
+
