@@ -18,7 +18,10 @@ export const startApifyScrape = async (token, domains, filters = {}) => {
         let contactEmailStatus = ["Verified", "Guessed"]; // Default to broader search to avoid 0 results
         let personTitle = [];
 
-        if (filters) {
+        if (filters && filters.fetchAll) {
+            seniority = []; // Clear seniority to get ALL employees
+            contactEmailStatus = ["Verified", "Guessed"];
+        } else if (filters) {
             // 1. Job Titles (Direct Mapping)
             if (filters.job_titles && Array.isArray(filters.job_titles) && filters.job_titles.length > 0) {
                 personTitle = filters.job_titles;

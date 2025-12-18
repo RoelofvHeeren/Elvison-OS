@@ -410,18 +410,27 @@ export const runAgentWorkflow = async (input, config) => {
         let allLeads = [];
 
         // Extract domains from qualified companies
-        const targetDomains = qualifiedCompanies
-            .map(c => {
-                let domain = c.domain;
-                if ((!domain || !domain.includes('.')) && c.website) {
-                    try {
-                        const url = new URL(c.website.startsWith('http') ? c.website : `https://${c.website}`);
-                        domain = url.hostname.replace('www.', '');
-                    } catch (e) { /* ignore */ }
-                }
-                return domain;
-            })
-            .filter(d => d && d.includes('.'));
+        const targetDomains = qualifiedCompanies.map(c => {
+            // simple domain extraction from website or name
+            if (c.company_website && c.company_website.includes('.')) {
+                return c.company_website.replace('https://', '').replace('http://', '').replace('www.', '').split('/')[0];
+            }
+            return c.company_name.replace(/\s+/g, '').toLowerCase() + '.com'; // Fallback
+        });
+
+        // USER REQUESTED "GOLD STANDARD" TITLES
+        const GOLD_STANDARD_TITLES = [
+            "CEO", "Founder", "Co-Founder", "Owner", "Principal",
+            "Founding Partner", "Managing Partner", "Partner",
+            "Director of Investments", "Director of Developments",
+            "Vice President", "President", "CIO", "COO"
+        ];
+
+        // Merge defaults if user didn't specify strict titles
+        const activeFilters = config.filters || {};
+        if (!activeFilters.job_titles || activeFilters.job_titles.length === 0) {
+            activeFilters.job_titles = GOLD_STANDARD_TITLES;
+        }
 
         if (targetDomains.length === 0) {
             console.warn("No valid domains found for scraping.");
@@ -432,7 +441,7 @@ export const runAgentWorkflow = async (input, config) => {
                 // Trigger Apify Run
                 // Use system token (or user provided if we passed it down, but here we assume system flow or env)
                 // We use filters passed from the frontend (via config) or fall back to defaults in startApifyScrape
-                const runId = await startApifyScrape(process.env.APIFY_API_TOKEN, targetDomains, config.filters || {});
+                const runId = await startApifyScrape(process.env.APIFY_API_TOKEN, targetDomains, activeFilters);
                 logStep('Lead Finder', `Job started (ID: ${runId}). Waiting for results...`);
 
                 // Poll for completion
@@ -502,7 +511,70 @@ export const runAgentWorkflow = async (input, config) => {
 
             } catch (err) {
                 logStep('Lead Finder', `Scraping failed: ${err.message}`);
-                // Don't crash entire workflow, proceed 0 leads to see if we can debug
+            }
+
+            // RETRY MECHANISM: If 0 leads found, try again with relaxed filters
+            if (allLeads.length === 0 && config.filters && !config.filters.fetchAll) {
+                logStep('Lead Finder', '⚠️ strict search yielded 0 leads. Retrying with UNRESTRICTED search (fetching anyone)...');
+
+                try {
+                    // Force "fetchAll" mode = clears seniority, allows guessed emails
+                    const relaxedFilters = { ...config.filters, fetchAll: true };
+                    const runId2 = await startApifyScrape(process.env.APIFY_API_TOKEN, targetDomains, relaxedFilters);
+                    logStep('Lead Finder', `Retry Job started (ID: ${runId2})...`);
+
+                    // Poll retry
+                    let isComplete2 = false;
+                    let datasetId2 = null;
+                    let attempts2 = 0;
+                    while (!isComplete2 && attempts2 < 600) { // Reuse same polling logic
+                        await delay(5000);
+                        const statusRes2 = await checkApifyRun(process.env.APIFY_API_TOKEN, runId2);
+                        if (statusRes2.status === 'SUCCEEDED') { isComplete2 = true; datasetId2 = statusRes2.datasetId; }
+                        else if (statusRes2.status === 'FAILED' || statusRes2.status === 'ABORTED') { throw new Error('Retry run failed'); }
+                        attempts2++;
+                    }
+
+                    if (datasetId2) {
+                        const rawItems2 = await getApifyResults(process.env.APIFY_API_TOKEN, datasetId2);
+                        logStep('Lead Finder', `Retry complete. Retrieved ${rawItems2.length} raw leads.`);
+
+                        // Map again... (This code duplication is ugly but safe for now to keep logic contained without refactoring map logic to function)
+                        const newLeads = rawItems2.map(item => {
+                            let firstName = item.firstName || item.first_name || '';
+                            let lastName = item.lastName || item.last_name || '';
+                            if (!firstName && item.fullName) {
+                                const parts = item.fullName.split(' ');
+                                firstName = parts[0];
+                                lastName = parts.slice(1).join(' ');
+                            }
+                            const scrapedCompany = item.orgName || item.companyName;
+                            const originalCompany = qualifiedCompanies.find(c =>
+                                c.domain === item.companyDomain ||
+                                (scrapedCompany && c.company_name.toLowerCase().includes(scrapedCompany.toLowerCase()))
+                            ) || {};
+
+                            return {
+                                first_name: firstName,
+                                last_name: lastName,
+                                email: item.email || item.workEmail || item.personalEmail,
+                                title: item.position || item.title || item.jobTitle,
+                                linkedin_url: item.linkedinUrl || item.linkedin_url || item.profileUrl,
+                                company_name: scrapedCompany || originalCompany.company_name || 'Unknown',
+                                company_website: item.orgWebsite || originalCompany.website || '',
+                                company_profile: originalCompany.company_profile || '',
+                                city: item.city || item.location,
+                                seniority: item.seniority
+                            };
+                        }).filter(l => l.email);
+
+                        allLeads = newLeads;
+                        logStep('Lead Finder', `Retry success! Found ${allLeads.length} leads.`);
+                    }
+
+                } catch (retryErr) {
+                    logStep('Lead Finder', `Retry failed: ${retryErr.message}`);
+                }
             }
         }
 

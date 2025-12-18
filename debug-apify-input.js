@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const APIFY_API_TOKEN = process.env.APIFY_API_TOKEN;
-const RUN_ID = '5pUaeLdAuhkjbN3Gt'; // From user logs
+const RUN_ID = 'BygeoWqfniFIhOdTL'; // Latest failed run
 
 async function checkInput() {
     if (!APIFY_API_TOKEN) {
