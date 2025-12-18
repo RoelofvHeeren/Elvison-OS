@@ -573,6 +573,22 @@ app.post('/api/runs/fail', async (req, res) => {
 // --- APIFY INTEGRATION ---
 import { startApifyScrape, checkApifyRun, getApifyResults } from './src/backend/services/apify.js';
 
+// Auto-run Credit Migration on Startup (Safe idempotency)
+(async () => {
+    try {
+        await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS credits INTEGER DEFAULT 500000;`);
+        // Ensure admin user exists for testing
+        await query(`
+            INSERT INTO users (email, name, role, credits)
+            VALUES ('admin@elvison.ai', 'Admin', 'admin', 500000)
+            ON CONFLICT (email) DO UPDATE SET credits = 500000 WHERE users.credits IS NULL; 
+        `);
+        console.log("System: Credits system initialized.");
+    } catch (e) {
+        // console.error("System: Credit init informative", e); // Valid table exists
+    }
+})();
+
 app.post('/api/integrations/apify/run', async (req, res) => {
     const { token, domains, filters } = req.body;
 
@@ -581,6 +597,17 @@ app.post('/api/integrations/apify/run', async (req, res) => {
 
     if (!effectiveToken || !domains || !Array.isArray(domains)) {
         return res.status(400).json({ error: 'Valid Token (or System Env) and domains array required' });
+    }
+
+    // CREDIT CHECK
+    try {
+        const userRes = await query(`SELECT credits, id FROM users LIMIT 1`);
+        const user = userRes.rows[0];
+        if (user && user.credits <= 0) {
+            return res.status(403).json({ error: 'Insufficient credits. Please upgrade.' });
+        }
+    } catch (e) {
+        console.error("Credit check skipped due to DB error", e);
     }
 
     try {
@@ -608,10 +635,24 @@ app.get('/api/integrations/apify/status/:runId', async (req, res) => {
             // Auto-insert into DB
             let importedCount = 0;
             for (const item of items) {
-                // Map fields based on known Apify output
-                // Adjust these mappings based on actual JSON output
+                // Map fields based on PIPELINELABS output mapping
+                // Output Schema: fullName, email, position, city, linkedinUrl, orgName
+
+                // Parse Name
+                let firstName = item.firstName || item.first_name;
+                let lastName = item.lastName || item.last_name;
+                if (!firstName && item.fullName) {
+                    const parts = item.fullName.split(' ');
+                    firstName = parts[0];
+                    lastName = parts.slice(1).join(' ');
+                }
+
+                // Parse Email
                 const email = item.email || item.workEmail || item.personalEmail;
                 if (!email) continue;
+
+                // Parse Company
+                const companyName = item.orgName || item.companyName || item.company_name;
 
                 try {
                     await query(
@@ -621,13 +662,13 @@ app.get('/api/integrations/apify/status/:runId', async (req, res) => {
                         ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'APIFY_IMPORT', 'NEW')
                         ON CONFLICT (email) DO NOTHING`,
                         [
-                            item.firstName || item.first_name,
-                            item.lastName || item.last_name,
-                            item.title || item.jobTitle,
-                            item.companyName || item.company_name,
+                            firstName,
+                            lastName,
+                            item.position || item.title || item.jobTitle,
+                            companyName,
                             email,
                             item.linkedinUrl || item.linkedin_url || item.profileUrl,
-                            item.location || item.city,
+                            item.city || item.location,
                         ]
                     );
                     importedCount++;
@@ -635,6 +676,18 @@ app.get('/api/integrations/apify/status/:runId', async (req, res) => {
                     console.error('Insert error:', err);
                 }
             }
+
+            // DEDUCT CREDITS
+            if (importedCount > 0) {
+                try {
+                    // deduct from the first user found (admin)
+                    await query(`UPDATE users SET credits = credits - $1 WHERE id = (SELECT id FROM users LIMIT 1)`, [importedCount]);
+                    console.log(`Deducted ${importedCount} credits.`);
+                } catch (e) {
+                    console.error("Credit deduction failed", e);
+                }
+            }
+
             return res.json({ status, importedCount, results: items });
         }
 

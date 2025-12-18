@@ -3,59 +3,67 @@ import axios from 'axios';
 const APIFY_API_URL = 'https://api.apify.com/v2';
 
 /**
- * Triggers the x_guru/Leads-Scraper-apollo-zoominfo actor
+ * Triggers the pipelinelabs/lead-scraper-apollo-zoominfo-lusha actor
  * @param {string} token - Apify API Token
  * @param {Array<string>} domains - List of company domains
+ * @param {Object} filters - Dynamic filters from onboarding
  * @returns {Promise<string>} - The Run ID
  */
 export const startApifyScrape = async (token, domains, filters = {}) => {
     try {
-        // --- Filter Logic ---
-        let seniority = ["cxo", "owner", "partner", "director", "vp"]; // Default high quality
-        let emailStatus = "verified"; // Default high quality
-        let jobTitles = [];
+        // --- Filter Logic (Pipelinelabs Schema) ---
+        // Defaults: C-Suite/VP/Director + Verified Email + Mobile if possible
+
+        let seniority = ["C-Suite", "Director", "VP", "Owner", "Partner"];
+        let contactEmailStatus = ["Verified"];
+        let personTitle = [];
 
         if (filters) {
             // 1. Job Titles (Direct Mapping)
             if (filters.job_titles && Array.isArray(filters.job_titles) && filters.job_titles.length > 0) {
-                jobTitles = filters.job_titles;
+                personTitle = filters.job_titles;
             }
 
             // 2. Email Quality
             if (filters.email_quality && filters.email_quality.toLowerCase().includes('verified')) {
-                emailStatus = "verified";
+                contactEmailStatus = ["Verified"];
             } else if (filters.email_quality) {
-                emailStatus = "all"; // User explicitly picked looser constraints (e.g. "LinkedIn Only")
+                // If user says "LinkedIn only" or looser, we accept Verified and Guessed 
+                contactEmailStatus = ["Verified", "Guessed"];
             }
 
-            // 3. Seniority Inference (Text Analysis)
+            // 3. Seniority Inference (Text Analysis -> Pipelinelabs Enum)
             if (filters.seniority_input) {
                 const text = filters.seniority_input.toLowerCase();
-                const inferredSeniority = [];
-                if (text.includes('cxo') || text.includes('chief') || text.includes('c-level')) inferredSeniority.push('cxo');
-                if (text.includes('owner') || text.includes('founder')) inferredSeniority.push('owner', 'partner');
-                if (text.includes('director')) inferredSeniority.push('director');
-                if (text.includes('vp') || text.includes('president')) inferredSeniority.push('vp');
-                if (text.includes('manager') || text.includes('head')) inferredSeniority.push('manager', 'head_of_department');
-                if (text.includes('entry') || text.includes('junior')) inferredSeniority.push('entry');
+                const inferred = [];
+                // Pipelinelabs uses specific strings: "C-Suite", "Director", "VP", "Manager", "Senior", "Entry", "Owner", "Partner"
+                if (text.includes('cxo') || text.includes('chief') || text.includes('c-level')) inferred.push('C-Suite');
+                if (text.includes('owner') || text.includes('founder')) inferred.push('Owner', 'Partner');
+                if (text.includes('director')) inferred.push('Director');
+                if (text.includes('vp') || text.includes('president') || text.includes('vice')) inferred.push('VP');
+                if (text.includes('manager') || text.includes('head')) inferred.push('Manager');
+                if (text.includes('mid') || text.includes('senior')) inferred.push('Senior');
+                if (text.includes('entry') || text.includes('junior')) inferred.push('Entry', 'Intern');
 
-                // If we found specific instructions, OVERRIDE the default. Otherwise keep default.
-                if (inferredSeniority.length > 0) {
-                    seniority = inferredSeniority;
-                }
+                if (inferred.length > 0) seniority = inferred;
             }
         }
 
         const input = {
-            company_domains: domains,
-            max_results: 100,
-            job_title_seniority: seniority,
-            email_status: emailStatus,
-            job_titles: jobTitles.length > 0 ? jobTitles : undefined
+            companyDomain: domains,
+            totalResults: 100,
+            seniority: seniority,
+            contactEmailStatus: contactEmailStatus,
+            personTitle: personTitle.length > 0 ? personTitle : undefined,
+            hasEmail: true,
+            hasPhone: false
         };
 
+        // PIPELINELABS ACTOR ID
+        const ACTOR_ID = 'pipelinelabs~lead-scraper-apollo-zoominfo-lusha';
+
         const response = await axios.post(
-            `${APIFY_API_URL}/acts/x_guru~Leads-Scraper-apollo-zoominfo/runs?token=${token}`,
+            `${APIFY_API_URL}/acts/${ACTOR_ID}/runs?token=${token}`,
             input,
             { headers: { 'Content-Type': 'application/json' } }
         );
