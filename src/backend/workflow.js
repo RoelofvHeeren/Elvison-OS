@@ -1,4 +1,5 @@
 import { fileSearchTool, hostedMcpTool, webSearchTool, Agent, Runner, withTrace } from "@openai/agents";
+import { startApifyScrape, checkApifyRun, getApifyResults } from "./services/apify.js";
 import { z } from "zod";
 import { query } from "../../db/index.js";
 
@@ -371,50 +372,110 @@ export const runAgentWorkflow = async (input, config) => {
             };
         }
 
-        // 3. Lead Finder
-        logStep('Apollo Lead Finder', 'Finding decision makers (Reliability Mode)...');
+        // 3. Lead Finder (PipelineLabs Scraper)
+        logStep('Lead Finder', 'Enriching leads via PipelineLabs Scraper...');
 
         let allLeads = [];
-        const BATCH_SIZE = 3;
 
-        const companiesWithDomains = qualifiedCompanies.map(c => {
-            let domain = c.domain;
-            if ((!domain || !domain.includes('.')) && c.website) {
-                try {
-                    const url = new URL(c.website.startsWith('http') ? c.website : `https://${c.website}`);
-                    domain = url.hostname.replace('www.', '');
-                } catch (e) { /* ignore */ }
-            }
-            return { ...c, domain };
-        }).filter(c => c.domain && c.domain.includes('.'));
+        // Extract domains from qualified companies
+        const targetDomains = qualifiedCompanies
+            .map(c => {
+                let domain = c.domain;
+                if ((!domain || !domain.includes('.')) && c.website) {
+                    try {
+                        const url = new URL(c.website.startsWith('http') ? c.website : `https://${c.website}`);
+                        domain = url.hostname.replace('www.', '');
+                    } catch (e) { /* ignore */ }
+                }
+                return domain;
+            })
+            .filter(d => d && d.includes('.'));
 
-        if (companiesWithDomains.length < qualifiedCompanies.length) {
-            logStep('Apollo Lead Finder', `Warning: ${qualifiedCompanies.length - companiesWithDomains.length} companies excluded due to missing/invalid domains.`);
-        }
-        logStep('Apollo Lead Finder', `Processing ${companiesWithDomains.length} companies for leads.`);
-
-        for (let i = 0; i < companiesWithDomains.length; i += BATCH_SIZE) {
-            const batch = companiesWithDomains.slice(i, i + BATCH_SIZE);
-            logStep('Apollo Lead Finder', `Processing batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(companiesWithDomains.length / BATCH_SIZE)} (${batch.length} companies)...`);
-
-            const batchInput = [{ role: "user", content: [{ type: "input_text", text: JSON.stringify({ results: batch }) }] }];
+        if (targetDomains.length === 0) {
+            console.warn("No valid domains found for scraping.");
+        } else {
+            logStep('Lead Finder', `Starting scrape for ${targetDomains.length} domains...`);
 
             try {
-                const leadRes = await retryWithBackoff(() => runner.run(apolloLeadFinder, batchInput));
+                // Trigger Apify Run
+                // Use system token (or user provided if we passed it down, but here we assume system flow or env)
+                // We use filters passed from the frontend (via config) or fall back to defaults in startApifyScrape
+                const runId = await startApifyScrape(process.env.APIFY_API_TOKEN, targetDomains, config.filters || {});
+                logStep('Lead Finder', `Job started (ID: ${runId}). Waiting for results...`);
 
-                if (leadRes.finalOutput && leadRes.finalOutput.leads) {
-                    allLeads = [...allLeads, ...leadRes.finalOutput.leads];
-                    logStep('Apollo Lead Finder', `Batch complete. Found ${leadRes.finalOutput.leads.length} leads.`);
-                } else {
-                    logStep('Apollo Lead Finder', 'Batch returned no leads.');
+                // Poll for completion
+                let isComplete = false;
+                let datasetId = null;
+                const POLL_INTERVAL = 5000;
+                let attempts = 0;
+                const MAX_WAIT = 600; // 10 minutes max wait?
+
+                while (!isComplete && attempts < MAX_WAIT) {
+                    await delay(POLL_INTERVAL);
+                    const statusRes = await checkApifyRun(process.env.APIFY_API_TOKEN, runId);
+
+                    if (statusRes.status === 'SUCCEEDED') {
+                        isComplete = true;
+                        datasetId = statusRes.datasetId;
+                    } else if (statusRes.status === 'FAILED' || statusRes.status === 'ABORTED') {
+                        throw new Error(`Apify run failed with status: ${statusRes.status}`);
+                    }
+                    attempts++;
                 }
+
+                if (datasetId) {
+                    const rawItems = await getApifyResults(process.env.APIFY_API_TOKEN, datasetId);
+                    logStep('Lead Finder', `Scrape complete. Retrieved ${rawItems.length} leads.`);
+
+                    // Map specific PipelineLabs output to our standard Lead Schema for Outreach Creator
+                    allLeads = rawItems.map(item => {
+                        // Parse Name
+                        let firstName = item.firstName || item.first_name || '';
+                        let lastName = item.lastName || item.last_name || '';
+                        if (!firstName && item.fullName) {
+                            const parts = item.fullName.split(' ');
+                            firstName = parts[0];
+                            lastName = parts.slice(1).join(' ');
+                        }
+
+                        // Parse Company (Find match in our qualified list to restore context)
+                        // PipelineLabs returns 'orgName' or 'companyName'.
+                        const scrapedCompany = item.orgName || item.companyName;
+                        // Attempt to match back to our Qualified List for 'company_profile' and 'company_website' context
+                        const originalCompany = qualifiedCompanies.find(c =>
+                            c.domain === item.companyDomain ||
+                            (scrapedCompany && c.company_name.toLowerCase().includes(scrapedCompany.toLowerCase()))
+                        ) || {};
+
+                        return {
+                            first_name: firstName,
+                            last_name: lastName,
+                            email: item.email || item.workEmail || item.personalEmail,
+                            title: item.position || item.title || item.jobTitle,
+                            linkedin_url: item.linkedinUrl || item.linkedin_url || item.profileUrl,
+                            company_name: scrapedCompany || originalCompany.company_name || 'Unknown',
+                            company_website: item.orgWebsite || originalCompany.website || '',
+                            company_profile: originalCompany.company_profile || '',
+                            // Add extra context for outreach
+                            city: item.city || item.location,
+                            seniority: item.seniority
+                        };
+                    }).filter(l => l.email); // Only keep leads with email
+
+                    logStep('Lead Finder', `Valid leads after filtering: ${allLeads.length}`);
+
+                } else {
+                    logStep('Lead Finder', 'Scrape timed out or returned no dataset.');
+                }
+
             } catch (err) {
-                logStep('Apollo Lead Finder', `Error processing batch: ${err.message}`);
+                logStep('Lead Finder', `Scraping failed: ${err.message}`);
+                // Don't crash entire workflow, proceed 0 leads to see if we can debug
             }
         }
 
         const leadCount = allLeads.length;
-        logStep('Apollo Lead Finder', `Total: Found ${leadCount} enriched leads.`);
+        logStep('Lead Finder', `Total: Found ${leadCount} enriched leads.`);
 
         // 4. Outreach Creator
         logStep('Outreach Creator', 'Drafting personalized messages...');

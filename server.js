@@ -699,7 +699,7 @@ app.get('/api/integrations/apify/status/:runId', async (req, res) => {
 
 // Trigger Analysis Run (SSE Streaming)
 app.post('/api/agents/run', async (req, res) => {
-    const { prompt, vectorStoreId, agentConfigs, mode } = req.body
+    const { prompt, vectorStoreId, agentConfigs, mode, filters } = req.body
     console.log(`Starting live workflow (Mode: ${mode || 'default'}) with prompt:`, prompt)
 
     // 1. Setup SSE Headers
@@ -730,7 +730,9 @@ app.post('/api/agents/run', async (req, res) => {
         const result = await runAgentWorkflow({ input_as_text: prompt }, {
             vectorStoreId: vectorStoreId, // Pass VS ID from request
             agentConfigs: agentConfigs || {},
+            agentConfigs: agentConfigs || {},
             mode: mode, // Pass mode to workflow
+            filters: filters || {}, // Pass filters from onboarding
             listeners: {
                 onLog: async (logParams) => {
                     const eventData = JSON.stringify({

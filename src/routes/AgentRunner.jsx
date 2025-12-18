@@ -90,7 +90,8 @@ const AgentRunner = () => {
                 body: JSON.stringify({
                     prompt,
                     vectorStoreId, // Pass the persistent ID
-                    mode // Pass the selected mode
+                    mode, // Pass the selected mode
+                    filters: JSON.parse(localStorage.getItem('onboarding_state') || '{}') // Pass user filters
                 })
             })
 
