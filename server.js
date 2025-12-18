@@ -575,10 +575,16 @@ import { startApifyScrape, checkApifyRun, getApifyResults } from './src/backend/
 
 app.post('/api/integrations/apify/run', async (req, res) => {
     const { token, domains } = req.body;
-    if (!token || !domains || !Array.isArray(domains)) return res.status(400).json({ error: 'Token and domains array required' });
+
+    // Allow system token fallback
+    const effectiveToken = token || process.env.APIFY_API_TOKEN;
+
+    if (!effectiveToken || !domains || !Array.isArray(domains)) {
+        return res.status(400).json({ error: 'Valid Token (or System Env) and domains array required' });
+    }
 
     try {
-        const runId = await startApifyScrape(token, domains);
+        const runId = await startApifyScrape(effectiveToken, domains);
         res.json({ runId });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -589,13 +595,15 @@ app.get('/api/integrations/apify/status/:runId', async (req, res) => {
     const { runId } = req.params;
     const { token } = req.query; // Pass token in query for GET
 
-    if (!token) return res.status(400).json({ error: 'Token required' });
+    const effectiveToken = token || process.env.APIFY_API_TOKEN;
+
+    if (!effectiveToken) return res.status(400).json({ error: 'Token required (User or System)' });
 
     try {
-        const { status, datasetId } = await checkApifyRun(token, runId);
+        const { status, datasetId } = await checkApifyRun(effectiveToken, runId);
 
         if (status === 'SUCCEEDED') {
-            const items = await getApifyResults(token, datasetId);
+            const items = await getApifyResults(effectiveToken, datasetId);
 
             // Auto-insert into DB
             let importedCount = 0;

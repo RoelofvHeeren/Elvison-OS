@@ -279,14 +279,14 @@ const Logbook = () => {
                                                                     <div className="bg-black/20 border border-white/5 p-4 rounded-lg flex flex-col gap-3 group mt-4">
                                                                         <div>
                                                                             <div className="text-xs font-bold text-teal-500 uppercase tracking-wider mb-0.5">Auto-Enrichment</div>
-                                                                            <div className="text-gray-300 text-sm">Use your Scraper subscription to find leads</div>
+                                                                            <div className="text-gray-300 text-sm">Use your subscription or System Key to find leads</div>
                                                                         </div>
 
                                                                         <div className="gap-2 flex flex-col">
                                                                             <div className="flex gap-2">
                                                                                 <input
                                                                                     type="password"
-                                                                                    placeholder="Apify API Token (saved locally)"
+                                                                                    placeholder="Apify API Token (Optional if using System Key)"
                                                                                     className="bg-black/40 border border-white/10 rounded px-3 py-2 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-teal-500/50 flex-1"
                                                                                     onChange={(e) => {
                                                                                         const val = e.target.value

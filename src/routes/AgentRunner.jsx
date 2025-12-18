@@ -14,6 +14,7 @@ const STEPS = [
 const AgentRunner = () => {
     const navigate = useNavigate()
     const [prompt, setPrompt] = useState('Find 3 law firms in Toronto, Canada and identify 1 Partner per firm.')
+    const [mode, setMode] = useState('default') // 'default' or 'list_builder'
     const [isRunning, setIsRunning] = useState(false)
     const [logs, setLogs] = useState([])
     const [currentStep, setCurrentStep] = useState(null)
@@ -88,7 +89,8 @@ const AgentRunner = () => {
                 },
                 body: JSON.stringify({
                     prompt,
-                    vectorStoreId // Pass the persistent ID
+                    vectorStoreId, // Pass the persistent ID
+                    mode // Pass the selected mode
                 })
             })
 
@@ -162,6 +164,24 @@ const AgentRunner = () => {
                                 className="w-full h-32 rounded-lg border-2 border-white/10 bg-black/20 p-3 text-sm text-white placeholder:text-gray-600 focus:border-[#139187] focus:outline-none transition-all resize-none"
                                 disabled={isRunning}
                             />
+                        </div>
+
+                        <div className="flex items-center gap-3 bg-white/5 p-3 rounded-lg border border-white/5">
+                            <div className="relative inline-block w-10 h-5 align-middle select-none transition duration-200 ease-in">
+                                <input
+                                    type="checkbox"
+                                    name="mode"
+                                    id="mode-toggle"
+                                    className="toggle-checkbox absolute block w-5 h-5 rounded-full bg-white border-4 appearance-none cursor-pointer checked:right-0 right-5 checked:border-[#139187]"
+                                    checked={mode === 'list_builder'}
+                                    onChange={(e) => setMode(e.target.checked ? 'list_builder' : 'default')}
+                                />
+                                <label htmlFor="mode-toggle" className={`toggle-label block overflow-hidden h-5 rounded-full cursor-pointer ${mode === 'list_builder' ? 'bg-[#139187]' : 'bg-gray-700'}`}></label>
+                            </div>
+                            <label htmlFor="mode-toggle" className="text-xs font-bold text-gray-300 cursor-pointer select-none">
+                                List Builder Only (No Emails)
+                            </label>
+                            <span className="text-[10px] text-gray-500 ml-auto">Faster • Low Cost</span>
                         </div>
 
                         <button
