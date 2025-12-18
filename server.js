@@ -574,7 +574,7 @@ app.post('/api/runs/fail', async (req, res) => {
 import { startApifyScrape, checkApifyRun, getApifyResults } from './src/backend/services/apify.js';
 
 app.post('/api/integrations/apify/run', async (req, res) => {
-    const { token, domains } = req.body;
+    const { token, domains, filters } = req.body;
 
     // Allow system token fallback
     const effectiveToken = token || process.env.APIFY_API_TOKEN;
@@ -584,7 +584,7 @@ app.post('/api/integrations/apify/run', async (req, res) => {
     }
 
     try {
-        const runId = await startApifyScrape(effectiveToken, domains);
+        const runId = await startApifyScrape(effectiveToken, domains, filters);
         res.json({ runId });
     } catch (error) {
         res.status(500).json({ error: error.message });

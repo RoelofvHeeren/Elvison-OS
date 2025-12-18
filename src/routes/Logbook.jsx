@@ -50,12 +50,30 @@ const Logbook = () => {
         setExtracting(prev => ({ ...prev, [jobId]: true }))
         setExtractionStatus(prev => ({ ...prev, [jobId]: 'Starting Apify Actor...' }))
 
+        // 1. Get Onboarding Preferences for Filters
+        let filters = {};
         try {
-            // 1. Run Actor
+            const savedState = localStorage.getItem('onboarding_state');
+            if (savedState) {
+                const parsed = JSON.parse(savedState);
+                const answers = parsed.surveyAnswers?.apollo_lead_finder || {};
+
+                filters = {
+                    job_titles: answers.job_titles || [],
+                    seniority_input: answers.seniority || '',
+                    email_quality: answers.email_quality || ''
+                };
+            }
+        } catch (e) {
+            console.warn("Could not load onboarding filters", e);
+        }
+
+        try {
+            // 2. Run Actor
             const runRes = await fetch('/api/integrations/apify/run', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ token, domains })
+                body: JSON.stringify({ token, domains, filters })
             })
             const runData = await runRes.json()
             if (runData.error) throw new Error(runData.error)
