@@ -237,7 +237,7 @@ const CRM = () => {
         </div>
       </div>
 
-      </div>
+
 
       <SheetTable
         rows={filteredRows}
@@ -247,9 +247,9 @@ const CRM = () => {
         onEnrichRow={handleEnrichRow}
       />
 
-      <ImportModal 
-        isOpen={isImportOpen} 
-        onClose={() => setIsImportOpen(false)} 
+      <ImportModal
+        isOpen={isImportOpen}
+        onClose={() => setIsImportOpen(false)}
         onImportSuccess={() => {
           refreshAll()
           // Optionally keep it open or close it. Logic handles "Done" click.
