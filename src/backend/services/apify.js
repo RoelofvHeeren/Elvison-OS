@@ -15,7 +15,7 @@ export const startApifyScrape = async (token, domains, filters = {}) => {
         // Defaults: C-Suite/VP/Director + Verified Email + Mobile if possible
 
         let seniority = ["C-Suite", "Director", "VP", "Owner", "Partner"];
-        let contactEmailStatus = ["Verified"];
+        let contactEmailStatus = ["Verified", "Guessed"]; // Default to broader search to avoid 0 results
         let personTitle = [];
 
         if (filters) {

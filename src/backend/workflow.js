@@ -294,9 +294,8 @@ export const runAgentWorkflow = async (input, config) => {
 
 
 
-            // TURBO MODE: Parallel Search Execution
-            // Instead of asking the Agent to "go search", we do the heavy lifting for it.
-            // We run multiple targeted searches in parallel and feed the raw results to the Agent for extraction.
+            // TURBO MODE: Parallel Search Execution via Agent
+            // We command the agent to run multiple searches to broaden the net.
 
             const queries = [
                 `"Real estate investment firm" ${input.input_as_text} -debt -lender`,
@@ -305,47 +304,27 @@ export const runAgentWorkflow = async (input, config) => {
                 `"Real estate asset management" ${input.input_as_text} Canada`
             ];
 
-            logStep('Company Finder', `🚀 Turbo Mode: Running ${queries.length} parallel searches...`);
+            logStep('Company Finder', `🚀 Turbo Mode: Commencing 4 parallel search strategies...`);
 
-            // Execute searches in parallel
-            const searchResults = await Promise.all(queries.map(async (q) => {
-                try {
-                    // Use the verbose wrapper if available, or base tool
-                    // We need to access the tool instance designated for 'company_finder' or just reuse the global one created earlier
-                    // In this scope, we don't have direct access to 'verboseWebSearch' variable from getToolsForAgent scope.
-                    // So we instantiate a fresh tool or reuse 'webSearch' variable from line 114.
-
-                    // Note: webSearch variable (line 114) is available in closure.
-                    // If we want logging, we should manually log here since we are bypassing the agent's tool call.
-                    logStep('Search', `🔍 Googling: "${q}"`);
-                    const res = await webSearch.execute({ query: q, num_results: 10 });
-                    return res; // Expecting string output? webSearchTool usually returns string.
-                } catch (e) {
-                    logStep('Search', `❌ Search failed for "${q}": ${e.message}`);
-                    return "";
-                }
-            }));
-
-            const combinedContext = searchResults.join("\n\n---\n\n");
-
-            // Now ask the Agent to extract from this massive context
-            const extractionPrompt = `
-                I have performed extensive web searches for: "${originalPrompt}".
+            const turboPrompt = `
+                [SYSTEM COMMAND]: EXECUTE THE FOLLOWING 4 SEARCHES IMMEDIATELY using your 'web_search' tool.
+                Do not stop after the first one. Use the tool 4 times, or combining queries if smart.
                 
-                Here are the raw search results:
-                """
-                ${combinedContext}
-                """
+                QUERIES:
+                1. ${queries[0]}
+                2. ${queries[1]}
+                3. ${queries[2]}
+                4. ${queries[3]}
                 
-                TASK:
-                1. Analyze these search results.
+                AFTER SEARCHING:
+                1. Analyze all results.
                 2. Extract exactly ${needed} relevant Real Estate Investment Firms.
-                3. Apply the CRITICAL CRITERIA (Equity only, no Debt/Lenders).
-                4. Ignore any companies already in this list: ${qualifiedCompanies.map(c => c.company_name).join(", ")}.
+                3. Apply CRITICAL CRITERIA (Equity only).
+                4. Exclude: ${qualifiedCompanies.map(c => c.company_name).join(", ")}.
                 5. Return the JSON list.
             `;
 
-            const finderInput = [{ role: "user", content: [{ type: "input_text", text: extractionPrompt }] }];
+            const finderInput = [{ role: "user", content: [{ type: "input_text", text: turboPrompt }] }];
             const finderRes = await retryWithBackoff(() => runner.run(companyFinder, finderInput));
 
             if (!finderRes.finalOutput) {
@@ -359,9 +338,7 @@ export const runAgentWorkflow = async (input, config) => {
 
             if (finderResults.length === 0) {
                 logStep('Company Finder', 'No new companies found in this batch.');
-                // If turbo mode fails to find anything new, we might break early or fall back.
-                // For now, let's break if we are exhausted.
-                if (attempts >= 2) break; // Turbo is efficient, if it fails twice, we are done.
+                if (attempts >= 2) break;
                 continue;
             }
 
