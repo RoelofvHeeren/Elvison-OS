@@ -111,6 +111,9 @@ export const runAgentWorkflow = async (input, config) => {
     }
 
     // --- Initialize Tools ---
+    // --- Initialize Tools ---
+    // Note: We init webSearch inside getToolsForAgent now to allow per-agent logging if needed, 
+    // or we just reuse the base instance but wrap it dynamically.
     const webSearch = webSearchTool();
     const apolloMcp = hostedMcpTool({
         serverLabel: "Apollo_Lead_Finder",
@@ -152,12 +155,30 @@ export const runAgentWorkflow = async (input, config) => {
             }
         }
 
-        // 3. Attach matching tools
+        // 3. Attach matching tools (with Verbose Wrappers)
         if (enabledIds.includes('apollo_mcp')) {
             tools.push(apolloMcp);
         }
         if (enabledIds.includes('web_search')) {
-            tools.push(webSearch);
+            // VERBOSE WRAPPER: Intercept web_search calls to log queries
+            const verboseWebSearch = {
+                ...webSearch,
+                execute: async (args, context) => {
+                    // Log the search query
+                    const query = args.query || args.q || JSON.stringify(args);
+                    logStep('Search', `🔍 Googling: "${query}"`);
+
+                    // Execute original tool
+                    try {
+                        const result = await webSearch.execute(args, context);
+                        return result;
+                    } catch (e) {
+                        logStep('Search', `❌ Failed: ${e.message}`);
+                        throw e;
+                    }
+                }
+            };
+            tools.push(verboseWebSearch);
         }
 
         return tools;
@@ -266,38 +287,65 @@ export const runAgentWorkflow = async (input, config) => {
             if (attempts > 1) {
                 logStep('Workflow', `Round ${attempts}: Need ${needed} more qualified companies (Found ${qualifiedCompanies.length}/${targetCount}).`);
             } else {
-                logStep('Company Finder', `Identifying potential companies (Target: ${needed})...`);
+                logStep('Company Finder', `🚀 Starting Turbo Discovery (Target: ${needed})...`);
             }
 
-            // Phased Search Strategy Construction
-            let strategyInstruction = "";
-            switch (attempts) {
-                case 1:
-                    strategyInstruction = `PHASE 1 (DIRECT): Search for "Residential real estate investment firm Canada" and "Real estate investment firm [City]". Check search results pages 1-3. Focus on pure equity firms.`;
-                    break;
-                case 2:
-                    strategyInstruction = `PHASE 2 (BROADER): Switch terms to "Real estate family office Canada", "Private Real Estate Equity Canada". Check pages 1-3.`;
-                    break;
-                case 3:
-                    strategyInstruction = `PHASE 3 (LISTS): Search for "Top 100 real estate investment firms Canada", "List of family offices Toronto". OPEN the list articles and extract names.`;
-                    break;
-                default:
-                    strategyInstruction = `PHASE 4 (DEEP SEARCH): Go back to broad keywords but dig deeper (Page 4, 5, 6). Look for specific niche firms missed earlier.`;
-                    break;
-            }
+            // We removed the 'switch' statement because Turbo Mode handles strategy by running all queries in parallel.
 
-            // Construct prompt for this iteration
-            let currentPrompt = originalPrompt;
-            currentPrompt += `\n\n[SYSTEM INJECTION]: You are in iteration ${attempts}. Your GOAL is to find exactly ${needed} NEW companies.`;
-            currentPrompt += `\n\n[STRATEGY]: ${strategyInstruction}`;
 
-            if (qualifiedCompanies.length > 0) {
-                const excludedNames = qualifiedCompanies.map(c => c.company_name).join(", ");
-                currentPrompt += `\n\n[EXCLUSION]: You MUST exclude these companies found in previous steps: ${excludedNames}.`;
-            }
 
-            // 1. Company Finder
-            const finderInput = [{ role: "user", content: [{ type: "input_text", text: currentPrompt }] }];
+            // TURBO MODE: Parallel Search Execution
+            // Instead of asking the Agent to "go search", we do the heavy lifting for it.
+            // We run multiple targeted searches in parallel and feed the raw results to the Agent for extraction.
+
+            const queries = [
+                `"Real estate investment firm" ${input.input_as_text} -debt -lender`,
+                `"Family office" real estate investment ${input.input_as_text}`,
+                `"Private equity real estate" ${input.input_as_text} acquisitions`,
+                `"Real estate asset management" ${input.input_as_text} Canada`
+            ];
+
+            logStep('Company Finder', `🚀 Turbo Mode: Running ${queries.length} parallel searches...`);
+
+            // Execute searches in parallel
+            const searchResults = await Promise.all(queries.map(async (q) => {
+                try {
+                    // Use the verbose wrapper if available, or base tool
+                    // We need to access the tool instance designated for 'company_finder' or just reuse the global one created earlier
+                    // In this scope, we don't have direct access to 'verboseWebSearch' variable from getToolsForAgent scope.
+                    // So we instantiate a fresh tool or reuse 'webSearch' variable from line 114.
+
+                    // Note: webSearch variable (line 114) is available in closure.
+                    // If we want logging, we should manually log here since we are bypassing the agent's tool call.
+                    logStep('Search', `🔍 Googling: "${q}"`);
+                    const res = await webSearch.execute({ query: q, num_results: 10 });
+                    return res; // Expecting string output? webSearchTool usually returns string.
+                } catch (e) {
+                    logStep('Search', `❌ Search failed for "${q}": ${e.message}`);
+                    return "";
+                }
+            }));
+
+            const combinedContext = searchResults.join("\n\n---\n\n");
+
+            // Now ask the Agent to extract from this massive context
+            const extractionPrompt = `
+                I have performed extensive web searches for: "${originalPrompt}".
+                
+                Here are the raw search results:
+                """
+                ${combinedContext}
+                """
+                
+                TASK:
+                1. Analyze these search results.
+                2. Extract exactly ${needed} relevant Real Estate Investment Firms.
+                3. Apply the CRITICAL CRITERIA (Equity only, no Debt/Lenders).
+                4. Ignore any companies already in this list: ${qualifiedCompanies.map(c => c.company_name).join(", ")}.
+                5. Return the JSON list.
+            `;
+
+            const finderInput = [{ role: "user", content: [{ type: "input_text", text: extractionPrompt }] }];
             const finderRes = await retryWithBackoff(() => runner.run(companyFinder, finderInput));
 
             if (!finderRes.finalOutput) {
@@ -310,8 +358,10 @@ export const runAgentWorkflow = async (input, config) => {
             debugLog.discovery.push({ round: attempts, results: finderResults });
 
             if (finderResults.length === 0) {
-                logStep('Company Finder', 'No new companies found in this search.');
-                if (attempts >= MAX_ATTEMPTS) break;
+                logStep('Company Finder', 'No new companies found in this batch.');
+                // If turbo mode fails to find anything new, we might break early or fall back.
+                // For now, let's break if we are exhausted.
+                if (attempts >= 2) break; // Turbo is efficient, if it fails twice, we are done.
                 continue;
             }
 
@@ -339,8 +389,13 @@ export const runAgentWorkflow = async (input, config) => {
 
                 if (merged.company_profile && merged.company_name) {
                     if (!qualifiedCompanies.some(c => c.company_name === merged.company_name)) {
+                        logStep('Company Profiler', `✅ Qualified: ${merged.company_name}`);
                         qualifiedInBatch.push(merged);
+                    } else {
+                        logStep('Company Profiler', `ℹ️ Duplicate: ${merged.company_name}`);
                     }
+                } else {
+                    logStep('Company Profiler', `❌ Rejected: ${merged.company_name || 'Unknown'} (Insufficient Profile)`);
                 }
             }
             debugLog.qualification.push({ round: attempts, approved: qualifiedInBatch, rejectedCount: finderResults.length - qualifiedInBatch.length });
