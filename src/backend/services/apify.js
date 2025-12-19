@@ -1,14 +1,13 @@
+import {
+    ALLOWED_PERSON_TITLES,
+    ALLOWED_SENIORITY,
+    ALLOWED_EXTRA_TITLES,
+    SENIORITY_EXCLUDES
+} from '../../config/pipelineLabs.js';
 import axios from 'axios';
 
 const APIFY_API_URL = 'https://api.apify.com/v2';
 
-/**
- * Triggers the pipelinelabs/lead-scraper-apollo-zoominfo-lusha actor
- * @param {string} token - Apify API Token
- * @param {Array<string>} domains - List of company domains
- * @param {Object} filters - Dynamic filters from onboarding
- * @returns {Promise<string>} - The Run ID
- */
 /**
  * Constructs the payload for Pipeline Labs scraper
  * @param {Array<string>} companyNames - List of company names
@@ -17,15 +16,11 @@ const APIFY_API_URL = 'https://api.apify.com/v2';
  */
 export const buildPipelineLabsPayload = (companyNames, filters = {}) => {
     // defaults
-    let seniorityIncludes = ["Director", "VP", "C-Suite", "Owner", "Head", "Founder", "Partner"];
-    let seniorityExcludes = ["Entry", "Intern"];
-    let personTitleIncludes = [
-        "Executive Director", "Director Of Operations", "Director Of Sales",
-        "Director Of Business Development", "Founder", "Co-Founder",
-        "General Manager", "Head Of Operations", "Head Of Business Development",
-        "Founding Partner", "Co-Owner", "Business Owner", "CEO/President/Owner",
-        "Executive Vice President"
-    ];
+    let seniorityIncludes = [...ALLOWED_SENIORITY];
+    let seniorityExcludes = [...SENIORITY_EXCLUDES];
+    let personTitleIncludes = [...ALLOWED_PERSON_TITLES];
+    let personTitleExtraIncludes = [...ALLOWED_EXTRA_TITLES];
+
     let companyLocationCountryIncludes = filters.countries || ["United States", "Canada"];
 
     // Explicit exclusions if needed, currently not in template but good practice
@@ -38,20 +33,35 @@ export const buildPipelineLabsPayload = (companyNames, filters = {}) => {
     } else if (filters) {
         // 1. Job Titles
         if (filters.job_titles && Array.isArray(filters.job_titles) && filters.job_titles.length > 0) {
-            personTitleIncludes = filters.job_titles;
+            // STRICT VALIDATION: Only allow titles that are in the allowed list
+            const validTitles = filters.job_titles.filter(t => ALLOWED_PERSON_TITLES.includes(t));
+
+            if (validTitles.length < filters.job_titles.length) {
+                console.warn(`[PipelineLabs] Some requested titles were filtered out due to strict policy: ${filters.job_titles.filter(t => !ALLOWED_PERSON_TITLES.includes(t)).join(', ')}`);
+            }
+
+            if (validTitles.length > 0) {
+                personTitleIncludes = validTitles;
+            } else {
+                console.warn("[PipelineLabs] No valid titles provided in filters. Fallback to default ALLOWED_PERSON_TITLES.");
+            }
         }
 
         // 2. Seniority Inference
         if (filters.seniority_input) {
             const text = filters.seniority_input.toLowerCase();
             const inferred = [];
+            // Map text to ALLOWED_SENIORITY values only
             if (text.includes('cxo') || text.includes('chief') || text.includes('c-level')) inferred.push('C-Suite');
             if (text.includes('owner') || text.includes('founder')) inferred.push('Owner', 'Founder', 'Partner');
             if (text.includes('director')) inferred.push('Director');
             if (text.includes('vp') || text.includes('president') || text.includes('vice')) inferred.push('VP');
-            if (text.includes('manager') || text.includes('head')) inferred.push('Head', 'Manager'); // Manager not in template list but kept for mapping
+            if (text.includes('manager') || text.includes('head')) inferred.push('Head');
 
-            if (inferred.length > 0) seniorityIncludes = inferred;
+            // Validate inferred against strict list
+            const validInferred = inferred.filter(s => ALLOWED_SENIORITY.includes(s));
+
+            if (validInferred.length > 0) seniorityIncludes = validInferred;
         }
     }
 
@@ -67,10 +77,7 @@ export const buildPipelineLabsPayload = (companyNames, filters = {}) => {
         totalResults: 100,
         personTitleIncludes: personTitleIncludes,
         includeSimilarTitles: true, // Fixed as per template
-        personTitleExtraIncludes: [
-            "Chief Investment Officer", "Principle", "Managing Director", // Principle is typo in template but we match it
-            "Director of investments", "Director of developments"
-        ],
+        personTitleExtraIncludes: personTitleExtraIncludes,
         seniorityIncludes: seniorityIncludes,
         seniorityExcludes: seniorityExcludes,
         companyNameIncludes: cleanNames,
