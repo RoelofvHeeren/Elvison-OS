@@ -20,6 +20,10 @@ export const buildPipelineLabsPayload = (companyNames, filters = {}) => {
     let seniorityExcludes = [...SENIORITY_EXCLUDES];
     let personTitleIncludes = [...ALLOWED_PERSON_TITLES];
     let personTitleExtraIncludes = [...ALLOWED_EXTRA_TITLES];
+    let companyEmployeeSizeIncludes = [
+        "Self-employed", "1-10", "11-20", "21-50", "51-100", "201-500", "501-1000",
+        "1001-2000", "5001-10000", "10001+"
+    ];
 
     let companyLocationCountryIncludes = filters.countries || ["United States", "Canada"];
 
@@ -30,6 +34,8 @@ export const buildPipelineLabsPayload = (companyNames, filters = {}) => {
         // Broaden search
         seniorityIncludes = [];
         personTitleIncludes = []; // Clear strict titles for broad search
+        personTitleExtraIncludes = [];
+        companyEmployeeSizeIncludes = []; // Allow any size
     } else if (filters) {
         // 1. Job Titles
         if (filters.job_titles && Array.isArray(filters.job_titles) && filters.job_titles.length > 0) {
@@ -82,10 +88,7 @@ export const buildPipelineLabsPayload = (companyNames, filters = {}) => {
         seniorityExcludes: seniorityExcludes,
         companyNameIncludes: cleanNames,
         companyLocationCountryIncludes: companyLocationCountryIncludes,
-        companyEmployeeSizeIncludes: [
-            "11-20", "21-50", "51-100", "201-500", "501-1000",
-            "1001-2000", "5001-10000", "10001+"
-        ]
+        companyEmployeeSizeIncludes: companyEmployeeSizeIncludes
     };
 };
 
