@@ -9,58 +9,94 @@ const APIFY_API_URL = 'https://api.apify.com/v2';
  * @param {Object} filters - Dynamic filters from onboarding
  * @returns {Promise<string>} - The Run ID
  */
-export const startApifyScrape = async (token, domains, filters = {}) => {
-    try {
-        // --- Filter Logic (Pipelinelabs Schema) ---
-        // Defaults: C-Suite/VP/Director + Verified Email + Mobile if possible
+/**
+ * Constructs the payload for Pipeline Labs scraper
+ * @param {Array<string>} companyNames - List of company names
+ * @param {Object} filters - Dynamic filters
+ * @returns {Object} - The constructed payload
+ */
+export const buildPipelineLabsPayload = (companyNames, filters = {}) => {
+    // defaults
+    let seniorityIncludes = ["Director", "VP", "C-Suite", "Owner", "Head", "Founder", "Partner"];
+    let seniorityExcludes = ["Entry", "Intern"];
+    let personTitleIncludes = [
+        "Executive Director", "Director Of Operations", "Director Of Sales",
+        "Director Of Business Development", "Founder", "Co-Founder",
+        "General Manager", "Head Of Operations", "Head Of Business Development",
+        "Founding Partner", "Co-Owner", "Business Owner", "CEO", "President",
+        "Executive Vice President"
+    ];
+    let companyLocationCountryIncludes = filters.countries || ["United States", "Canada"];
 
-        let seniority = ["C-Suite", "Director", "VP", "Owner", "Partner"];
-        let contactEmailStatus = ["Verified", "Guessed"]; // Default to broader search to avoid 0 results
-        let personTitle = [];
+    // Explicit exclusions if needed, currently not in template but good practice
+    // const titleExcludes = ["Assistant", "Intern"];
 
-        if (filters && filters.fetchAll) {
-            seniority = []; // Clear seniority to get ALL employees
-            contactEmailStatus = ["Verified", "Guessed"];
-        } else if (filters) {
-            // 1. Job Titles (Direct Mapping)
-            if (filters.job_titles && Array.isArray(filters.job_titles) && filters.job_titles.length > 0) {
-                personTitle = filters.job_titles;
-            }
-
-            // 2. Email Quality
-            if (filters.email_quality && filters.email_quality.toLowerCase().includes('verified')) {
-                contactEmailStatus = ["Verified"];
-            } else if (filters.email_quality) {
-                // If user says "LinkedIn only" or looser, we accept Verified and Guessed 
-                contactEmailStatus = ["Verified", "Guessed"];
-            }
-
-            // 3. Seniority Inference (Text Analysis -> Pipelinelabs Enum)
-            if (filters.seniority_input) {
-                const text = filters.seniority_input.toLowerCase();
-                const inferred = [];
-                // Pipelinelabs uses specific strings: "C-Suite", "Director", "VP", "Manager", "Senior", "Entry", "Owner", "Partner"
-                if (text.includes('cxo') || text.includes('chief') || text.includes('c-level')) inferred.push('C-Suite');
-                if (text.includes('owner') || text.includes('founder')) inferred.push('Owner', 'Partner');
-                if (text.includes('director')) inferred.push('Director');
-                if (text.includes('vp') || text.includes('president') || text.includes('vice')) inferred.push('VP');
-                if (text.includes('manager') || text.includes('head')) inferred.push('Manager');
-                if (text.includes('mid') || text.includes('senior')) inferred.push('Senior');
-                if (text.includes('entry') || text.includes('junior')) inferred.push('Entry', 'Intern');
-
-                if (inferred.length > 0) seniority = inferred;
-            }
+    if (filters && filters.fetchAll) {
+        // Broaden search
+        seniorityIncludes = [];
+    } else if (filters) {
+        // 1. Job Titles
+        if (filters.job_titles && Array.isArray(filters.job_titles) && filters.job_titles.length > 0) {
+            personTitleIncludes = filters.job_titles;
         }
 
-        const input = {
-            companyDomain: domains,
-            totalResults: 100,
-            seniority: seniority,
-            contactEmailStatus: contactEmailStatus,
-            personTitle: personTitle.length > 0 ? personTitle : undefined,
-            hasEmail: true,
-            hasPhone: false
-        };
+        // 2. Seniority Inference
+        if (filters.seniority_input) {
+            const text = filters.seniority_input.toLowerCase();
+            const inferred = [];
+            if (text.includes('cxo') || text.includes('chief') || text.includes('c-level')) inferred.push('C-Suite');
+            if (text.includes('owner') || text.includes('founder')) inferred.push('Owner', 'Founder', 'Partner');
+            if (text.includes('director')) inferred.push('Director');
+            if (text.includes('vp') || text.includes('president') || text.includes('vice')) inferred.push('VP');
+            if (text.includes('manager') || text.includes('head')) inferred.push('Head', 'Manager'); // Manager not in template list but kept for mapping
+
+            if (inferred.length > 0) seniorityIncludes = inferred;
+        }
+    }
+
+    // Cleaning company names to ensure no domains slip through
+    const cleanNames = companyNames.map(name => {
+        // simple heuristic: if it looks like a domain, strip tld. 
+        // But ideal is to assume caller passes names. 
+        // We will just pass it through but we could add logic here.
+        return name;
+    }).filter(n => n && typeof n === 'string' && n.length > 0);
+
+    return {
+        totalResults: 100,
+        personTitleIncludes: personTitleIncludes,
+        includeSimilarTitles: true, // Fixed as per template
+        personTitleExtraIncludes: [
+            "Chief Investment Officer", "Principle", "Managing Director", // Principle is typo in template but we match it
+            "Director of investments", "Director of developments"
+        ],
+        seniorityIncludes: seniorityIncludes,
+        seniorityExcludes: seniorityExcludes,
+        companyNameIncludes: cleanNames,
+        companyLocationCountryIncludes: companyLocationCountryIncludes,
+        companyEmployeeSizeIncludes: [
+            "11-20", "21-50", "51-100", "201-500", "501-1000",
+            "1001-2000", "5001-10000", "10001+"
+        ]
+    };
+};
+
+/**
+ * Triggers the pipelinelabs/lead-scraper-apollo-zoominfo-lusha actor
+ * @param {string} token - Apify API Token
+ * @param {Array<string>} companyNames - List of company names (NOT domains)
+ * @param {Object} filters - Dynamic filters
+ * @returns {Promise<string>} - The Run ID
+ */
+export const startApifyScrape = async (token, companyNames, filters = {}) => {
+    try {
+        if (!companyNames || companyNames.length === 0) {
+            console.warn("startApifyScrape called with no company names.");
+            // We could throw or return strict null, but let's allow it to attempt if that's desired behavior, 
+            // though likely it will be empty. 
+        }
+
+        const input = buildPipelineLabsPayload(companyNames, filters);
 
         // PIPELINELABS ACTOR ID
         const ACTOR_ID = 'pipelinelabs~lead-scraper-apollo-zoominfo-lusha';

@@ -409,14 +409,9 @@ export const runAgentWorkflow = async (input, config) => {
 
         let allLeads = [];
 
-        // Extract domains from qualified companies
-        const targetDomains = qualifiedCompanies.map(c => {
-            // simple domain extraction from website or name
-            if (c.company_website && c.company_website.includes('.')) {
-                return c.company_website.replace('https://', '').replace('http://', '').replace('www.', '').split('/')[0];
-            }
-            return c.company_name.replace(/\s+/g, '').toLowerCase() + '.com'; // Fallback
-        });
+        // Extract company names from qualified companies
+        // We no longer extract domains for the search usage, but we keep the qualifiedCompanies objects as they are.
+        const targetCompanies = qualifiedCompanies.map(c => c.company_name).filter(n => n && n.trim().length > 0);
 
         // USER REQUESTED "GOLD STANDARD" TITLES
         const GOLD_STANDARD_TITLES = [
@@ -432,16 +427,15 @@ export const runAgentWorkflow = async (input, config) => {
             activeFilters.job_titles = GOLD_STANDARD_TITLES;
         }
 
-        if (targetDomains.length === 0) {
-            console.warn("No valid domains found for scraping.");
+        if (targetCompanies.length === 0) {
+            console.warn("No valid companies found for scraping.");
         } else {
-            logStep('Lead Finder', `Starting scrape for ${targetDomains.length} domains...`);
+            logStep('Lead Finder', `Starting scrape for ${targetCompanies.length} companies...`);
 
             try {
                 // Trigger Apify Run
-                // Use system token (or user provided if we passed it down, but here we assume system flow or env)
-                // We use filters passed from the frontend (via config) or fall back to defaults in startApifyScrape
-                const runId = await startApifyScrape(process.env.APIFY_API_TOKEN, targetDomains, activeFilters);
+                // Pass Company Names (name-based search)
+                const runId = await startApifyScrape(process.env.APIFY_API_TOKEN, targetCompanies, activeFilters);
                 logStep('Lead Finder', `Job started (ID: ${runId}). Waiting for results...`);
 
                 // Poll for completion
@@ -520,7 +514,7 @@ export const runAgentWorkflow = async (input, config) => {
                 try {
                     // Force "fetchAll" mode = clears seniority, allows guessed emails
                     const relaxedFilters = { ...config.filters, fetchAll: true };
-                    const runId2 = await startApifyScrape(process.env.APIFY_API_TOKEN, targetDomains, relaxedFilters);
+                    const runId2 = await startApifyScrape(process.env.APIFY_API_TOKEN, targetCompanies, relaxedFilters);
                     logStep('Lead Finder', `Retry Job started (ID: ${runId2})...`);
 
                     // Poll retry
