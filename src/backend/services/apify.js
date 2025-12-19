@@ -23,7 +23,7 @@ export const buildPipelineLabsPayload = (companyNames, filters = {}) => {
         "Executive Director", "Director Of Operations", "Director Of Sales",
         "Director Of Business Development", "Founder", "Co-Founder",
         "General Manager", "Head Of Operations", "Head Of Business Development",
-        "Founding Partner", "Co-Owner", "Business Owner", "CEO", "President",
+        "Founding Partner", "Co-Owner", "Business Owner", "CEO/President/Owner",
         "Executive Vice President"
     ];
     let companyLocationCountryIncludes = filters.countries || ["United States", "Canada"];
@@ -34,6 +34,7 @@ export const buildPipelineLabsPayload = (companyNames, filters = {}) => {
     if (filters && filters.fetchAll) {
         // Broaden search
         seniorityIncludes = [];
+        personTitleIncludes = []; // Clear strict titles for broad search
     } else if (filters) {
         // 1. Job Titles
         if (filters.job_titles && Array.isArray(filters.job_titles) && filters.job_titles.length > 0) {

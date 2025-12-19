@@ -37,6 +37,7 @@ const filters2 = { fetchAll: true };
 const payload2 = buildPipelineLabsPayload(["Google"], filters2);
 try {
     assert.strictEqual(payload2.seniorityIncludes.length, 0); // Should be empty
+    assert.strictEqual(payload2.personTitleIncludes.length, 0); // Should be empty
     assert.deepStrictEqual(payload2.companyNameIncludes, ["Google"]);
     console.log("✅ Test Case 2 Passed!");
 } catch (e) {
