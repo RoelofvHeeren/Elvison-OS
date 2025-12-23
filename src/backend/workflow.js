@@ -828,9 +828,10 @@ SPEED vs ACCURACY: Accuracy is priority. Take time to visit websites and verify 
             await query('BEGIN');
             for (const lead of outreachOutput.leads) {
                 await query(
-                    `INSERT INTO leads (company_name, person_name, email, job_title, linkedin_url, status, custom_data, source)
-                     VALUES ($1, $2, $3, $4, $5, 'NEW', $6, 'Automation')`,
+                    `INSERT INTO leads (user_id, company_name, person_name, email, job_title, linkedin_url, status, custom_data, source)
+                     VALUES ($1, $2, $3, $4, $5, $6, 'NEW', $7, 'Automation')`,
                     [
+                        userId, // Inject userId
                         lead.company_name,
                         `${lead.first_name || ''} ${lead.last_name || ''}`.trim(),
                         lead.email,
