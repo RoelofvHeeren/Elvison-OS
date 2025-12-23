@@ -8,9 +8,9 @@ const __dirname = path.dirname(__filename);
 
 const runMigration = async () => {
     try {
-        const migrationPath = path.join(__dirname, 'db', 'migrations', '02_system_config.sql');
+        const migrationPath = path.join(__dirname, 'db', 'migrations', '04_multi_user_migration.sql');
         const sql = fs.readFileSync(migrationPath, 'utf8');
-        console.log('Running migration: 02_system_config.sql');
+        console.log('Running migration: 04_multi_user_migration.sql');
         await query(sql);
         console.log('Migration successful.');
     } catch (err) {
