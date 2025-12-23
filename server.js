@@ -888,7 +888,9 @@ app.post('/api/agents/run', requireAuth, async (req, res) => {
     try {
         const result = await runAgentWorkflow({ input_as_text: prompt }, {
             vectorStoreId: vectorStoreId, // Pass VS ID from request
-            agentConfigs: agentConfigs || {},
+            userId: req.userId, // NEW: Pass authenticated user ID for company tracking
+            targetLeads: req.body.targetLeads || 50, // NEW: Total leads target
+            maxLeadsPerCompany: req.body.maxLeadsPerCompany || 3, // NEW: Max per company
             agentConfigs: agentConfigs || {},
             mode: mode, // Pass mode to workflow
             filters: filters || {}, // Pass filters from onboarding
