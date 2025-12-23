@@ -578,6 +578,10 @@ SPEED vs ACCURACY: Accuracy is priority. Take time to visit websites and verify 
                     if (datasetId) {
                         const rawItems = await getApifyResults(process.env.APIFY_API_TOKEN, datasetId);
                         logStep('Lead Finder', `Scrape complete. Retrieved ${rawItems.length} leads.`);
+                        if (rawItems.length > 0) {
+                            console.log("DEBUG: Exact keys of first raw item:", Object.keys(rawItems[0]));
+                            console.log("DEBUG: Sample raw item:", JSON.stringify(rawItems[0], null, 2));
+                        }
 
                         // Map specific PipelineLabs output to our standard Lead Schema for Outreach Creator
                         const rawLeads = rawItems.map(item => {
