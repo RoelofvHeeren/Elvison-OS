@@ -381,34 +381,56 @@ export const runAgentWorkflow = async (input, config) => {
             // TURBO MODE: Parallel Search Execution via Agent
             // We command the agent to run multiple searches to broaden the net.
 
-            // OPTIMIZED: Use 1-2 comprehensive searches instead of 4 sequential
-            const combinedQuery = `("real estate investment firm" OR "family office" OR "private equity real estate" OR "real estate asset management") ${input.input_as_text} equity Canada -debt -lender -mortgage`;
+            // ENHANCED: Use 4 distinct keyword searches for comprehensive coverage
+            // Each search should return multiple pages of results (not just 10)
+            const searchStrategies = [
+                `"real estate investment firm" ${input.input_as_text} equity Canada -debt -lender`,
+                `"family office" real estate ${input.input_as_text} Canada equity investment`,
+                `"private equity" real estate ${input.input_as_text} Canada acquisitions development`,
+                `"real estate capital" OR "real estate fund" ${input.input_as_text} Canada equity partner`
+            ];
 
-            logStep('Company Finder', `🚀 Optimized Search: Using comprehensive query strategy...`);
+            logStep('Company Finder', `🚀 Multi-Search Strategy: 4 distinct keyword searches for ${companiesNeeded} companies...`);
 
             // Build exclusion list for agent prompt
             const currentlyProcessed = qualifiedCompanies.map(c => c.company_name);
             const allExcluded = [...new Set([...excludedNames, ...currentlyProcessed])];
             const exclusionText = allExcluded.length > 0
-                ? `\nCRITICAL: EXCLUDE these previously researched companies: ${allExcluded.slice(0, 20).join(', ')}${allExcluded.length > 20 ? '... and ' + (allExcluded.length - 20) + ' more' : ''}.`
+                ? `\n\nCRITICAL EXCLUSIONS - DO NOT INCLUDE:\n${allExcluded.slice(0, 30).join(', ')}${allExcluded.length > 30 ? `\n...and ${allExcluded.length - 30} more previously researched companies` : ''}`
                 : '';
 
-            const turboPrompt = `
-                [SYSTEM COMMAND]: Use your 'web_search' tool to find real estate investment firms.
-                
-                SEARCH QUERY: "${combinedQuery}"
-                
-                INSTRUCTIONS:
-                1. Execute 1-2 focused searches using the query above.
-                2. Look for firms that are equity investors (LPs, Co-GPs, Family Offices).
-                3. Extract exactly ${companiesNeeded} relevant firms.
-                4. EXCLUDE: Debt lenders, mortgage brokers, purely debt-focused firms.${exclusionText}
-                5. Return results as JSON list.
-                
-                SPEED: Prioritize speed. If you find ${companiesNeeded} good matches quickly, return them immediately.
-            `;
+            const searchPrompt = `
+[SYSTEM DIRECTIVE]: You are a Company Discovery Agent tasked with finding ${companiesNeeded} real estate investment firms.
 
-            const finderInput = [{ role: "user", content: [{ type: "input_as_text", text: turboPrompt }] }];
+SEARCH EXECUTION PROTOCOL:
+1. Execute ALL 4 searches below using your 'web_search' tool
+2. For EACH search, request multiple result pages (aim for 20-30 results per search)
+3. You should perform ~4-8 total web_search calls to gather comprehensive results
+
+SEARCH QUERIES (execute ALL):
+Strategy A: ${searchStrategies[0]}
+Strategy B: ${searchStrategies[1]}
+Strategy C: ${searchStrategies[2]}
+Strategy D: ${searchStrategies[3]}
+
+WEBSITE INVESTIGATION PROTOCOL:
+After collecting search results:
+1. Visit the websites of promising companies (aim for 20-40 site visits)
+2. Look for these pages: About Us, Investment Criteria, Portfolio, Team
+3. Extract: Company name, website, investment focus, equity vs debt
+4. Prioritize companies that clearly state "equity investment" or "joint venture"
+
+QUALIFICATION CRITERIA:
+✅ INCLUDE: Equity investors, LPs, Co-GPs, Family Offices, Real Estate Funds
+❌ EXCLUDE: Debt lenders, mortgage brokers, REITs, property managers${exclusionText}
+
+TARGET: Return exactly ${companiesNeeded} qualified companies
+OUTPUT: JSON list with company_name, website, capital_role, description
+
+SPEED vs ACCURACY: Accuracy is priority. Take time to visit websites and verify they match criteria.
+`;
+
+            const finderInput = [{ role: "user", content: [{ type: "input_as_text", text: searchPrompt }] }];
 
             // Add timeout and timing instrumentation
             const AGENT_TIMEOUT_MS = 120000; // 2 minutes max
