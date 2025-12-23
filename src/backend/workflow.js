@@ -430,7 +430,7 @@ OUTPUT: JSON list with company_name, website, capital_role, description
 SPEED vs ACCURACY: Accuracy is priority. Take time to visit websites and verify they match criteria.
 `;
 
-            const finderInput = [{ role: "user", content: [{ type: "input_as_text", text: searchPrompt }] }];
+            const finderInput = [{ role: "user", content: [{ type: "text", text: searchPrompt }] }];
 
             // Add timeout and timing instrumentation
             const AGENT_TIMEOUT_MS = 120000; // 2 minutes max
@@ -462,7 +462,7 @@ SPEED vs ACCURACY: Accuracy is priority. Take time to visit websites and verify 
             logStep('Company Finder', `Found ${finderResults.length} candidates. Profiling...`);
 
             // 2. Profiler
-            const profilerInput = [{ role: "user", content: [{ type: "input_text", text: JSON.stringify({ results: finderResults }) }] }];
+            const profilerInput = [{ role: "user", content: [{ type: "text", text: JSON.stringify({ results: finderResults }) }] }];
             const PROFILER_TIMEOUT_MS = 90000; // 1.5 minutes
             const profilerRes = await logTiming('Company Profiler Agent', logStep)(async () => {
                 return await retryWithBackoff(() =>
@@ -799,7 +799,7 @@ SPEED vs ACCURACY: Accuracy is priority. Take time to visit websites and verify 
 
         // 4. Outreach Creator
         logStep('Outreach Creator', 'Drafting personalized messages...');
-        const outreachInput = [{ role: "user", content: [{ type: "input_text", text: JSON.stringify({ leads: allLeads }) }] }];
+        const outreachInput = [{ role: "user", content: [{ type: "text", text: JSON.stringify({ leads: allLeads }) }] }];
 
         const outreachRes = await retryWithBackoff(() => runner.run(outreachCreator, outreachInput));
         if (!outreachRes.finalOutput) throw new Error("Outreach Creator failed");
@@ -890,7 +890,7 @@ export const enrichLeadWithPhone = async (lead) => {
 
     const runner = new Runner();
     const result = await runner.run(enricherAgent, [
-        { role: "user", content: [{ type: "input_text", text: "Enrich this person with phone numbers." }] }
+        { role: "user", content: [{ type: "text", text: "Enrich this person with phone numbers." }] }
     ]);
 
     return result.finalOutput?.phone_numbers || [];
