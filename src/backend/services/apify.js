@@ -21,8 +21,8 @@ export const buildPipelineLabsPayload = (companyNames, filters = {}) => {
     let personTitleIncludes = [...ALLOWED_PERSON_TITLES];
     let personTitleExtraIncludes = [...ALLOWED_EXTRA_TITLES];
     let companyEmployeeSizeIncludes = [
-        "Self-employed", "1-10", "11-20", "21-50", "51-100", "201-500", "501-1000",
-        "1001-2000", "5001-10000", "10001+"
+        "1-10", "11-20", "21-50", "51-100", "101-200", "201-500", "501-1000",
+        "1001-2000", "2001-5000", "5001-10000", "10001+"
     ];
 
     let companyLocationCountryIncludes = filters.countries || ["United States", "Canada"];

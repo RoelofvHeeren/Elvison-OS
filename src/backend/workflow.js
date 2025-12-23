@@ -630,7 +630,7 @@ SPEED vs ACCURACY: Accuracy is priority. Take time to visit websites and verify 
                         for (const [domain, companyLeads] of Object.entries(leadsByCompany)) {
                             // Limit to maxLeadsPerCompany
                             const limitedLeads = companyLeads.slice(0, maxLeadsPerCompany);
-                            allLeads.push(...limitedLeads);
+                            globalLeads.push(...limitedLeads);
 
                             // Track this company
                             const company = qualifiedCompanies.find(c => c.domain === domain || c.company_name === companyLeads[0].company_name);
@@ -670,7 +670,7 @@ SPEED vs ACCURACY: Accuracy is priority. Take time to visit websites and verify 
                         }
 
                         // Update total leads collected
-                        totalLeadsCollected = allLeads.length;
+                        totalLeadsCollected = globalLeads.length;
                         logStep('Lead Finder', `📊 Total collected: ${totalLeadsCollected}/${targetLeads} leads from ${Object.keys(leadsByCompany).length} companies.`);
 
                     } else {
@@ -682,7 +682,7 @@ SPEED vs ACCURACY: Accuracy is priority. Take time to visit websites and verify 
                 }
 
                 // RETRY MECHANISM: If 0 leads found, try again with relaxed filters
-                if (allLeads.length === 0 && config.filters && !config.filters.fetchAll) {
+                if (globalLeads.length === 0 && config.filters && !config.filters.fetchAll) {
                     logStep('Lead Finder', '⚠️ strict search yielded 0 leads. Retrying with UNRESTRICTED search (fetching anyone)...');
 
                     try {
@@ -752,7 +752,7 @@ SPEED vs ACCURACY: Accuracy is priority. Take time to visit websites and verify 
                             let retryTracked = [];
                             for (const [domain, companyLeads] of Object.entries(retryLeadsByCompany)) {
                                 const limitedLeads = companyLeads.slice(0, maxLeadsPerCompany);
-                                allLeads.push(...limitedLeads);
+                                globalLeads.push(...limitedLeads);
 
                                 const company = qualifiedCompanies.find(c => c.domain === domain || c.company_name === companyLeads[0].company_name);
                                 if (company) {
@@ -774,7 +774,7 @@ SPEED vs ACCURACY: Accuracy is priority. Take time to visit websites and verify 
                                 }
                             }
 
-                            totalLeadsCollected = allLeads.length;
+                            totalLeadsCollected = globalLeads.length;
                             logStep('Lead Finder', `Retry success! Found ${totalLeadsCollected} total leads.`);
 
                         }
