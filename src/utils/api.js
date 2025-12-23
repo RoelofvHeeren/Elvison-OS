@@ -1,5 +1,27 @@
 import client from '../api/client'
 
+// --- AUTHENTICATION ---
+
+export const signup = async (email, password, name) => {
+  const { data } = await client.post('/api/auth/signup', { email, password, name })
+  return data
+}
+
+export const login = async (email, password) => {
+  const { data } = await client.post('/api/auth/login', { email, password })
+  return data
+}
+
+export const logout = async () => {
+  const { data } = await client.post('/api/auth/logout')
+  return data
+}
+
+export const getCurrentUser = async () => {
+  const { data } = await client.get('/api/auth/me')
+  return data
+}
+
 // --- LEADS & CRM ---
 
 export const fetchLeads = async () => {

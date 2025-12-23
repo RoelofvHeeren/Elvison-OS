@@ -1,8 +1,12 @@
 import express from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
+import cookieParser from 'cookie-parser'
+import bcrypt from 'bcryptjs'
 import { query } from './db/index.js'
 import { runAgentWorkflow } from './src/backend/workflow.js'
+import { generateToken } from './src/backend/session-utils.js'
+import { requireAuth, optionalAuth } from './src/backend/auth-middleware.js'
 import path from 'path'
 import { fileURLToPath } from 'url'
 
@@ -11,8 +15,13 @@ dotenv.config()
 const app = express()
 const port = process.env.PORT || 3001
 
-app.use(cors())
+// CORS configuration to allow credentials
+app.use(cors({
+    origin: process.env.VITE_API_BASE_URL || 'http://localhost:5173',
+    credentials: true
+}))
 app.use(express.json())
+app.use(cookieParser())
 
 // --- Static Files ---
 const __filename = fileURLToPath(import.meta.url)
@@ -27,10 +36,164 @@ app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() })
 })
 
-// Get Agent Prompts
-app.get('/api/agent-prompts', async (req, res) => {
+// --- AUTHENTICATION ENDPOINTS ---
+
+// Sign Up
+app.post('/api/auth/signup', async (req, res) => {
+    const { email, password, name } = req.body
+
+    if (!email || !password) {
+        return res.status(400).json({ error: 'Email and password are required' })
+    }
+
     try {
-        const { rows } = await query('SELECT * FROM agent_prompts')
+        // Check if user already exists
+        const existingUser = await query('SELECT id FROM users WHERE LOWER(email) = LOWER($1)', [email])
+        if (existingUser.rows.length > 0) {
+            return res.status(400).json({ error: 'Email already registered' })
+        }
+
+        // Hash password
+        const passwordHash = await bcrypt.hash(password, 10)
+
+        // Create user
+        const { rows } = await query(
+            `INSERT INTO users (email, name, password_hash, role, onboarding_completed, credits)
+             VALUES ($1, $2, $3, 'user', FALSE, 500000)
+             RETURNING id, email, name, role, onboarding_completed`,
+            [email.toLowerCase(), name || email.split('@')[0], passwordHash]
+        )
+
+        const user = rows[0]
+
+        // Generate JWT token
+        const token = generateToken(user)
+
+        // Set httpOnly cookie
+        res.cookie('token', token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+        })
+
+        res.json({
+            success: true,
+            user: {
+                id: user.id,
+                email: user.email,
+                name: user.name,
+                role: user.role,
+                onboardingCompleted: user.onboarding_completed
+            }
+        })
+    } catch (err) {
+        console.error('Signup error:', err)
+        res.status(500).json({ error: 'Failed to create account' })
+    }
+})
+
+// Log In
+app.post('/api/auth/login', async (req, res) => {
+    const { email, password } = req.body
+
+    if (!email || !password) {
+        return res.status(400).json({ error: 'Email and password are required' })
+    }
+
+    try {
+        // Find user
+        const { rows } = await query(
+            'SELECT id, email, name, role, password_hash, onboarding_completed FROM users WHERE LOWER(email) = LOWER($1)',
+            [email]
+        )
+
+        if (rows.length === 0) {
+            return res.status(401).json({ error: 'Invalid email or password' })
+        }
+
+        const user = rows[0]
+
+        // Check if password_hash is null (owner account before password set)
+        if (!user.password_hash) {
+            return res.status(403).json({
+                error: 'Account requires password setup',
+                code: 'PASSWORD_SETUP_REQUIRED',
+                message: 'Please contact administrator to set up your password'
+            })
+        }
+
+        // Verify password
+        const isValid = await bcrypt.compare(password, user.password_hash)
+        if (!isValid) {
+            return res.status(401).json({ error: 'Invalid email or password' })
+        }
+
+        // Generate JWT token
+        const token = generateToken(user)
+
+        // Set httpOnly cookie
+        res.cookie('token', token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+        })
+
+        res.json({
+            success: true,
+            user: {
+                id: user.id,
+                email: user.email,
+                name: user.name,
+                role: user.role,
+                onboardingCompleted: user.onboarding_completed
+            }
+        })
+    } catch (err) {
+        console.error('Login error:', err)
+        res.status(500).json({ error: 'Failed to log in' })
+    }
+})
+
+// Log Out
+app.post('/api/auth/logout', (req, res) => {
+    res.clearCookie('token')
+    res.json({ success: true })
+})
+
+// Get Current User
+app.get('/api/auth/me', requireAuth, async (req, res) => {
+    try {
+        const { rows } = await query(
+            'SELECT id, email, name, role, onboarding_completed, onboarding_state, credits FROM users WHERE id = $1',
+            [req.userId]
+        )
+
+        if (rows.length === 0) {
+            return res.status(404).json({ error: 'User not found' })
+        }
+
+        const user = rows[0]
+        res.json({
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            role: user.role,
+            onboardingCompleted: user.onboarding_completed,
+            onboardingState: user.onboarding_state || {},
+            credits: user.credits
+        })
+    } catch (err) {
+        console.error('Get user error:', err)
+        res.status(500).json({ error: 'Failed to fetch user data' })
+    }
+})
+
+// Get Agent Prompts
+app.get('/api/agent-prompts', requireAuth, async (req, res) => {
+    try {
+        const { rows } = await query('SELECT * FROM agent_prompts WHERE user_id = $1', [req.userId])
         const prompts = rows.reduce((acc, row) => {
             acc[row.agent_id] = row.system_prompt
             return acc
@@ -43,20 +206,20 @@ app.get('/api/agent-prompts', async (req, res) => {
 })
 
 // Save Agent Prompts
-app.post('/api/agent-prompts', async (req, res) => {
+app.post('/api/agent-prompts', requireAuth, async (req, res) => {
     const { prompts } = req.body // Expects array of { id, name, prompt }
     if (!Array.isArray(prompts)) return res.status(400).json({ error: 'Invalid data format' })
 
     try {
         await query('BEGIN')
         for (const p of prompts) {
-            // Upsert
+            // Upsert with user_id
             await query(
-                `INSERT INTO agent_prompts (agent_id, name, system_prompt, config) 
-                 VALUES ($1, $2, $3, $4)
-                 ON CONFLICT (agent_id) 
+                `INSERT INTO agent_prompts (agent_id, name, system_prompt, config, user_id) 
+                 VALUES ($1, $2, $3, $4, $5)
+                 ON CONFLICT (agent_id, user_id) 
                  DO UPDATE SET system_prompt = $3, name = $2, config = CASE WHEN $4::jsonb IS NOT NULL THEN $4 ELSE agent_prompts.config END, updated_at = NOW()`,
-                [p.id, p.name, p.prompt, p.config || {}]
+                [p.id, p.name, p.prompt, p.config || {}, req.userId]
             )
         }
         await query('COMMIT')
@@ -112,9 +275,9 @@ Rewrite the system instruction to be professional, robust, and optimized for an 
 })
 
 // 2. Get Agent Configs (For UI)
-app.get('/api/agents/config', async (req, res) => {
+app.get('/api/agents/config', requireAuth, async (req, res) => {
     try {
-        const { rows } = await query("SELECT * FROM agent_prompts")
+        const { rows } = await query("SELECT * FROM agent_prompts WHERE user_id = $1", [req.userId])
         const configs = {}
 
         rows.forEach(row => {
@@ -133,16 +296,10 @@ app.get('/api/agents/config', async (req, res) => {
 })
 
 // 3. Save Agent Config (From UI)
-app.post('/api/agents/config', async (req, res) => {
+app.post('/api/agents/config', requireAuth, async (req, res) => {
     const { agentKey, instructions, enabledToolIds, linkedFileIds } = req.body
 
     try {
-        // We need to fetch existing config first to merge, or use jsonb_set, 
-        // but simpler here: fetch current row to get name/desc if we need to insert new.
-        // Actually, onboarding creates the row. If it doesn't exist, we might fail 
-        // or need default name.
-
-        // Let's assume row exists from onboarding, or use generic name.
         const name = agentKey.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
 
         const configObj = {
@@ -151,13 +308,13 @@ app.post('/api/agents/config', async (req, res) => {
         }
 
         await query(
-            `INSERT INTO agent_prompts (agent_id, name, system_prompt, config) 
-             VALUES ($1, $2, $3, $4)
-             ON CONFLICT (agent_id) DO UPDATE SET 
+            `INSERT INTO agent_prompts (agent_id, name, system_prompt, config, user_id) 
+             VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT (agent_id, user_id) DO UPDATE SET 
                 system_prompt = EXCLUDED.system_prompt,
                 config = agent_prompts.config || EXCLUDED.config,
                 updated_at = NOW()`,
-            [agentKey, name, instructions, configObj]
+            [agentKey, name, instructions, configObj, req.userId]
         )
 
         res.json({ success: true })
@@ -170,7 +327,7 @@ app.post('/api/agents/config', async (req, res) => {
 // --- Knowledge Base & Files ---
 
 // 1. Create Internal Strategy Guide & Vector Store
-app.post('/api/knowledge/create-internal', async (req, res) => {
+app.post('/api/knowledge/create-internal', requireAuth, async (req, res) => {
     const { answers, agentConfigs } = req.body
 
     try {
@@ -189,7 +346,7 @@ app.post('/api/knowledge/create-internal', async (req, res) => {
 
         // 2. Get or Create Vector Store 
         let vectorStoreId = null
-        const { rows } = await query("SELECT value FROM system_config WHERE key = 'default_vector_store'")
+        const { rows } = await query("SELECT value FROM system_config WHERE user_id = $1 AND key = 'default_vector_store'", [req.userId])
 
         if (rows.length > 0 && rows[0].value?.id) {
             vectorStoreId = rows[0].value.id
@@ -216,9 +373,9 @@ app.post('/api/knowledge/create-internal', async (req, res) => {
 
             // Save to DB
             await query(
-                `INSERT INTO system_config (key, value) VALUES ($1, $2)
-                 ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()`,
-                ['default_vector_store', { id: vectorStoreId }]
+                `INSERT INTO system_config (key, value, user_id) VALUES ($1, $2, $3)
+                 ON CONFLICT (user_id, key) DO UPDATE SET value = $2, updated_at = NOW()`,
+                ['default_vector_store', { id: vectorStoreId }, req.userId]
             )
         }
 
@@ -336,10 +493,10 @@ app.post('/api/knowledge/create-internal', async (req, res) => {
 
 
 // 5. List Knowledge Base Files
-app.get('/api/knowledge/files', async (req, res) => {
+app.get('/api/knowledge/files', requireAuth, async (req, res) => {
     try {
-        // Get Default Vector Store ID
-        const { rows } = await query("SELECT value FROM system_config WHERE key = 'default_vector_store'")
+        // Get Default Vector Store ID for this user
+        const { rows } = await query("SELECT value FROM system_config WHERE user_id = $1 AND key = 'default_vector_store'", [req.userId])
         if (rows.length === 0 || !rows[0].value?.id) {
             return res.json({ files: [] })
         }
@@ -393,9 +550,9 @@ app.get('/api/knowledge/files', async (req, res) => {
 })
 
 // Get CRM Columns
-app.get('/api/crm-columns', async (req, res) => {
+app.get('/api/crm-columns', requireAuth, async (req, res) => {
     try {
-        const { rows } = await query('SELECT * FROM crm_columns ORDER BY created_at ASC')
+        const { rows } = await query('SELECT * FROM crm_columns WHERE user_id = $1 ORDER BY created_at ASC', [req.userId])
         res.json(rows)
     } catch (err) {
         console.error('Failed to fetch columns:', err)
@@ -404,16 +561,16 @@ app.get('/api/crm-columns', async (req, res) => {
 })
 
 // Save CRM Columns
-app.post('/api/crm-columns', async (req, res) => {
+app.post('/api/crm-columns', requireAuth, async (req, res) => {
     const { columns } = req.body
     if (!Array.isArray(columns)) return res.status(400).json({ error: 'Invalid data' })
     try {
         await query('BEGIN')
-        await query('DELETE FROM crm_columns')
+        await query('DELETE FROM crm_columns WHERE user_id = $1', [req.userId])
         for (const col of columns) {
             await query(
-                `INSERT INTO crm_columns (column_name, column_type, is_required) VALUES ($1, $2, $3)`,
-                [col.name, col.type, col.required]
+                `INSERT INTO crm_columns (column_name, column_type, is_required, user_id) VALUES ($1, $2, $3, $4)`,
+                [col.name, col.type, col.required, req.userId]
             )
         }
         await query('COMMIT')
@@ -428,9 +585,9 @@ app.post('/api/crm-columns', async (req, res) => {
 // --- LEADS & CRM ---
 
 // Get Leads
-app.get('/api/leads', async (req, res) => {
+app.get('/api/leads', requireAuth, async (req, res) => {
     try {
-        const { rows } = await query('SELECT * FROM leads ORDER BY created_at DESC LIMIT 100')
+        const { rows } = await query('SELECT * FROM leads WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100', [req.userId])
         res.json(rows)
     } catch (err) {
         console.error('Failed to fetch leads:', err)
@@ -439,7 +596,7 @@ app.get('/api/leads', async (req, res) => {
 })
 
 // Create/Update Lead
-app.post('/api/leads', async (req, res) => {
+app.post('/api/leads', requireAuth, async (req, res) => {
     const { leads } = req.body // Array of leads
     if (!Array.isArray(leads)) return res.status(400).json({ error: 'Invalid data' })
 
@@ -447,8 +604,8 @@ app.post('/api/leads', async (req, res) => {
         await query('BEGIN')
         for (const lead of leads) {
             await query(
-                `INSERT INTO leads (company_name, person_name, email, job_title, linkedin_url, status, custom_data, source)
-                 VALUES ($1, $2, $3, $4, $5, 'NEW', $6, $7)`,
+                `INSERT INTO leads (company_name, person_name, email, job_title, linkedin_url, status, custom_data, source, user_id)
+                 VALUES ($1, $2, $3, $4, $5, 'NEW', $6, $7, $8)`,
                 [
                     lead.company_name,
                     lead.first_name ? `${lead.first_name} ${lead.last_name}` : lead.person_name,
@@ -456,7 +613,8 @@ app.post('/api/leads', async (req, res) => {
                     lead.title,
                     lead.linkedin_url,
                     JSON.stringify(lead.custom_data || {}),
-                    'Automation'
+                    'Automation',
+                    req.userId
                 ]
             )
         }
@@ -470,10 +628,10 @@ app.post('/api/leads', async (req, res) => {
 })
 
 // Delete Lead
-app.delete('/api/leads/:id', async (req, res) => {
+app.delete('/api/leads/:id', requireAuth, async (req, res) => {
     const { id } = req.params
     try {
-        await query('DELETE FROM leads WHERE id = $1', [id])
+        await query('DELETE FROM leads WHERE id = $1 AND user_id = $2', [id, req.userId])
         res.json({ success: true })
     } catch (err) {
         console.error('Failed to delete lead:', err)
@@ -482,9 +640,9 @@ app.delete('/api/leads/:id', async (req, res) => {
 })
 
 // Clear All Leads
-app.post('/api/leads/clear', async (req, res) => {
+app.post('/api/leads/clear', requireAuth, async (req, res) => {
     try {
-        await query('DELETE FROM leads')
+        await query('DELETE FROM leads WHERE user_id = $1', [req.userId])
         res.json({ success: true })
     } catch (err) {
         console.error('Failed to clear leads:', err)
@@ -495,7 +653,7 @@ app.post('/api/leads/clear', async (req, res) => {
 // --- WORKFLOW LOGGING ---
 
 // Get Workflow Runs
-app.get('/api/runs', async (req, res) => {
+app.get('/api/runs', requireAuth, async (req, res) => {
     try {
         // Fetch runs with their latest result (if any)
         const { rows } = await query(`
@@ -504,9 +662,10 @@ app.get('/api/runs', async (req, res) => {
                 ar.output_data 
             FROM workflow_runs wr
             LEFT JOIN agent_results ar ON wr.id = ar.run_id
+            WHERE wr.user_id = $1
             ORDER BY wr.started_at DESC
             LIMIT 50
-        `)
+        `, [req.userId])
         res.json(rows)
     } catch (err) {
         console.error('Failed to fetch runs:', err)
@@ -515,12 +674,12 @@ app.get('/api/runs', async (req, res) => {
 })
 
 // Start Run
-app.post('/api/runs/start', async (req, res) => {
+app.post('/api/runs/start', requireAuth, async (req, res) => {
     const { agent_id, metadata } = req.body
     try {
         const { rows } = await query(
-            `INSERT INTO workflow_runs (agent_id, status, started_at, metadata) VALUES ($1, 'RUNNING', NOW(), $2) RETURNING id`,
-            [agent_id, metadata]
+            `INSERT INTO workflow_runs (agent_id, status, started_at, metadata, user_id) VALUES ($1, 'RUNNING', NOW(), $2, $3) RETURNING id`,
+            [agent_id, metadata, req.userId]
         )
         res.json({ run_id: rows[0].id })
     } catch (err) {
@@ -698,7 +857,7 @@ app.get('/api/integrations/apify/status/:runId', async (req, res) => {
 });
 
 // Trigger Analysis Run (SSE Streaming)
-app.post('/api/agents/run', async (req, res) => {
+app.post('/api/agents/run', requireAuth, async (req, res) => {
     const { prompt, vectorStoreId, agentConfigs, mode, filters } = req.body
     console.log(`Starting live workflow (Mode: ${mode || 'default'}) with prompt:`, prompt)
 
@@ -713,8 +872,8 @@ app.post('/api/agents/run', async (req, res) => {
     let runId = null
     try {
         const { rows } = await query(
-            `INSERT INTO workflow_runs (agent_id, status, started_at, metadata) VALUES ('main_workflow', 'RUNNING', NOW(), $1) RETURNING id`,
-            [JSON.stringify({ prompt, vectorStoreId, mode: mode || 'default' })]
+            `INSERT INTO workflow_runs (agent_id, status, started_at, metadata, user_id) VALUES ('main_workflow', 'RUNNING', NOW(), $1, $2) RETURNING id`,
+            [JSON.stringify({ prompt, vectorStoreId, mode: mode || 'default' }), req.userId]
         )
         runId = rows[0].id
         // Send initial connection confirmation
@@ -834,7 +993,7 @@ const initDB = async () => {
 // Enrich Lead (Phone)
 import { enrichLeadWithPhone } from './src/backend/workflow.js'
 
-app.post('/api/leads/:id/enrich-phone', async (req, res) => {
+app.post('/api/leads/:id/enrich-phone', requireAuth, async (req, res) => {
     const { id } = req.params
     try {
         // 1. Get Lead
@@ -876,7 +1035,7 @@ import { parse } from 'csv-parse/sync'
 
 const upload = multer({ storage: multer.memoryStorage() })
 
-app.post('/api/leads/import', upload.single('file'), async (req, res) => {
+app.post('/api/leads/import', requireAuth, upload.single('file'), async (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' })
 
     try {
@@ -908,8 +1067,8 @@ app.post('/api/leads/import', upload.single('file'), async (req, res) => {
         await query('BEGIN')
         for (const lead of leads) {
             await query(
-                `INSERT INTO leads (company_name, person_name, email, job_title, linkedin_url, status, custom_data, source)
-                 VALUES ($1, $2, $3, $4, $5, 'NEW', $6, $7)
+                `INSERT INTO leads (company_name, person_name, email, job_title, linkedin_url, status, custom_data, source, user_id)
+                 VALUES ($1, $2, $3, $4, $5, 'NEW', $6, $7, $8)
                  ON CONFLICT (email) DO NOTHING`, // Avoid duplicates by email if unique constraint exists (or just insert)
                 [
                     lead.company_name,
@@ -918,7 +1077,8 @@ app.post('/api/leads/import', upload.single('file'), async (req, res) => {
                     lead.title,
                     lead.linkedin_url,
                     JSON.stringify(lead.custom_data),
-                    lead.source
+                    lead.source,
+                    req.userId
                 ]
             )
         }
