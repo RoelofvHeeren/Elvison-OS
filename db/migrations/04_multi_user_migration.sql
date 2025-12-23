@@ -1,25 +1,26 @@
--- Multi-User Migration
--- Adds user authentication and per-user data isolation
+-- Multi-User Migration (Safe version for production)
+-- Handles existing schema gracefully
 
--- Step 1: Update users table with required columns
+-- Step 1: Add missing columns to users table if they don't exist
+ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(50) DEFAULT 'user';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_state JSONB DEFAULT '{}'::jsonb;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_completed BOOLEAN DEFAULT FALSE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+ALTER TABLE users ADD COLUMN IF NOT EXISTS credits INTEGER DEFAULT 500000;
 
 -- Step 2: Create owner account (using environment variable or default)
--- Note: Password will be set on first login via password reset flow
 INSERT INTO users (email, name, role, password_hash, onboarding_completed, credits)
 VALUES (
     COALESCE(NULLIF(current_setting('app.owner_email', true), ''), 'owner@elvison.ai'),
     COALESCE(NULLIF(current_setting('app.owner_name', true), ''), 'System Owner'),
     'admin',
-    NULL, -- Will be set on first login
+    NULL,
     TRUE,
     500000
 )
 ON CONFLICT (email) DO UPDATE 
-SET onboarding_completed = TRUE
+SET onboarding_completed = TRUE, role = 'admin'
 RETURNING id;
 
 -- Step 3: Add user_id columns to all data tables
@@ -30,19 +31,19 @@ ALTER TABLE workflow_runs ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users
 
 -- Step 4: Migrate existing data to owner account
 UPDATE agent_prompts 
-SET user_id = (SELECT id FROM users WHERE email = COALESCE(NULLIF(current_setting('app.owner_email', true), ''), 'owner@elvison.ai'))
+SET user_id = (SELECT id FROM users WHERE email = COALESCE(NULLIF(current_setting('app.owner_email', true), ''), 'owner@elvison.ai') LIMIT 1)
 WHERE user_id IS NULL;
 
 UPDATE leads 
-SET user_id = (SELECT id FROM users WHERE email = COALESCE(NULLIF(current_setting('app.owner_email', true), ''), 'owner@elvison.ai'))
+SET user_id = (SELECT id FROM users WHERE email = COALESCE(NULLIF(current_setting('app.owner_email', true), ''), 'owner@elvison.ai') LIMIT 1)
 WHERE user_id IS NULL;
 
 UPDATE crm_columns 
-SET user_id = (SELECT id FROM users WHERE email = COALESCE(NULLIF(current_setting('app.owner_email', true), ''), 'owner@elvison.ai'))
+SET user_id = (SELECT id FROM users WHERE email = COALESCE(NULLIF(current_setting('app.owner_email', true), ''), 'owner@elvison.ai') LIMIT 1)
 WHERE user_id IS NULL;
 
 UPDATE workflow_runs 
-SET user_id = (SELECT id FROM users WHERE email = COALESCE(NULLIF(current_setting('app.owner_email', true), ''), 'owner@elvison.ai'))
+SET user_id = (SELECT id FROM users WHERE email = COALESCE(NULLIF(current_setting('app.owner_email', true), ''), 'owner@elvison.ai') LIMIT 1)
 WHERE user_id IS NULL;
 
 -- Step 5: Make user_id NOT NULL after migration
@@ -52,7 +53,7 @@ ALTER TABLE crm_columns ALTER COLUMN user_id SET NOT NULL;
 ALTER TABLE workflow_runs ALTER COLUMN user_id SET NOT NULL;
 
 -- Step 6: Rename global system_config table and create per-user version
-ALTER TABLE system_config RENAME TO system_config_global;
+ALTER TABLE IF EXISTS system_config RENAME TO system_config_global;
 
 CREATE TABLE IF NOT EXISTS system_config (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -67,7 +68,7 @@ CREATE TABLE IF NOT EXISTS system_config (
 -- Migrate existing system_config data to owner
 INSERT INTO system_config (user_id, key, value, updated_at)
 SELECT 
-    (SELECT id FROM users WHERE email = COALESCE(NULLIF(current_setting('app.owner_email', true), ''), 'owner@elvison.ai')),
+    (SELECT id FROM users WHERE email = COALESCE(NULLIF(current_setting('app.owner_email', true), ''), 'owner@elvison.ai') LIMIT 1),
     key,
     value,
     updated_at
@@ -83,13 +84,16 @@ CREATE INDEX IF NOT EXISTS idx_system_config_user_id ON system_config(user_id);
 CREATE INDEX IF NOT EXISTS idx_system_config_user_key ON system_config(user_id, key);
 
 -- Step 7b: Add unique constraint for agent_prompts (agent_id + user_id)
--- First drop the old unique constraint
-ALTER TABLE agent_prompts DROP CONSTRAINT IF EXISTS agent_prompts_agent_id_key;
--- Add new compound unique constraint
+DO $$ 
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'agent_prompts_agent_id_key') THEN
+        ALTER TABLE agent_prompts DROP CONSTRAINT agent_prompts_agent_id_key;
+    END IF;
+END $$;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_prompts_agent_user ON agent_prompts(agent_id, user_id);
 
 -- Step 8: Add unique constraint to prevent duplicate email addresses (case-insensitive)
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_lower ON users(LOWER(email));
 
 -- Migration complete
--- Note: Owner account password must be set via password reset flow on first login
+SELECT 'Multi-user migration completed successfully!' AS result;
