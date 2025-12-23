@@ -63,7 +63,35 @@ const OutreachCreatorSchema = z.object({
 // --- Helper Functions ---
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-const retryWithBackoff = async (fn, retries = 3, baseDelay = 1000) => {
+// Timeout wrapper to prevent infinite hangs
+const runWithTimeout = async (fn, timeoutMs, label = 'Operation') => {
+    return Promise.race([
+        fn(),
+        new Promise((_, reject) =>
+            setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs)
+        )
+    ]);
+};
+
+// Timing instrumentation wrapper
+const logTiming = (label, logStep) => {
+    return async (fn) => {
+        const start = Date.now();
+        logStep('Timing', `⏱ ${label} started...`);
+        try {
+            const result = await fn();
+            const duration = ((Date.now() - start) / 1000).toFixed(2);
+            logStep('Timing', `✅ ${label} completed in ${duration}s`);
+            return result;
+        } catch (err) {
+            const duration = ((Date.now() - start) / 1000).toFixed(2);
+            logStep('Timing', `❌ ${label} failed after ${duration}s: ${err.message}`);
+            throw err;
+        }
+    };
+};
+
+const retryWithBackoff = async (fn, retries = 2, baseDelay = 500) => {
     try {
         return await fn();
     } catch (error) {
@@ -353,14 +381,10 @@ export const runAgentWorkflow = async (input, config) => {
             // TURBO MODE: Parallel Search Execution via Agent
             // We command the agent to run multiple searches to broaden the net.
 
-            const queries = [
-                `"Real estate investment firm" ${input.input_as_text} -debt -lender`,
-                `"Family office" real estate investment ${input.input_as_text}`,
-                `"Private equity real estate" ${input.input_as_text} acquisitions`,
-                `"Real estate asset management" ${input.input_as_text} Canada`
-            ];
+            // OPTIMIZED: Use 1-2 comprehensive searches instead of 4 sequential
+            const combinedQuery = `("real estate investment firm" OR "family office" OR "private equity real estate" OR "real estate asset management") ${input.input_as_text} equity Canada -debt -lender -mortgage`;
 
-            logStep('Company Finder', `🚀 Turbo Mode: Commencing 4 parallel search strategies...`);
+            logStep('Company Finder', `🚀 Optimized Search: Using comprehensive query strategy...`);
 
             // Build exclusion list for agent prompt
             const currentlyProcessed = qualifiedCompanies.map(c => c.company_name);
@@ -370,24 +394,33 @@ export const runAgentWorkflow = async (input, config) => {
                 : '';
 
             const turboPrompt = `
-                [SYSTEM COMMAND]: EXECUTE THE FOLLOWING 4 SEARCHES IMMEDIATELY using your 'web_search' tool.
-                Do not stop after the first one. Use the tool 4 times, or combining queries if smart.
+                [SYSTEM COMMAND]: Use your 'web_search' tool to find real estate investment firms.
                 
-                QUERIES:
-                1. ${queries[0]}
-                2. ${queries[1]}
-                3. ${queries[2]}
-                4. ${queries[3]}
+                SEARCH QUERY: "${combinedQuery}"
                 
-                AFTER SEARCHING:
-                1. Analyze all results.
-                2. Extract exactly ${companiesNeeded} relevant Real Estate Investment Firms.
-                3. Apply CRITICAL CRITERIA (Equity only).${exclusionText}
-                5. Return the JSON list.
+                INSTRUCTIONS:
+                1. Execute 1-2 focused searches using the query above.
+                2. Look for firms that are equity investors (LPs, Co-GPs, Family Offices).
+                3. Extract exactly ${companiesNeeded} relevant firms.
+                4. EXCLUDE: Debt lenders, mortgage brokers, purely debt-focused firms.${exclusionText}
+                5. Return results as JSON list.
+                
+                SPEED: Prioritize speed. If you find ${companiesNeeded} good matches quickly, return them immediately.
             `;
 
             const finderInput = [{ role: "user", content: [{ type: "input_as_text", text: turboPrompt }] }];
-            const finderRes = await retryWithBackoff(() => runner.run(companyFinder, finderInput));
+
+            // Add timeout and timing instrumentation
+            const AGENT_TIMEOUT_MS = 120000; // 2 minutes max
+            const finderRes = await logTiming('Company Finder Agent', logStep)(async () => {
+                return await retryWithBackoff(() =>
+                    runWithTimeout(
+                        () => runner.run(companyFinder, finderInput),
+                        AGENT_TIMEOUT_MS,
+                        'Company Finder Agent'
+                    )
+                );
+            });
 
             if (!finderRes.finalOutput) {
                 logStep('Company Finder', 'Agent failed to return output. Retrying...');
@@ -408,7 +441,16 @@ export const runAgentWorkflow = async (input, config) => {
 
             // 2. Profiler
             const profilerInput = [{ role: "user", content: [{ type: "input_text", text: JSON.stringify({ results: finderResults }) }] }];
-            const profilerRes = await retryWithBackoff(() => runner.run(companyProfiler, profilerInput));
+            const PROFILER_TIMEOUT_MS = 90000; // 1.5 minutes
+            const profilerRes = await logTiming('Company Profiler Agent', logStep)(async () => {
+                return await retryWithBackoff(() =>
+                    runWithTimeout(
+                        () => runner.run(companyProfiler, profilerInput),
+                        PROFILER_TIMEOUT_MS,
+                        'Company Profiler Agent'
+                    )
+                );
+            });
 
             if (!profilerRes.finalOutput) {
                 logStep('Company Profiler', 'Agent failed. Skipping this batch.');
