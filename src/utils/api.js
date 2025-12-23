@@ -22,6 +22,12 @@ export const getCurrentUser = async () => {
   return data
 }
 
+export const completeOnboarding = async () => {
+  const { data } = await client.post('/api/auth/complete-onboarding')
+  return data
+}
+
+
 // --- LEADS & CRM ---
 
 export const fetchLeads = async () => {

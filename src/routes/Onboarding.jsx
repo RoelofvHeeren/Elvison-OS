@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Sparkles, ChevronRight, Check, Rocket, Bot, Edit3, Save, RotateCw, Plus, X, CheckCircle2 } from 'lucide-react'
 import Typewriter from '../components/Typewriter'
-import { saveAgentPrompts, saveCrmColumns, fetchAgentPrompts, fetchCrmColumns, optimizeAgentPrompt, createInternalKnowledgeBase } from '../utils/api'
+import { saveAgentPrompts, saveCrmColumns, fetchAgentPrompts, fetchCrmColumns, optimizeAgentPrompt, createInternalKnowledgeBase, completeOnboarding } from '../utils/api'
+import { useAuth } from '../contexts/AuthContext'
 import VisualColumnEditor from '../components/VisualColumnEditor'
 
 // --- Configuration ---
@@ -721,6 +722,7 @@ const OnboardingSidebar = ({ currentStep, currentAgentIndex, agents }) => {
 
 const Onboarding = () => {
     const navigate = useNavigate()
+    const { user } = useAuth() // Add auth context access
     // --- State ---
     const [isLoaded, setIsLoaded] = useState(false)
     const [step, setStep] = useState('welcome')
@@ -885,8 +887,18 @@ const Onboarding = () => {
             const allAnswers = surveyAnswers
             await createInternalKnowledgeBase(allAnswers)
 
-            // localStorage.removeItem('onboarding_state') // DEBUG: Keep state for user convenience
-            navigate('/connections')
+            // 4. Mark onboarding as complete in backend
+            const response = await completeOnboarding()
+
+            // 5. Update auth context with completed user state
+            if (response.user) {
+                // Force auth context to refresh
+                window.location.href = '/runner' // Hard navigation to ensure route guards see updated state
+            } else {
+                // Fallback to soft navigation
+                localStorage.removeItem('onboarding_state')
+                navigate('/runner')
+            }
         } catch (err) {
             console.error("Launch Error:", err)
             const msg = err.response?.data?.error || err.message || "Unknown error"

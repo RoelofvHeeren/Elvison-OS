@@ -190,6 +190,40 @@ app.get('/api/auth/me', requireAuth, async (req, res) => {
     }
 })
 
+// Complete Onboarding
+app.post('/api/auth/complete-onboarding', requireAuth, async (req, res) => {
+    try {
+        await query(
+            'UPDATE users SET onboarding_completed = TRUE, updated_at = NOW() WHERE id = $1',
+            [req.userId]
+        )
+
+        // Return updated user
+        const { rows } = await query(
+            'SELECT id, email, name, role, onboarding_completed, onboarding_state, credits FROM users WHERE id = $1',
+            [req.userId]
+        )
+
+        const user = rows[0]
+        res.json({
+            success: true,
+            user: {
+                id: user.id,
+                email: user.email,
+                name: user.name,
+                role: user.role,
+                onboardingCompleted: user.onboarding_completed,
+                onboardingState: user.onboarding_state || {},
+                credits: user.credits
+            }
+        })
+    } catch (err) {
+        console.error('Complete onboarding error:', err)
+        res.status(500).json({ error: 'Failed to complete onboarding' })
+    }
+})
+
+
 // Get Agent Prompts
 app.get('/api/agent-prompts', requireAuth, async (req, res) => {
     try {
