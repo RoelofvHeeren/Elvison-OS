@@ -511,33 +511,30 @@ SPEED vs ACCURACY: Accuracy is priority. Take time to visit websites and verify 
             }
         }
 
-        // --- Post-Loop Checks ---
-        if (qualifiedCompanies.length === 0) {
-            throw new Error(`Workflow failed: Could not find any qualified companies after ${attempts} attempts.`);
-        }
+        // --- PHASE 2: LEAD SCRAPING (INSIDE LOOP) ---
+        logStep('Workflow', `📋 Batch ${attempts}: Scraping leads from ${qualifiedCompanies.length} companies...`);
 
-        logStep('Workflow', `Loop complete. Proceeding with ${qualifiedCompanies.length} qualified companies.`);
+        // Initialize variables if not already set (for first iteration)
+        if (!allLeads) var allLeads = [];
+        if (!scrapedCompanyNames) var scrapedCompanyNames = new Set();
 
-        // --- LIST BUILDER MODE ---
-        // If mode is 'list_builder', we stop here and return the companies so the user can export them manually.
-        if (config.mode === 'list_builder') {
-            logStep('Workflow', 'Mode is "List Builder". Skipping enrichment. Returning company list.');
-            return {
-                status: "success",
-                type: "list_builder",
-                companies: qualifiedCompanies,
-                debug: debugLog
-            };
+        // Filter for only NEW companies in this batch
+        const newCompanies = qualifiedCompanies.filter(c => !scrapedCompanyNames.has(c.company_name));
+
+        if (newCompanies.length === 0) {
+            if (allLeads.length < targetLeads) {
+                logStep('Workflow', `⚠️ No new companies to scrape in this batch. Continuing search...`);
+                continue;
+            } else {
+                break;
+            }
         }
 
         // 3. Lead Finder (PipelineLabs Scraper)
-        logStep('Lead Finder', 'Enriching leads via PipelineLabs Scraper...');
+        logStep('Lead Finder', `Enriching leads from ${newCompanies.length} new companies...`);
 
-        let allLeads = [];
-
-        // Extract company names from qualified companies
-        // We no longer extract domains for the search usage, but we keep the qualifiedCompanies objects as they are.
-        const targetCompanies = qualifiedCompanies.map(c => c.company_name).filter(n => n && n.trim().length > 0);
+        // Map names for Apify
+        const targetCompanies = newCompanies.map(c => c.company_name).filter(n => n && n.trim().length > 0);
 
         // USER REQUESTED "GOLD STANDARD" TITLES
         const GOLD_STANDARD_TITLES = [
@@ -797,55 +794,78 @@ SPEED vs ACCURACY: Accuracy is priority. Take time to visit websites and verify 
         const leadCount = allLeads.length;
         logStep('Lead Finder', `Total: Found ${leadCount} enriched leads.`);
 
-        // 4. Outreach Creator
-        logStep('Outreach Creator', 'Drafting personalized messages...');
-        const outreachInput = [{ role: "user", content: JSON.stringify({ leads: allLeads }) }];
+        // Update total leads for loop condition
+        totalLeadsCollected = leadCount;
 
-        const outreachRes = await retryWithBackoff(() => runner.run(outreachCreator, outreachInput));
-        if (!outreachRes.finalOutput) throw new Error("Outreach Creator failed");
-
-        const outreachOutput = outreachRes.finalOutput;
-        const msgCount = outreachOutput.leads ? outreachOutput.leads.length : 0;
-        logStep('Outreach Creator', `Drafted messages for ${msgCount} leads.`);
-
-        // 5. Save to CRM (Database)
-        logStep('CRM Sync', 'Saving leads to database...');
-        try {
-            await query('BEGIN');
-            for (const lead of outreachOutput.leads) {
-                await query(
-                    `INSERT INTO leads (company_name, person_name, email, job_title, linkedin_url, status, custom_data, source)
-                     VALUES ($1, $2, $3, $4, $5, 'NEW', $6, 'Automation')`,
-                    [
-                        lead.company_name,
-                        `${lead.first_name || ''} ${lead.last_name || ''}`.trim(),
-                        lead.email,
-                        lead.title,
-                        lead.linkedin_url,
-                        JSON.stringify({
-                            company_website: lead.company_website,
-                            company_profile: lead.company_profile,
-                            connection_request: lead.connection_request,
-                            email_message: lead.email_message,
-                            verification_date: new Date().toISOString()
-                        })
-                    ]
-                );
-            }
-            await query('COMMIT');
-            logStep('CRM Sync', `Successfully saved ${outreachOutput.leads.length} leads to CRM.`);
-        } catch (dbErr) {
-            await query('ROLLBACK');
-            logStep('CRM Sync', `Failed to save leads to DB: ${dbErr.message}`);
-            // Don't fail the whole workflow check if DB fails, but log it.
+        // Mark companies as scraped
+        if (typeof targetCompanies !== 'undefined' && targetCompanies && scrapedCompanyNames) {
+            targetCompanies.forEach(name => scrapedCompanyNames.add(name));
         }
 
-        return {
-            status: "success",
-            leads: outreachOutput.leads,
-            debug: debugLog
-        };
-    });
+        if (totalLeadsCollected >= targetLeads) {
+            logStep('Workflow', `✅ Target reached: ${totalLeadsCollected}/${targetLeads} leads`);
+            break;
+        }
+
+        const leadsStillNeeded = targetLeads - totalLeadsCollected;
+        logStep('Workflow', `🔄 Need ${leadsStillNeeded} more leads. Starting next discovery round...`);
+
+    } // END OF MAIN DISCOVERY LOOP
+
+    // --- Post-Loop Logic ---
+    if (allLeads.length === 0) {
+        throw new Error("Workflow failed: No leads collected.");
+    }
+
+    // 4. Outreach Creator
+    logStep('Outreach Creator', 'Drafting personalized messages...');
+    const outreachInput = [{ role: "user", content: JSON.stringify({ leads: allLeads }) }];
+
+    const outreachRes = await retryWithBackoff(() => runner.run(outreachCreator, outreachInput));
+    if (!outreachRes.finalOutput) throw new Error("Outreach Creator failed");
+
+    const outreachOutput = outreachRes.finalOutput;
+    const msgCount = outreachOutput.leads ? outreachOutput.leads.length : 0;
+    logStep('Outreach Creator', `Drafted messages for ${msgCount} leads.`);
+
+    // 5. Save to CRM (Database)
+    logStep('CRM Sync', 'Saving leads to database...');
+    try {
+        await query('BEGIN');
+        for (const lead of outreachOutput.leads) {
+            await query(
+                `INSERT INTO leads (company_name, person_name, email, job_title, linkedin_url, status, custom_data, source)
+                     VALUES ($1, $2, $3, $4, $5, 'NEW', $6, 'Automation')`,
+                [
+                    lead.company_name,
+                    `${lead.first_name || ''} ${lead.last_name || ''}`.trim(),
+                    lead.email,
+                    lead.title,
+                    lead.linkedin_url,
+                    JSON.stringify({
+                        company_website: lead.company_website,
+                        company_profile: lead.company_profile,
+                        connection_request: lead.connection_request,
+                        email_message: lead.email_message,
+                        verification_date: new Date().toISOString()
+                    })
+                ]
+            );
+        }
+        await query('COMMIT');
+        logStep('CRM Sync', `Successfully saved ${outreachOutput.leads.length} leads to CRM.`);
+    } catch (dbErr) {
+        await query('ROLLBACK');
+        logStep('CRM Sync', `Failed to save leads to DB: ${dbErr.message}`);
+        // Don't fail the whole workflow check if DB fails, but log it.
+    }
+
+    return {
+        status: "success",
+        leads: outreachOutput.leads,
+        debug: debugLog
+    };
+});
 };
 
 /**
