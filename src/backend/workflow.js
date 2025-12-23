@@ -349,6 +349,9 @@ export const runAgentWorkflow = async (input, config) => {
         logStep('Workflow', `📊 Excluded ${excludedDomains.length} previously researched companies.`);
 
         let qualifiedCompanies = [];
+        let globalLeads = [];
+        let scrapedNamesSet = new Set();
+        console.log("DEBUG: Initialized globalLeads and scrapedNamesSet"); // Explicit debug log
         let totalLeadsCollected = 0; // NEW: Track total leads instead of companies
         let leadsPerCompany = {}; // NEW: Track leads collected per company
         let attempts = 0;
@@ -510,10 +513,10 @@ SPEED vs ACCURACY: Accuracy is priority. Take time to visit websites and verify 
                 qualifiedCompanies = [...qualifiedCompanies, ...qualifiedInBatch];
             }
             // Filter for only NEW companies in this batch
-            const newCompanies = qualifiedCompanies.filter(c => !scrapedCompanyNames.has(c.company_name));
+            const newCompanies = qualifiedCompanies.filter(c => !scrapedNamesSet.has(c.company_name));
 
             if (newCompanies.length === 0) {
-                if (allLeads.length < targetLeads) {
+                if (globalLeads.length < targetLeads) {
                     logStep('Workflow', `⚠️ No new companies to scrape in this batch. Continuing search...`);
                     continue;
                 } else {
@@ -782,15 +785,15 @@ SPEED vs ACCURACY: Accuracy is priority. Take time to visit websites and verify 
                 }
             }
 
-            const leadCount = allLeads.length;
+            const leadCount = globalLeads.length;
             logStep('Lead Finder', `Total: Found ${leadCount} enriched leads.`);
 
             // Update total leads for loop condition
             totalLeadsCollected = leadCount;
 
             // Mark companies as scraped
-            if (typeof targetCompanies !== 'undefined' && targetCompanies && scrapedCompanyNames) {
-                targetCompanies.forEach(name => scrapedCompanyNames.add(name));
+            if (typeof targetCompanies !== 'undefined' && targetCompanies && scrapedNamesSet) {
+                targetCompanies.forEach(name => scrapedNamesSet.add(name));
             }
 
             if (totalLeadsCollected >= targetLeads) {
@@ -804,13 +807,13 @@ SPEED vs ACCURACY: Accuracy is priority. Take time to visit websites and verify 
         } // END OF MAIN DISCOVERY LOOP
 
         // --- Post-Loop Logic ---
-        if (allLeads.length === 0) {
+        if (globalLeads.length === 0) {
             throw new Error("Workflow failed: No leads collected.");
         }
 
         // 4. Outreach Creator
         logStep('Outreach Creator', 'Drafting personalized messages...');
-        const outreachInput = [{ role: "user", content: JSON.stringify({ leads: allLeads }) }];
+        const outreachInput = [{ role: "user", content: JSON.stringify({ leads: globalLeads }) }];
 
         const outreachRes = await retryWithBackoff(() => runner.run(outreachCreator, outreachInput));
         if (!outreachRes.finalOutput) throw new Error("Outreach Creator failed");
