@@ -114,59 +114,96 @@ export class LeadScraperService {
         const domains = companies
             .map(c => c.domain || c.website)
             .filter(d => d && d.trim().length > 0)
-            .map(d => d.replace(/^https?:\/\//, '').replace(/^www\./, '').trim());
+            .map(d => d.replace(/^https?:\/\//, '').replace(/^www\./, '').trim().toLowerCase());
 
-        if (domains.length === 0) {
+        // Deduplicate
+        const cleanDomains = [...new Set(domains)];
+
+        if (cleanDomains.length === 0) {
             console.warn('[ApolloDomain] No valid domains provided. Falling back to company names search.');
-            // Could fallback to PipelineLabs here, but better to fail explicitly
             return [];
         }
 
-        console.log(`[ApolloDomain] Searching ${domains.length} domains: ${domains.slice(0, 5).join(', ')}...`);
-
-        // 2. Start Job
-        const runId = await startApolloDomainScrape(this.apifyApiKey, domains, filters);
-
-        if (!runId) {
-            throw new Error('Failed to start Apollo Domain scrape - no run ID returned');
+        // 2. Batch Processing (Actor limit: 10 domains/run)
+        const BATCH_SIZE = 10;
+        const batches = [];
+        for (let i = 0; i < cleanDomains.length; i += BATCH_SIZE) {
+            batches.push(cleanDomains.slice(i, i + BATCH_SIZE));
         }
 
-        // 3. Poll for Completion
-        const POLL_INTERVAL = 5000;
-        const MAX_ATTEMPTS = 120; // 10 minutes max
-        let isComplete = false;
-        let datasetId = null;
-        let attempts = 0;
+        console.log(`[ApolloDomain] Processing ${cleanDomains.length} domains in ${batches.length} batches (limit 10/run)...`);
 
-        while (!isComplete && attempts < MAX_ATTEMPTS) {
-            await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
-            const statusRes = await checkApifyRun(this.apifyApiKey, runId);
+        // Run batches in parallel
+        const results = await Promise.all(batches.map((batch, index) =>
+            this._runApolloBatch(batch, filters, index + 1)
+        ));
 
-            console.log(`[ApolloDomain] Poll ${attempts + 1}: Status = ${statusRes.status}`);
-
-            if (statusRes.status === 'SUCCEEDED') {
-                isComplete = true;
-                datasetId = statusRes.datasetId;
-            } else if (statusRes.status === 'FAILED' || statusRes.status === 'ABORTED') {
-                throw new Error(`Apollo Domain run failed with status: ${statusRes.status}`);
-            }
-            attempts++;
-        }
-
-        if (!datasetId) {
-            throw new Error('Apollo Domain scrape timed out or returned no dataset.');
-        }
-
-        // 4. Fetch Results
-        const rawItems = await getApifyResults(this.apifyApiKey, datasetId);
+        // Aggregate results
+        const rawItems = results.flat();
 
         // Filter out the info message row (first row is often a log message)
         const actualLeads = rawItems.filter(item => item.email || item.firstName);
 
-        console.log(`[ApolloDomain] Retrieved ${actualLeads.length} leads with emails.`);
+        console.log(`[ApolloDomain] Retrieved ${actualLeads.length} total leads with emails from all batches.`);
 
         // 5. Normalize Data
         return this._normalizeApolloDomainResults(actualLeads, companies);
+    }
+
+    /**
+     * Helper to run a single batch of domains
+     */
+    async _runApolloBatch(domains, filters, batchId) {
+        console.log(`[ApolloDomain] Starting Batch ${batchId} with ${domains.length} domains: ${domains.join(', ')}`);
+
+        try {
+            // Start Job
+            const runId = await startApolloDomainScrape(this.apifyApiKey, domains, filters);
+
+            if (!runId) {
+                throw new Error(`Batch ${batchId}: No run ID returned`);
+            }
+
+            // Poll for Completion
+            const POLL_INTERVAL = 5000;
+            const MAX_ATTEMPTS = 120; // 10 minutes max
+            let isComplete = false;
+            let datasetId = null;
+            let attempts = 0;
+
+            while (!isComplete && attempts < MAX_ATTEMPTS) {
+                await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
+                // Note: We swallow errors in poll check to avoid breaking Promise.all, or handle them?
+                // checkApifyRun throws if request fails
+                const statusRes = await checkApifyRun(this.apifyApiKey, runId);
+
+                // logging only every 3rd poll to reduce noise with multiple batches
+                if (attempts % 3 === 0) {
+                    console.log(`[ApolloDomain] Batch ${batchId} Poll ${attempts + 1}: Status = ${statusRes.status}`);
+                }
+
+                if (statusRes.status === 'SUCCEEDED') {
+                    isComplete = true;
+                    datasetId = statusRes.datasetId;
+                } else if (statusRes.status === 'FAILED' || statusRes.status === 'ABORTED') {
+                    throw new Error(`Run failed with status: ${statusRes.status}`);
+                }
+                attempts++;
+            }
+
+            if (!datasetId) {
+                throw new Error(`Batch ${batchId} timed out or no dataset.`);
+            }
+
+            // Fetch Results
+            const items = await getApifyResults(this.apifyApiKey, datasetId);
+            console.log(`[ApolloDomain] Batch ${batchId} completed. Found ${items.length} items.`);
+            return items;
+
+        } catch (error) {
+            console.error(`[ApolloDomain] Batch ${batchId} failed:`, error.message);
+            return []; // Return empty array so other batches can proceed
+        }
     }
 
     /**
