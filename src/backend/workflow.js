@@ -8,6 +8,7 @@ import {
     markCompaniesAsResearched,
     getCompanyStats
 } from "./company-tracker.js";
+import { LeadScraperService } from "./services/lead-scraper-service.js";
 
 // --- Schema Definitions ---
 const CompanyFinderSchema = z.object({
@@ -124,6 +125,8 @@ export const runAgentWorkflow = async (input, config) => {
         userId,
         targetLeads = 50, // NEW: Total leads target
         maxLeadsPerCompany = 3, // NEW: Max per company
+        minBatchSize = 5,
+        maxDiscoveryAttempts = 5,
         mode,
         filters
     } = config;
@@ -363,441 +366,221 @@ export const runAgentWorkflow = async (input, config) => {
 
         // --- LOOP: Discovery & Profiling ---
         // NEW: Loop continues until we have enough LEADS (not companies)
+        const leadScraper = new LeadScraperService();
+
         while (totalLeadsCollected < targetLeads && attempts < MAX_ATTEMPTS) {
             attempts++;
             // Calculate how many more LEADS we need
             const leadsNeeded = targetLeads - totalLeadsCollected;
+
             // Estimate companies needed (assuming each gives ~maxLeadsPerCompany)
-            const companiesNeeded = Math.ceil(leadsNeeded / maxLeadsPerCompany);
+            // If we have history of low yield, we could increase this multiplier.
+            // For now, simple math: leads / max_per_company
+            let companiesNeeded = Math.ceil(leadsNeeded / maxLeadsPerCompany);
 
-            // Only log if this is a re-run or substantial update
-            if (attempts > 1) {
-                logStep('Workflow', `Round ${attempts}: Need ${leadsNeeded} more leads (~${companiesNeeded} companies). Collected ${totalLeadsCollected}/${targetLeads} leads so far.`);
-            } else {
-                logStep('Company Finder', `🚀 Starting Turbo Discovery (Target: ${companiesNeeded} companies for ${leadsNeeded} leads)...`);
-            }
+            // Minimum batch size to avoid tiny runs
+            if (companiesNeeded < minBatchSize) companiesNeeded = minBatchSize;
 
-            // We removed the 'switch' statement because Turbo Mode handles strategy by running all queries in parallel.
+            logStep('Workflow', `Round ${attempts}: Need ${leadsNeeded} leads. Target: Accumulate ${companiesNeeded} new qualified companies.`);
 
+            // --- STEP 1: ACCUMULATION PHASE ---
+            let accumulatedCandidates = []; // Companies found in this round
+            let discoveryAttempts = 0;
 
+            while (accumulatedCandidates.length < companiesNeeded && discoveryAttempts < maxDiscoveryAttempts) {
+                discoveryAttempts++;
+                logStep('Company Finder', `🔎 Discovery Sub-Round ${discoveryAttempts}/${maxDiscoveryAttempts}: Seeking ${companiesNeeded - accumulatedCandidates.length} more companies...`);
 
-            // TURBO MODE: Parallel Search Execution via Agent
-            // We command the agent to run multiple searches to broaden the net.
+                // ENHANCED: Use 4 distinct keyword searches for comprehensive coverage
+                const searchStrategies = [
+                    `"real estate investment firm" ${input.input_as_text} equity Canada -debt -lender`,
+                    `"family office" real estate ${input.input_as_text} Canada equity investment`,
+                    `"private equity" real estate ${input.input_as_text} Canada acquisitions development`,
+                    `"real estate capital" OR "real estate fund" ${input.input_as_text} Canada equity partner`
+                ];
 
-            // ENHANCED: Use 4 distinct keyword searches for comprehensive coverage
-            // Each search should return multiple pages of results (not just 10)
-            const searchStrategies = [
-                `"real estate investment firm" ${input.input_as_text} equity Canada -debt -lender`,
-                `"family office" real estate ${input.input_as_text} Canada equity investment`,
-                `"private equity" real estate ${input.input_as_text} Canada acquisitions development`,
-                `"real estate capital" OR "real estate fund" ${input.input_as_text} Canada equity partner`
-            ];
+                // Rotate strategies or run all? Running all is fine but might be expensive if done repeatedly.
+                // Let's run all for maximum recall.
 
-            logStep('Company Finder', `🚀 Multi-Search Strategy: 4 distinct keyword searches for ${companiesNeeded} companies...`);
-
-            // Build exclusion list for agent prompt
-            const currentlyProcessed = qualifiedCompanies.map(c => c.company_name);
-            const allExcluded = [...new Set([...excludedNames, ...currentlyProcessed])];
-            const exclusionText = allExcluded.length > 0
-                ? `\n\nCRITICAL EXCLUSIONS - DO NOT INCLUDE:\n${allExcluded.slice(0, 30).join(', ')}${allExcluded.length > 30 ? `\n...and ${allExcluded.length - 30} more previously researched companies` : ''}`
-                : '';
-
-            const searchPrompt = `
-[SYSTEM DIRECTIVE]: You are a Company Discovery Agent tasked with finding ${companiesNeeded} real estate investment firms.
-
+                const searchPrompt = `
+[SYSTEM DIRECTIVE]: You are a Company Discovery Agent tasked with finding real estate investment firms.
 SEARCH EXECUTION PROTOCOL:
-1. Execute ALL 4 searches below using your 'web_search' tool
-2. For EACH search, request multiple result pages (aim for 20-30 results per search)
-3. You should perform ~4-8 total web_search calls to gather comprehensive results
+1. Execute ALL 4 searches below using your 'web_search' tool.
+2. Request multiple result pages.
+3. AVOID companies already researched: ${[...excludedNames, ...qualifiedCompanies.map(c => c.company_name), ...accumulatedCandidates.map(c => c.company_name)].slice(0, 50).join(', ')}
 
-SEARCH QUERIES (execute ALL):
-Strategy A: ${searchStrategies[0]}
-Strategy B: ${searchStrategies[1]}
-Strategy C: ${searchStrategies[2]}
-Strategy D: ${searchStrategies[3]}
-
-WEBSITE INVESTIGATION PROTOCOL:
-After collecting search results:
-1. Visit the websites of promising companies (aim for 20-40 site visits)
-2. Look for these pages: About Us, Investment Criteria, Portfolio, Team
-3. Extract: Company name, website, investment focus, equity vs debt
-4. Prioritize companies that clearly state "equity investment" or "joint venture"
+SEARCH QUERIES:
+${searchStrategies.join('\n')}
 
 QUALIFICATION CRITERIA:
 ✅ INCLUDE: Equity investors, LPs, Co-GPs, Family Offices, Real Estate Funds
-❌ EXCLUDE: Debt lenders, mortgage brokers, REITs, property managers${exclusionText}
+❌ EXCLUDE: Debt lenders, mortgage brokers, REITs, property managers
 
-TARGET: Return exactly ${companiesNeeded} qualified companies
+TARGET: Return 20+ candidates to ensure we hit the net target of ${companiesNeeded} after filtering.
 OUTPUT: JSON list with company_name, website, capital_role, description
-
-SPEED vs ACCURACY: Accuracy is priority. Take time to visit websites and verify they match criteria.
 `;
 
-            const finderInput = [{ role: "user", content: searchPrompt }];
+                const finderInput = [{ role: "user", content: searchPrompt }];
+                const AGENT_TIMEOUT_MS = 120000;
 
-            // Add timeout and timing instrumentation
-            const AGENT_TIMEOUT_MS = 120000; // 2 minutes max
-            const finderRes = await logTiming('Company Finder Agent', logStep)(async () => {
-                return await retryWithBackoff(() =>
-                    runWithTimeout(
-                        () => runner.run(companyFinder, finderInput),
-                        AGENT_TIMEOUT_MS,
-                        'Company Finder Agent'
-                    )
-                );
-            });
+                let finderResults = [];
+                try {
+                    const finderRes = await logTiming('Company Finder Agent', logStep)(async () => {
+                        return await retryWithBackoff(() =>
+                            runWithTimeout(
+                                () => runner.run(companyFinder, finderInput),
+                                AGENT_TIMEOUT_MS,
+                                'Company Finder Agent'
+                            )
+                        );
+                    });
 
-            if (!finderRes.finalOutput) {
-                logStep('Company Finder', 'Agent failed to return output. Retrying...');
-                continue;
-            }
-
-            const finderResults = finderRes.finalOutput.results || [];
-            lastRoundFound = finderResults.length;
-            debugLog.discovery.push({ round: attempts, results: finderResults });
-
-            if (finderResults.length === 0) {
-                logStep('Company Finder', 'No new companies found in this batch.');
-                if (attempts >= 2) break;
-                continue;
-            }
-
-            logStep('Company Finder', `Found ${finderResults.length} candidates. Profiling...`);
-
-            // 2. Profiler
-            const profilerInput = [{ role: "user", content: JSON.stringify({ results: finderResults }) }];
-            const PROFILER_TIMEOUT_MS = 90000; // 1.5 minutes
-            const profilerRes = await logTiming('Company Profiler Agent', logStep)(async () => {
-                return await retryWithBackoff(() =>
-                    runWithTimeout(
-                        () => runner.run(companyProfiler, profilerInput),
-                        PROFILER_TIMEOUT_MS,
-                        'Company Profiler Agent'
-                    )
-                );
-            });
-
-            if (!profilerRes.finalOutput) {
-                logStep('Company Profiler', 'Agent failed. Skipping this batch.');
-                continue;
-            }
-
-            const profilerResults = profilerRes.finalOutput.results || [];
-            const qualifiedInBatch = [];
-
-            for (const company of profilerResults) {
-                // Find original to preserve 'website' and distinct inputs
-                const original = finderResults.find(f =>
-                    f.company_name.toLowerCase().trim() === company.company_name.toLowerCase().trim()
-                ) || {};
-
-                const merged = { ...original, ...company }; // Profiler fields override, but original fields persist
-
-                if (merged.company_profile && merged.company_name) {
-                    if (!qualifiedCompanies.some(c => c.company_name === merged.company_name)) {
-                        logStep('Company Profiler', `✅ Qualified: ${merged.company_name}`);
-                        qualifiedInBatch.push(merged);
-                    } else {
-                        logStep('Company Profiler', `ℹ️ Duplicate: ${merged.company_name}`);
+                    if (finderRes.finalOutput && finderRes.finalOutput.results) {
+                        finderResults = finderRes.finalOutput.results;
                     }
-                } else {
-                    logStep('Company Profiler', `❌ Rejected: ${merged.company_name || 'Unknown'} (Insufficient Profile)`);
+                } catch (e) {
+                    logStep('Company Finder', `⚠️ Agent failed: ${e.message}`);
                 }
-            }
-            debugLog.qualification.push({ round: attempts, approved: qualifiedInBatch, rejectedCount: finderResults.length - qualifiedInBatch.length });
 
-            if (qualifiedInBatch.length === 0) {
-                logStep('Company Profiler', `None of the ${finderResults.length} candidates passed qualification.`);
-            } else {
-                logStep('Company Profiler', `Qualified ${qualifiedInBatch.length} companies in this batch.`);
-                qualifiedCompanies = [...qualifiedCompanies, ...qualifiedInBatch];
-            }
-            // Filter for only NEW companies in this batch
-            const newCompanies = qualifiedCompanies.filter(c => !scrapedNamesSet.has(c.company_name));
-
-            if (newCompanies.length === 0) {
-                if (globalLeads.length < targetLeads) {
-                    logStep('Workflow', `⚠️ No new companies to scrape in this batch. Continuing search...`);
-                    continue;
+                if (finderResults.length === 0) {
+                    logStep('Company Finder', 'No candidates found in this sub-round.');
                 } else {
+                    // Filter Duplicates (Global and Local)
+                    const newInThisBatch = finderResults.filter(c => {
+                        const name = c.company_name;
+                        const isResearched = excludedNames.includes(name) ||
+                            qualifiedCompanies.some(q => q.company_name === name) ||
+                            accumulatedCandidates.some(a => a.company_name === name) ||
+                            scrapedNamesSet.has(name);
+                        return !isResearched;
+                    });
+
+                    logStep('Company Finder', `Found ${finderResults.length} raw. ${newInThisBatch.length} are new unique candidates.`);
+                    accumulatedCandidates = [...accumulatedCandidates, ...newInThisBatch];
+                }
+
+                if (accumulatedCandidates.length >= companiesNeeded) {
+                    logStep('Company Finder', `✅ Target met: ${accumulatedCandidates.length}/${companiesNeeded} companies accumulated.`);
                     break;
                 }
             }
 
-            // 3. Lead Finder (PipelineLabs Scraper)
-            logStep('Lead Finder', `Enriching leads from ${newCompanies.length} new companies...`);
+            if (accumulatedCandidates.length === 0) {
+                logStep('Workflow', '⚠️ Could not find any new companies after max attempts. Stopping workflow.');
+                break;
+            }
 
-            // Map names for Apify
-            const targetCompanies = newCompanies.map(c => c.company_name).filter(n => n && n.trim().length > 0);
+            // --- STEP 2: PROFILING PHASE ---
+            logStep('Company Profiler', `Analyzing ${accumulatedCandidates.length} companies...`);
 
-            // USER REQUESTED "GOLD STANDARD" TITLES
-            const GOLD_STANDARD_TITLES = [
-                "CEO", "Founder", "Co-Founder", "Owner", "Principal",
-                "Founding Partner", "Managing Partner", "Partner",
-                "Director of Investments", "Director of Developments",
-                "Vice President", "President", "CIO", "COO"
-            ];
+            // We might need to chunk this if it is too huge, but Agent usually handles ~20 okay.
+            const profilerInput = [{ role: "user", content: JSON.stringify({ results: accumulatedCandidates }) }];
+            const PROFILER_TIMEOUT_MS = 120000;
 
-            // Merge defaults if user didn't specify strict titles
+            let qualifiedInBatch = [];
+            try {
+                const profilerRes = await logTiming('Company Profiler Agent', logStep)(async () => {
+                    return await retryWithBackoff(() =>
+                        runWithTimeout(
+                            () => runner.run(companyProfiler, profilerInput),
+                            PROFILER_TIMEOUT_MS,
+                            'Company Profiler Agent'
+                        )
+                    );
+                });
+
+                if (profilerRes.finalOutput && profilerRes.finalOutput.results) {
+                    const profilerResults = profilerRes.finalOutput.results;
+                    for (const company of profilerResults) {
+                        const original = accumulatedCandidates.find(f =>
+                            f.company_name.toLowerCase().trim() === company.company_name.toLowerCase().trim()
+                        ) || {};
+                        const merged = { ...original, ...company };
+
+                        if (merged.company_profile && merged.company_name) {
+                            qualifiedInBatch.push(merged);
+                            logStep('Company Profiler', `✅ Qualified: ${merged.company_name}`);
+                        } else {
+                            logStep('Company Profiler', `❌ Rejected: ${merged.company_name}`);
+                        }
+                    }
+                }
+            } catch (e) {
+                logStep('Company Profiler', `⚠️ Profiling failed: ${e.message}`);
+                // Fallback: Skip profiling or accept all? 
+                // Let's safe fail and continue with un-profiled accumulation if needed, but better to skip this batch to avoid bad data.
+                continue;
+            }
+
+            if (qualifiedInBatch.length === 0) {
+                logStep('Workflow', 'No companies passed profiling. Retrying discovery...');
+                continue;
+            }
+
+            qualifiedCompanies = [...qualifiedCompanies, ...qualifiedInBatch];
+
+            // --- STEP 3: LEAD FINDING PHASE ---
+            logStep('Lead Finder', `Enriching leads from ${qualifiedInBatch.length} qualified companies...`);
+
             const activeFilters = config.filters || {};
+            // Ensure titles are set
             if (!activeFilters.job_titles || activeFilters.job_titles.length === 0) {
-                activeFilters.job_titles = GOLD_STANDARD_TITLES;
+                activeFilters.job_titles = ["CEO", "Founder", "Partner", "Principal", "Director", "Vice President"]; // Simplified default
             }
 
-            if (targetCompanies.length === 0) {
-                console.warn("No valid companies found for scraping.");
-            } else {
-                logStep('Lead Finder', `Starting scrape for ${targetCompanies.length} companies...`);
+            try {
+                const leads = await leadScraper.fetchLeads(qualifiedInBatch, activeFilters);
+                logStep('Lead Finder', `Scrape complete. Retrieved ${leads.length} raw leads.`);
 
-                try {
-                    // Trigger Apify Run
-                    // Pass Company Names (name-based search)
-                    const runId = await startApifyScrape(process.env.APIFY_API_TOKEN, targetCompanies, activeFilters);
-                    logStep('Lead Finder', `Job started (ID: ${runId}). Waiting for results...`);
+                // Filter for Emails (or keep all based on requirements?)
+                // Requirement: "attempts to meet target lead count... contains as many emails as reasonably obtainable"
+                // We should prioritize emails but keep LinkedIn-only if that's all we have?
+                // The prompt says "Emails are currently the weakest point... LinkedIn profiles and emails are both desired".
 
-                    // Poll for completion
-                    let isComplete = false;
-                    let datasetId = null;
-                    const POLL_INTERVAL = 5000;
-                    let attempts = 0;
-                    const MAX_WAIT = 600; // 10 minutes max wait?
+                // Let's count emails stats
+                const withEmail = leads.filter(l => l.email);
+                const withoutEmail = leads.filter(l => !l.email);
 
-                    while (!isComplete && attempts < MAX_WAIT) {
-                        await delay(POLL_INTERVAL);
-                        const statusRes = await checkApifyRun(process.env.APIFY_API_TOKEN, runId);
+                logStep('Lead Finder', `📧 Email Yield: ${withEmail.length}/${leads.length} (${((withEmail.length / leads.length) * 100).toFixed(0)}%)`);
 
-                        if (statusRes.status === 'SUCCEEDED') {
-                            isComplete = true;
-                            datasetId = statusRes.datasetId;
-                        } else if (statusRes.status === 'FAILED' || statusRes.status === 'ABORTED') {
-                            throw new Error(`Apify run failed with status: ${statusRes.status}`);
-                        }
-                        attempts++;
-                    }
+                // If email yield is low, we might want to trigger the "Unstrict" search immediately or flag it.
+                // The current scraper logic usually does internal retries if implemented in `fetchLeads`, but `LeadScraperService` implementation 
+                // maps standard Apify behavior. 
 
-                    if (datasetId) {
-                        const rawItems = await getApifyResults(process.env.APIFY_API_TOKEN, datasetId);
-                        logStep('Lead Finder', `Scrape complete. Retrieved ${rawItems.length} leads.`);
-                        if (rawItems.length > 0) {
-                            console.log("DEBUG: Exact keys of first raw item:", Object.keys(rawItems[0]));
-                            console.log("DEBUG: Sample raw item:", JSON.stringify(rawItems[0], null, 2));
-                        }
-
-                        // Map specific PipelineLabs output to our standard Lead Schema for Outreach Creator
-                        const rawLeads = rawItems.map(item => {
-                            // Parse Name
-                            let firstName = item.firstName || item.first_name || '';
-                            let lastName = item.lastName || item.last_name || '';
-                            if (!firstName && item.fullName) {
-                                const parts = item.fullName.split(' ');
-                                firstName = parts[0];
-                                lastName = parts.slice(1).join(' ');
-                            }
-
-                            // Parse Company (Find match in our qualified list to restore context)
-                            const scrapedCompany = item.orgName || item.companyName;
-                            const companyDomain = item.companyDomain || item.orgWebsite;
-                            const originalCompany = qualifiedCompanies.find(c =>
-                                c.domain === companyDomain ||
-                                (scrapedCompany && c.company_name.toLowerCase().includes(scrapedCompany.toLowerCase()))
-                            ) || {};
-
-                            return {
-                                first_name: firstName,
-                                last_name: lastName,
-                                email: item.email || item.workEmail || item.personalEmail,
-                                title: item.position || item.title || item.jobTitle,
-                                linkedin_url: item.linkedinUrl || item.linkedin_url || item.profileUrl,
-                                company_name: scrapedCompany || originalCompany.company_name || 'Unknown',
-                                company_domain: companyDomain || originalCompany.domain,
-                                company_website: item.orgWebsite || originalCompany.website || '',
-                                company_profile: originalCompany.company_profile || '',
-                                city: item.city || item.location,
-                                seniority: item.seniority
-                            };
-                        }).filter(l => l.email); // Only keep leads with email
-
-                        logStep('Lead Finder', `Retrieved ${rawLeads.length} leads with emails.`);
-
-                        // NEW: Group leads by company and apply per-company limits
-                        const leadsByCompany = {};
-                        for (const lead of rawLeads) {
-                            const domain = lead.company_domain || lead.company_name;
-                            if (!leadsByCompany[domain]) {
-                                leadsByCompany[domain] = [];
-                            }
-                            leadsByCompany[domain].push(lead);
-                        }
-
-                        // Apply max leads per company and track totals
-                        let companiesTracked = [];
-                        for (const [domain, companyLeads] of Object.entries(leadsByCompany)) {
-                            // Limit to maxLeadsPerCompany
-                            const limitedLeads = companyLeads.slice(0, maxLeadsPerCompany);
-                            globalLeads.push(...limitedLeads);
-
-                            // Track this company
-                            const company = qualifiedCompanies.find(c => c.domain === domain || c.company_name === companyLeads[0].company_name);
-                            if (company) {
-                                companiesTracked.push({
-                                    name: company.company_name,
-                                    domain: company.domain || domain,
-                                    leadCount: limitedLeads.length,
-                                    metadata: {
-                                        discovery_round: attempts,
-                                        capital_role: company.capital_role,
-                                        hq_city: company.hq_city,
-                                        total_leads_found: companyLeads.length,
-                                        leads_kept: limitedLeads.length
-                                    }
-                                });
-                            }
-
-                            // Update lead distribution tracking
-                            debugLog.leadDistribution[domain] = {
-                                found: companyLeads.length,
-                                kept: limitedLeads.length,
-                                limited: companyLeads.length > maxLeadsPerCompany
-                            };
-
-                            logStep('Lead Finder', `${company?.company_name || domain}: ${limitedLeads.length}/${companyLeads.length} leads (${companyLeads.length > maxLeadsPerCompany ? 'limited' : 'all'})`);
-                        }
-
-                        // Track companies in database
-                        if (companiesTracked.length > 0) {
-                            try {
-                                await markCompaniesAsResearched(userId, companiesTracked);
-                                logStep('Database', `✅ Tracked ${companiesTracked.length} companies in database.`);
-                            } catch (err) {
-                                logStep('Database', `⚠️ Failed to track companies: ${err.message}`);
-                            }
-                        }
-
-                        // Update total leads collected
-                        totalLeadsCollected = globalLeads.length;
-                        logStep('Lead Finder', `📊 Total collected: ${totalLeadsCollected}/${targetLeads} leads from ${Object.keys(leadsByCompany).length} companies.`);
-
-                    } else {
-                        logStep('Lead Finder', 'Scrape timed out or returned no dataset.');
-                    }
-
-                } catch (err) {
-                    logStep('Lead Finder', `Scraping failed: ${err.message}`);
+                // Group by company to enforce limits
+                const leadsByCompany = {};
+                for (const lead of leads) {
+                    const domain = lead.company_domain || lead.company_name;
+                    if (!leadsByCompany[domain]) leadsByCompany[domain] = [];
+                    leadsByCompany[domain].push(lead);
                 }
 
-                // RETRY MECHANISM: If 0 leads found, try again with relaxed filters
-                if (globalLeads.length === 0 && config.filters && !config.filters.fetchAll) {
-                    logStep('Lead Finder', '⚠️ strict search yielded 0 leads. Retrying with UNRESTRICTED search (fetching anyone)...');
+                for (const [domain, companyLeads] of Object.entries(leadsByCompany)) {
+                    // Sorting: Put emails first
+                    companyLeads.sort((a, b) => (b.email ? 1 : 0) - (a.email ? 1 : 0));
 
+                    const limited = companyLeads.slice(0, maxLeadsPerCompany);
+                    globalLeads.push(...limited);
+
+                    const companyName = companyLeads[0].company_name;
+                    // Track in DB
                     try {
-                        // Force "fetchAll" mode = clears seniority, allows guessed emails
-                        const relaxedFilters = { ...config.filters, fetchAll: true };
-                        const runId2 = await startApifyScrape(process.env.APIFY_API_TOKEN, targetCompanies, relaxedFilters);
-                        logStep('Lead Finder', `Retry Job started (ID: ${runId2})...`);
+                        await markCompaniesAsResearched(userId, [{
+                            name: companyName,
+                            domain: domain,
+                            leadCount: limited.length,
+                            metadata: { total_found: companyLeads.length }
+                        }]);
+                    } catch (err) { /* ignore */ }
 
-                        // Poll retry
-                        let isComplete2 = false;
-                        let datasetId2 = null;
-                        let attempts2 = 0;
-                        while (!isComplete2 && attempts2 < 600) { // Reuse same polling logic
-                            await delay(5000);
-                            const statusRes2 = await checkApifyRun(process.env.APIFY_API_TOKEN, runId2);
-                            if (statusRes2.status === 'SUCCEEDED') { isComplete2 = true; datasetId2 = statusRes2.datasetId; }
-                            else if (statusRes2.status === 'FAILED' || statusRes2.status === 'ABORTED') { throw new Error('Retry run failed'); }
-                            attempts2++;
-                        }
-
-                        if (datasetId2) {
-                            const rawItems2 = await getApifyResults(process.env.APIFY_API_TOKEN, datasetId2);
-                            logStep('Lead Finder', `Retry complete. Retrieved ${rawItems2.length} raw leads.`);
-
-                            // Map again with per-company logic
-                            const retryRawLeads = rawItems2.map(item => {
-                                let firstName = item.firstName || item.first_name || '';
-                                let lastName = item.lastName || item.last_name || '';
-                                if (!firstName && item.fullName) {
-                                    const parts = item.fullName.split(' ');
-                                    firstName = parts[0];
-                                    lastName = parts.slice(1).join(' ');
-                                }
-                                const scrapedCompany = item.orgName || item.companyName;
-                                const companyDomain = item.companyDomain || item.orgWebsite;
-                                const originalCompany = qualifiedCompanies.find(c =>
-                                    c.domain === companyDomain ||
-                                    (scrapedCompany && c.company_name.toLowerCase().includes(scrapedCompany.toLowerCase()))
-                                ) || {};
-
-                                return {
-                                    first_name: firstName,
-                                    last_name: lastName,
-                                    email: item.email || item.workEmail || item.personalEmail,
-                                    title: item.position || item.title || item.jobTitle,
-                                    linkedin_url: item.linkedinUrl || item.linkedin_url || item.profileUrl,
-                                    company_name: scrapedCompany || originalCompany.company_name || 'Unknown',
-                                    company_domain: companyDomain || originalCompany.domain,
-                                    company_website: item.orgWebsite || originalCompany.website || '',
-                                    company_profile: originalCompany.company_profile || '',
-                                    city: item.city || item.location,
-                                    seniority: item.seniority
-                                };
-                            }).filter(l => l.email);
-
-                            // Group and limit by company
-                            const retryLeadsByCompany = {};
-                            for (const lead of retryRawLeads) {
-                                const domain = lead.company_domain || lead.company_name;
-                                if (!retryLeadsByCompany[domain]) {
-                                    retryLeadsByCompany[domain] = [];
-                                }
-                                retryLeadsByCompany[domain].push(lead);
-                            }
-
-                            // Apply limits and tracking
-                            let retryTracked = [];
-                            for (const [domain, companyLeads] of Object.entries(retryLeadsByCompany)) {
-                                const limitedLeads = companyLeads.slice(0, maxLeadsPerCompany);
-                                globalLeads.push(...limitedLeads);
-
-                                const company = qualifiedCompanies.find(c => c.domain === domain || c.company_name === companyLeads[0].company_name);
-                                if (company) {
-                                    retryTracked.push({
-                                        name: company.company_name,
-                                        domain: company.domain || domain,
-                                        leadCount: limitedLeads.length,
-                                        metadata: { retry: true, total_leads_found: companyLeads.length }
-                                    });
-                                }
-                            }
-
-                            // Track retry companies
-                            if (retryTracked.length > 0) {
-                                try {
-                                    await markCompaniesAsResearched(userId, retryTracked);
-                                } catch (err) {
-                                    logStep('Database', `⚠️ Retry tracking failed: ${err.message}`);
-                                }
-                            }
-
-                            totalLeadsCollected = globalLeads.length;
-                            logStep('Lead Finder', `Retry success! Found ${totalLeadsCollected} total leads.`);
-
-                        }
-
-                    } catch (retryErr) {
-                        logStep('Lead Finder', `Retry failed: ${retryErr.message}`);
-                    }
+                    scrapedNamesSet.add(companyName);
                 }
-            }
 
-            const leadCount = globalLeads.length;
-            logStep('Lead Finder', `Total: Found ${leadCount} enriched leads.`);
+                totalLeadsCollected = globalLeads.length;
+                logStep('Lead Finder', `Stats: Found ${leads.length} new leads. Total Pipeline: ${totalLeadsCollected}/${targetLeads}`);
 
-            // Update total leads for loop condition
-            totalLeadsCollected = leadCount;
-
-            // Mark companies as scraped
-            if (typeof targetCompanies !== 'undefined' && targetCompanies && scrapedNamesSet) {
-                targetCompanies.forEach(name => scrapedNamesSet.add(name));
+            } catch (err) {
+                logStep('Lead Finder', `❌ Enrichment failed: ${err.message}`);
             }
 
             if (totalLeadsCollected >= targetLeads) {
