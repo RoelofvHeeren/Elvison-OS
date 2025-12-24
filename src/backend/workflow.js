@@ -9,7 +9,6 @@ import {
     getCompanyStats
 } from "./company-tracker.js";
 import { LeadScraperService } from "./services/lead-scraper-service.js";
-import { LeadScraperService } from "./services/lead-scraper-service.js";
 import { WORKFLOW_CONFIG, getEffectiveMaxLeads } from "../config/workflow.js";
 import { finderBackup, profilerBackup, apolloBackup } from "./workflow_prompts_backup.js";
 
