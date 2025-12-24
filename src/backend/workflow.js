@@ -9,6 +9,9 @@ import {
     getCompanyStats
 } from "./company-tracker.js";
 import { LeadScraperService } from "./services/lead-scraper-service.js";
+import { LeadScraperService } from "./services/lead-scraper-service.js";
+import { WORKFLOW_CONFIG, getEffectiveMaxLeads } from "../config/workflow.js";
+import { finderBackup, profilerBackup, apolloBackup } from "./workflow_prompts_backup.js";
 
 // --- Schema Definitions ---
 const CompanyFinderSchema = z.object({
@@ -157,6 +160,17 @@ export const runAgentWorkflow = async (input, config) => {
         }
     }
 
+    // --- ENFORCE TESTING LIMITS ---
+    const effectiveMaxLeads = getEffectiveMaxLeads();
+    if (WORKFLOW_CONFIG.IS_TESTING && targetLeads > effectiveMaxLeads) {
+        logStep('System', `⚠️ TESTING MODE ACTIVE: Capping requested ${targetLeads} leads to ${effectiveMaxLeads}.`);
+        targetLeads = effectiveMaxLeads;
+    } else if (WORKFLOW_CONFIG.IS_TESTING) {
+        logStep('System', `🧪 Testing Mode Active (Max ${effectiveMaxLeads} leads/run)`);
+    }
+
+    logStep('Workflow', `🎯 Targeting ${targetLeads} total leads (max ${maxLeadsPerCompany} per company).`);
+
     // --- Fetch Prompts from DB ---
     let agentPrompts = {};
     try {
@@ -269,7 +283,7 @@ export const runAgentWorkflow = async (input, config) => {
     });
 
     // 2. Company Profiler
-    const profilerInst = agentPrompts['company_profiler'] || `You are the Research Analyst... (Default)`;
+    const profilerInst = agentPrompts['company_profiler'] || profilerBackup;
     const companyProfiler = new Agent({
         name: "Company Profiler",
         instructions: profilerInst,
@@ -335,10 +349,7 @@ export const runAgentWorkflow = async (input, config) => {
         }
 
         // Enforce Hard Limits
-        if (targetLeads > 200) {
-            targetLeads = 200;
-            logStep('Workflow', 'Target leads capped at 200 (System Limit).');
-        }
+        // targetLeads is already clamped by configuration at start of function
         if (maxLeadsPerCompany > 10) {
             maxLeadsPerCompany = 10;
             logStep('Workflow', 'Max leads per company capped at 10.');
