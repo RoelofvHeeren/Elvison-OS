@@ -15,40 +15,48 @@ const SCRAPERCITY_BASE_URL = 'https://app.scrapercity.com/api/v1';
 
 /**
  * Build an Apollo search URL from company names and filters
- * Apollo's search URL format encodes filters as query parameters
+ * 
+ * ScraperCity expects an Apollo.io browser URL (the URL you'd see in your browser when searching).
+ * Apollo uses hash-based routing: https://app.apollo.io/#/people?...
  * 
  * @param {Array<string>} companyNames - List of company names to search
  * @param {Object} filters - Search filters
- * @returns {string} - Apollo search URL
+ * @returns {string} - Apollo browser search URL
  */
 export const buildApolloSearchUrl = (companyNames, filters = {}) => {
-    // Apollo uses a specific URL format for saved searches
-    // The base URL for people search
-    const baseUrl = 'https://app.apollo.io/api/v1/mixed_people/search';
+    // Apollo browser URL format uses hash routing
+    const baseUrl = 'https://app.apollo.io/#/people';
 
-    // Build query params for Apollo
+    // Build query params
     const params = new URLSearchParams();
 
-    // Companies - Apollo expects organization names
+    // Organization names - Apollo uses organizationNames[] for multiple
     if (companyNames && companyNames.length > 0) {
-        params.set('organization_names', companyNames.join(','));
+        // Apollo expects each company as a separate param or comma-separated
+        params.set('organizationNames[]', companyNames.join('\n'));
     }
 
-    // Seniority levels
+    // Seniority - Apollo uses personSeniorities[]
     const seniorities = filters.seniority || ['director', 'vp', 'c_suite', 'founder', 'owner', 'partner'];
-    params.set('person_seniorities', seniorities.join(','));
+    seniorities.forEach(s => {
+        params.append('personSeniorities[]', s);
+    });
 
-    // Job titles - Apollo is flexible, we can pass our actual titles
+    // Job titles - personTitles[]
     if (filters.job_titles && filters.job_titles.length > 0) {
-        params.set('person_titles', filters.job_titles.join(','));
+        filters.job_titles.forEach(title => {
+            params.append('personTitles[]', title);
+        });
     }
 
-    // Countries
+    // Countries - personLocations[]
     const countries = filters.countries || ['United States', 'Canada'];
-    params.set('person_locations', countries.join(','));
+    countries.forEach(c => {
+        params.append('personLocations[]', c);
+    });
 
-    // We want verified emails
-    params.set('email_status', 'verified');
+    // Verified emails only
+    params.set('emailStatus', 'verified');
 
     return `${baseUrl}?${params.toString()}`;
 };
