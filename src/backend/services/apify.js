@@ -248,7 +248,8 @@ export const startApolloDomainScrape = async (token, domains, filters = {}) => {
         const input = buildApolloDomainPayload(domains, filters);
         console.log(`[ApolloDomain] Starting scrape for ${domains.length} domains...`);
 
-        const ACTOR_ID = 'peakydev~leads-scraper-ppe';
+        // Apollo Domain Scraper Actor ID (Verified Working ID from Console)
+        const ACTOR_ID = 'T1XDXWc1L92AfIJtd';
 
         console.log(`[ApolloDomain] Sending payload to ${ACTOR_ID}:`, JSON.stringify(input, null, 2));
 
