@@ -222,7 +222,7 @@ export const buildApolloDomainPayload = (domains, filters = {}) => {
         includeEmails: true,
         personTitle: filters.job_titles || defaultTitles,
         seniority: filters.seniority || defaultSeniorities,
-        totalResults: filters.maxResults || 100
+        totalResults: filters.maxResults || 1000
     };
 };
 
