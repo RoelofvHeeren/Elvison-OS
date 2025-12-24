@@ -205,11 +205,13 @@ export const buildApolloDomainPayload = (domains, filters = {}) => {
         "Vice President", "Director", "Head"
     ];
 
-    // Clean domains - ensure no http/https prefix
-    const cleanDomains = domains.map(d => {
-        if (!d) return null;
-        return d.replace(/^https?:\/\//, '').replace(/^www\./, '').trim();
-    }).filter(Boolean);
+    // Clean domains - ensure no http/https prefix and deduplicate
+    const cleanDomains = [...new Set(
+        domains.map(d => {
+            if (!d) return null;
+            return d.replace(/^https?:\/\//, '').replace(/^www\./, '').trim().toLowerCase();
+        }).filter(Boolean)
+    )];
 
     return {
         companyDomain: cleanDomains,
