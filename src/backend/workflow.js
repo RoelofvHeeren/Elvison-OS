@@ -533,10 +533,7 @@ OUTPUT: JSON list with company_name, website, capital_role, description
             logStep('Lead Finder', `Enriching leads from ${qualifiedInBatch.length} qualified companies...`);
 
             const activeFilters = config.filters || {};
-            // Ensure titles are set
-            if (!activeFilters.job_titles || activeFilters.job_titles.length === 0) {
-                activeFilters.job_titles = ["CEO", "Founder", "Partner", "Principal", "Director", "Vice President"]; // Simplified default
-            }
+            // DO NOT set default job_titles here; let apify.js handle defaults to ensure comprehensive coverage.
 
             try {
                 const leads = await leadScraper.fetchLeads(qualifiedInBatch, activeFilters);

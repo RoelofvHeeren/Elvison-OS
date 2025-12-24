@@ -248,8 +248,9 @@ export const startApolloDomainScrape = async (token, domains, filters = {}) => {
         const input = buildApolloDomainPayload(domains, filters);
         console.log(`[ApolloDomain] Starting scrape for ${domains.length} domains...`);
 
-        // Apollo Domain Scraper Actor ID (peakydev~leads-scraper-ppe)
         const ACTOR_ID = 'peakydev~leads-scraper-ppe';
+
+        console.log(`[ApolloDomain] Sending payload to ${ACTOR_ID}:`, JSON.stringify(input, null, 2));
 
         const response = await axios.post(
             `${APIFY_API_URL}/acts/${ACTOR_ID}/runs?token=${token}`,
