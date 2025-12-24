@@ -1,4 +1,10 @@
 import { startApifyScrape, checkApifyRun, getApifyResults } from "./apify.js";
+import {
+    startScraperCityScrape,
+    checkScraperCityRun,
+    getScraperCityResults,
+    buildApolloSearchUrl
+} from "./scrapercity.js";
 
 /**
  * Standardized Lead Object
@@ -18,13 +24,15 @@ import { startApifyScrape, checkApifyRun, getApifyResults } from "./apify.js";
 
 /**
  * Interface for Lead Scraper Service
- * This allows swapping the underlying provider (Pipeline Labs, Apollo, etc.)
+ * This allows swapping the underlying provider (Pipeline Labs, Apollo via ScraperCity, etc.)
  */
 export class LeadScraperService {
     constructor(config = {}) {
         this.config = config;
-        this.provider = config.provider || 'apify_pipelinelabs';
-        this.apiKey = config.apiKey || process.env.APIFY_API_TOKEN;
+        // Default to ScraperCity Apollo now!
+        this.provider = config.provider || process.env.LEAD_SCRAPER_PROVIDER || 'scrapercity_apollo';
+        this.apifyApiKey = config.apifyApiKey || process.env.APIFY_API_TOKEN;
+        this.scraperCityApiKey = config.scraperCityApiKey || process.env.SCRAPERCITY_API_KEY;
     }
 
     /**
@@ -41,23 +49,22 @@ export class LeadScraperService {
         switch (this.provider) {
             case 'apify_pipelinelabs':
                 return this._fetchFromApify(companies, filters);
-            // Future providers:
-            // case 'apollo_api':
-            //     return this._fetchFromApollo(companies, filters);
+            case 'scrapercity_apollo':
+                return this._fetchFromScraperCity(companies, filters);
             default:
                 throw new Error(`Unknown scraper provider: ${this.provider}`);
         }
     }
 
     /**
-     * Internal: Fetch from Apify PipelineLabs Actor
+     * Internal: Fetch from Apify PipelineLabs Actor (legacy)
      */
     async _fetchFromApify(companies, filters) {
         // 1. Prepare Names
         const targetNames = companies.map(c => c.company_name).filter(n => n && n.trim().length > 0);
 
         // 2. Start Job
-        const runId = await startApifyScrape(this.apiKey, targetNames, filters);
+        const runId = await startApifyScrape(this.apifyApiKey, targetNames, filters);
 
         // 3. Poll for Completion
         const POLL_INTERVAL = 5000;
@@ -68,7 +75,7 @@ export class LeadScraperService {
 
         while (!isComplete && attempts < MAX_WAIT) {
             await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
-            const statusRes = await checkApifyRun(this.apiKey, runId);
+            const statusRes = await checkApifyRun(this.apifyApiKey, runId);
 
             if (statusRes.status === 'SUCCEEDED') {
                 isComplete = true;
@@ -84,10 +91,65 @@ export class LeadScraperService {
         }
 
         // 4. Fetch Results
-        const rawItems = await getApifyResults(this.apiKey, datasetId);
+        const rawItems = await getApifyResults(this.apifyApiKey, datasetId);
 
         // 5. Normalize Data
         return this._normalizeApifyResults(rawItems, companies);
+    }
+
+    /**
+     * Internal: Fetch from ScraperCity Apollo Scraper
+     */
+    async _fetchFromScraperCity(companies, filters) {
+        // 1. Build company names
+        const targetNames = companies.map(c => c.company_name).filter(n => n && n.trim().length > 0);
+
+        if (targetNames.length === 0) {
+            console.warn('[ScraperCity] No valid company names provided.');
+            return [];
+        }
+
+        // 2. Build Apollo Search URL
+        const apolloUrl = buildApolloSearchUrl(targetNames, filters);
+        console.log(`[ScraperCity] Apollo URL: ${apolloUrl.substring(0, 100)}...`);
+
+        // 3. Calculate count: aim for ~3-5 leads per company
+        const targetCount = Math.min(targetNames.length * 5, 100); // Max 100 per batch
+
+        // 4. Start Scrape
+        const runId = await startScraperCityScrape(this.scraperCityApiKey, apolloUrl, targetCount);
+
+        // 5. Poll for Completion
+        const POLL_INTERVAL = 5000;
+        const MAX_ATTEMPTS = 120; // 10 minutes max
+        let isComplete = false;
+        let attempts = 0;
+
+        while (!isComplete && attempts < MAX_ATTEMPTS) {
+            await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
+            const statusRes = await checkScraperCityRun(this.scraperCityApiKey, runId);
+
+            console.log(`[ScraperCity] Poll ${attempts + 1}: Status = ${statusRes.status || statusRes.state}`);
+
+            const status = (statusRes.status || statusRes.state || '').toLowerCase();
+            if (status === 'completed' || status === 'succeeded' || status === 'done') {
+                isComplete = true;
+            } else if (status === 'failed' || status === 'error') {
+                throw new Error(`ScraperCity run failed: ${statusRes.message || 'Unknown error'}`);
+            }
+            attempts++;
+        }
+
+        if (!isComplete) {
+            throw new Error('ScraperCity scrape timed out.');
+        }
+
+        // 6. Download Results
+        const rawItems = await getScraperCityResults(this.scraperCityApiKey, runId);
+        console.log(`[ScraperCity] Downloaded ${rawItems.length} raw leads.`);
+
+        // 7. Normalize Data
+        return this._normalizeScraperCityResults(rawItems, companies);
     }
 
     /**
@@ -128,10 +190,41 @@ export class LeadScraperService {
                 seniority: item.seniority,
                 raw_data: item
             };
-        }).filter(lead => lead.email); // Enforce email requirement here or let caller decide? 
-        // User said "Emails are weakest point", so let's keep non-emails? 
-        // Actually, logic in workflow filtered `l => l.email`. 
-        // But task says "Collect leads (including emails and LinkedIn)".
-        // Let's return ALL, and let workflow filter/count.
+        });
+    }
+
+    /**
+     * Normalize ScraperCity Apollo results to Standard Lead format
+     */
+    _normalizeScraperCityResults(rawItems, qualifiedCompanies) {
+        // ScraperCity Apollo data shape (based on Apollo.io data):
+        // { first_name, last_name, email, title, linkedin_url, organization_name, ... }
+        return rawItems.map(item => {
+            const scrapedCompany = item.organization_name || item.company || item.orgName;
+            const companyDomain = item.organization_website || item.website_url;
+
+            // Match to our qualified companies
+            const originalCompany = qualifiedCompanies.find(c =>
+                (c.domain && companyDomain && companyDomain.includes(c.domain)) ||
+                (scrapedCompany && c.company_name && c.company_name.toLowerCase().includes(scrapedCompany.toLowerCase()))
+            ) || {};
+
+            return {
+                first_name: item.first_name || '',
+                last_name: item.last_name || '',
+                email: item.email || item.primary_email || '',
+                title: item.title || item.headline || '',
+                linkedin_url: item.linkedin_url || item.linkedin || '',
+                company_name: scrapedCompany || originalCompany.company_name || 'Unknown',
+                company_domain: companyDomain || originalCompany.domain || '',
+                company_website: item.organization_website || originalCompany.website || '',
+                company_profile: originalCompany.company_profile || '',
+                city: item.city || item.location || '',
+                seniority: item.seniority || '',
+                phone: item.phone || item.mobile_phone || item.corporate_phone || '',
+                raw_data: item
+            };
+        });
     }
 }
+
