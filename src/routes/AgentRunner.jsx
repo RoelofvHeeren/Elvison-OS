@@ -1,7 +1,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { PlayCircle, Terminal, CheckCircle, AlertCircle, Loader2, Send, FileText, Bot, Users } from 'lucide-react'
+import { PlayCircle, Terminal, CheckCircle, AlertCircle, Loader2, Send, FileText, Bot, Users, StopCircle } from 'lucide-react'
 
 const STEPS = [
     { id: 'Company Profiler', label: 'Company Profiler' },
@@ -21,6 +21,7 @@ const AgentRunner = () => {
     const [result, setResult] = useState(null)
     const [error, setError] = useState(null)
     const logsEndRef = useRef(null)
+    const abortControllerRef = useRef(null)
 
     const scrollToBottom = () => {
         logsEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -82,6 +83,9 @@ const AgentRunner = () => {
             // Get vectorStoreId from local storage
             const vectorStoreId = localStorage.getItem('elvison_vector_store_id')
 
+            // Create abort controller for cancellation
+            abortControllerRef.current = new AbortController()
+
             const response = await fetch('/api/agents/run', {
                 method: 'POST',
                 headers: {
@@ -92,7 +96,8 @@ const AgentRunner = () => {
                     vectorStoreId, // Pass the persistent ID
                     mode, // Pass the selected mode
                     filters: JSON.parse(localStorage.getItem('onboarding_state') || '{}') // Pass user filters
-                })
+                }),
+                signal: abortControllerRef.current.signal
             })
 
             const reader = response.body.getReader()
@@ -136,10 +141,24 @@ const AgentRunner = () => {
                 }
             }
         } catch (err) {
+            if (err.name === 'AbortError') {
+                setLogs(prev => [...prev, { step: 'System', detail: '⛔ Run cancelled by user', timestamp: new Date().toISOString() }])
+                setIsRunning(false)
+                return
+            }
             setError(err.message)
             setIsRunning(false)
             // Save failure to history
             saveJobToHistory(null, err.message)
+        } finally {
+            abortControllerRef.current = null
+        }
+    }
+
+    const handleCancel = () => {
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort()
+            setLogs(prev => [...prev, { step: 'System', detail: '⛔ Cancelling run...', timestamp: new Date().toISOString() }])
         }
     }
 
@@ -185,23 +204,34 @@ const AgentRunner = () => {
                             <span className="text-[10px] text-gray-500 ml-auto">Faster • Low Cost</span>
                         </div>
 
-                        <button
-                            onClick={handleRun}
-                            disabled={isRunning || !prompt.trim()}
-                            className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#139187] py-3 text-sm font-bold text-white shadow-[0_0_20px_rgba(19,145,135,0.3)] transition-all hover:bg-[#139187]/90 disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-[0_0_30px_rgba(19,145,135,0.5)]"
-                        >
-                            {isRunning ? (
-                                <>
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                    Running Agents...
-                                </>
-                            ) : (
-                                <>
-                                    <PlayCircle className="h-4 w-4 fill-current" />
-                                    Start Workflow
-                                </>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={handleRun}
+                                disabled={isRunning || !prompt.trim()}
+                                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-[#139187] py-3 text-sm font-bold text-white shadow-[0_0_20px_rgba(19,145,135,0.3)] transition-all hover:bg-[#139187]/90 disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-[0_0_30px_rgba(19,145,135,0.5)]"
+                            >
+                                {isRunning ? (
+                                    <>
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                        Running Agents...
+                                    </>
+                                ) : (
+                                    <>
+                                        <PlayCircle className="h-4 w-4 fill-current" />
+                                        Start Workflow
+                                    </>
+                                )}
+                            </button>
+                            {isRunning && (
+                                <button
+                                    onClick={handleCancel}
+                                    className="flex items-center justify-center gap-2 rounded-lg bg-red-500/80 px-4 py-3 text-sm font-bold text-white transition-all hover:bg-red-500"
+                                >
+                                    <StopCircle className="h-4 w-4" />
+                                    Cancel
+                                </button>
                             )}
-                        </button>
+                        </div>
                     </div>
                 </div>
 
