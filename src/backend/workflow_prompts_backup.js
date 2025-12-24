@@ -173,9 +173,9 @@ OUTPUT FORMAT (STRICT)
   ]
 }
 
-No additional text.\`;
+No additional text.`;
 
-export const apolloBackup = \`You are Apollo Lead Ops. You receive input.results (company profiles). Identify up to 3 senior capital decision makers per company.
+export const apolloBackup = `You are Apollo Lead Ops. You receive input.results (company profiles). Identify up to 3 senior capital decision makers per company.
 
 Tools: organization_search, employees_of_company, people_search, people_enrichment, get_person_email.
 
@@ -192,4 +192,4 @@ Step 3: Enrich & Get Email (people_enrichment, get_person_email).
 Attach the original 'company_profile' to each lead.
 
 Output JSON:
-{ "leads": [ { ... } ] }\`;
+{ "leads": [ { ... } ] }`;
