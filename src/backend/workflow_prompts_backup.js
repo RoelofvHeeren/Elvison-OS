@@ -111,9 +111,9 @@ Return only:
   ]
 }
 
-No extra text.\`;
+No extra text.`;
 
-export const profilerBackup = \`You are the Company Profiler.
+export const profilerBackup = `You are the Company Profiler.
 
 You receive input.results, each item containing:
 company_name, domain, hq_city, capital_role, website, why_considered, source_links.
