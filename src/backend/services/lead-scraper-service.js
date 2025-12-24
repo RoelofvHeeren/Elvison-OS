@@ -113,7 +113,7 @@ export class LeadScraperService {
         // 1. Extract domains from companies
         const domains = companies
             .map(c => c.domain || c.website)
-            .filter(d => d && d.trim().length > 0)
+            .filter(d => d && d.trim().length > 0 && d.includes('.') && !d.includes(' ')) // Strict: Must have dot, no spaces
             .map(d => d.replace(/^https?:\/\//, '').replace(/^www\./, '').trim().toLowerCase());
 
         // Deduplicate
