@@ -39,11 +39,13 @@ export const buildPipelineLabsPayload = (companyNames, filters = {}) => {
     } else if (filters) {
         // 1. Job Titles
         if (filters.job_titles && Array.isArray(filters.job_titles) && filters.job_titles.length > 0) {
-            // STRICT VALIDATION: Only allow titles that are in the allowed list
-            const validTitles = filters.job_titles.filter(t => ALLOWED_PERSON_TITLES.includes(t));
+            // STRICT VALIDATION: Only allow titles that are in the allowed lists
+            const validTitles = filters.job_titles.filter(t =>
+                ALLOWED_PERSON_TITLES.includes(t) || ALLOWED_EXTRA_TITLES.includes(t)
+            );
 
             if (validTitles.length < filters.job_titles.length) {
-                console.warn(`[PipelineLabs] Some requested titles were filtered out due to strict policy: ${filters.job_titles.filter(t => !ALLOWED_PERSON_TITLES.includes(t)).join(', ')}`);
+                console.warn(`[PipelineLabs] Some requested titles were filtered out due to strict policy: ${filters.job_titles.filter(t => !ALLOWED_PERSON_TITLES.includes(t) && !ALLOWED_EXTRA_TITLES.includes(t)).join(', ')}`);
             }
 
             if (validTitles.length > 0) {

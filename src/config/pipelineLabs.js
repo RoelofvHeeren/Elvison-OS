@@ -40,10 +40,17 @@ export const ALLOWED_SENIORITY = [
 // or mapped differently if needed. For now, strictly following the provided input.
 export const ALLOWED_EXTRA_TITLES = [
     "Chief Investment Officer",
-    "Principle",
+    "Principal",
     "Managing Director",
-    "Director of investments",
-    "Director of developments"
+    "Director of Investments",
+    "Director of Developments",
+    "Partner",
+    "Managing Partner",
+    "CEO",
+    "President",
+    "Vice President",
+    "CIO",
+    "COO"
 ];
 
 export const SENIORITY_EXCLUDES = [
