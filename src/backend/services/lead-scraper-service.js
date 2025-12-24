@@ -111,16 +111,28 @@ export class LeadScraperService {
      */
     async _fetchFromApolloDomain(companies, filters) {
         // 1. Extract domains from companies
-        const domains = companies
-            .map(c => c.domain || c.website)
+        console.log(`[ApolloDomain] Received ${companies.length} companies for lead enrichment.`);
+
+        // DEBUG: Log the raw company data to see what we're working with
+        companies.forEach((c, i) => {
+            console.log(`[ApolloDomain] Company ${i + 1}: name="${c.company_name}", domain="${c.domain}", website="${c.website}"`);
+        });
+
+        const rawDomains = companies.map(c => c.domain || c.website);
+        console.log(`[ApolloDomain] Raw domains extracted: ${JSON.stringify(rawDomains)}`);
+
+        const domains = rawDomains
             .filter(d => d && d.trim().length > 0 && d.includes('.') && !d.includes(' ')) // Strict: Must have dot, no spaces
             .map(d => d.replace(/^https?:\/\//, '').replace(/^www\./, '').trim().toLowerCase());
 
+        console.log(`[ApolloDomain] Filtered domains (after validation): ${JSON.stringify(domains)}`);
+
         // Deduplicate
         const cleanDomains = [...new Set(domains)];
+        console.log(`[ApolloDomain] Clean domains (deduplicated): ${JSON.stringify(cleanDomains)}`);
 
         if (cleanDomains.length === 0) {
-            console.warn('[ApolloDomain] No valid domains provided. Falling back to company names search.');
+            console.warn('[ApolloDomain] ❌ No valid domains provided! Check if Company Profiler is returning "domain" field.');
             return [];
         }
 
