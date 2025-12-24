@@ -179,3 +179,84 @@ export const getApifyResults = async (token, datasetId) => {
         throw new Error('Failed to fetch results');
     }
 };
+
+// =============================================================================
+// NEW: Apollo Domain Scraper (Actor ID: T1XDXWc1L92AfIJtd)
+// Cost: ~$0.0026 per lead ($0.30 base + $0.55 per ~330 leads)
+// =============================================================================
+
+/**
+ * Constructs the payload for the Apollo Domain Scraper
+ * @param {Array<string>} domains - List of company domains (e.g., "greybrook.com")
+ * @param {Object} filters - Dynamic filters
+ * @returns {Object} - The constructed payload
+ */
+export const buildApolloDomainPayload = (domains, filters = {}) => {
+    // Default titles covering executives and decision-makers
+    const defaultTitles = [
+        "CEO", "President", "Founder", "Co-Founder", "Partner", "Managing Partner",
+        "Principal", "Managing Director", "Executive Director", "Vice President",
+        "Director", "CIO", "COO", "Head Of Operations", "Head Of Business Development"
+    ];
+
+    // Default seniorities
+    const defaultSeniorities = [
+        "Founder", "Chairman", "President", "CEO", "CXO",
+        "Vice President", "Director", "Head"
+    ];
+
+    // Clean domains - ensure no http/https prefix
+    const cleanDomains = domains.map(d => {
+        if (!d) return null;
+        return d.replace(/^https?:\/\//, '').replace(/^www\./, '').trim();
+    }).filter(Boolean);
+
+    return {
+        companyDomain: cleanDomains,
+        companyCountry: filters.countries || ["Canada", "United States"],
+        companyEmployeeSize: [
+            "11 - 50", "51 - 200", "201 - 500", "501 - 1000",
+            "1001 - 5000", "5001 - 10000", "10000+"
+        ],
+        contactEmailStatus: "verified",
+        includeEmails: true,
+        personTitle: filters.job_titles || defaultTitles,
+        seniority: filters.seniority || defaultSeniorities,
+        totalResults: filters.maxResults || 100
+    };
+};
+
+/**
+ * Starts the Apollo Domain Scraper actor
+ * @param {string} token - Apify API Token
+ * @param {Array<string>} domains - List of company domains
+ * @param {Object} filters - Dynamic filters
+ * @returns {Promise<string>} - The Run ID
+ */
+export const startApolloDomainScrape = async (token, domains, filters = {}) => {
+    try {
+        if (!domains || domains.length === 0) {
+            console.warn("[ApolloDomain] No domains provided.");
+            return null;
+        }
+
+        const input = buildApolloDomainPayload(domains, filters);
+        console.log(`[ApolloDomain] Starting scrape for ${domains.length} domains...`);
+
+        // Apollo Domain Scraper Actor ID
+        const ACTOR_ID = 'T1XDXWc1L92AfIJtd';
+
+        const response = await axios.post(
+            `${APIFY_API_URL}/acts/${ACTOR_ID}/runs?token=${token}`,
+            input,
+            { headers: { 'Content-Type': 'application/json' } }
+        );
+
+        console.log(`[ApolloDomain] Scrape started. Run ID: ${response.data.data.id}`);
+        return response.data.data.id;
+    } catch (error) {
+        console.error('[ApolloDomain] Start Error:', error.response?.data || error.message);
+        throw new Error(`Failed to start Apollo Domain scrape: ${error.response?.data?.error?.message || error.message}`);
+    }
+};
+
