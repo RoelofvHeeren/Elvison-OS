@@ -193,10 +193,13 @@ export const getApifyResults = async (token, datasetId) => {
  */
 export const buildApolloDomainPayload = (domains, filters = {}) => {
     // Default titles covering executives and decision-makers
+    // Default titles matching successful Apify console run
     const defaultTitles = [
-        "CEO", "President", "Founder", "Co-Founder", "Partner", "Managing Partner",
-        "Principal", "Managing Director", "Executive Director", "Vice President",
-        "Director", "CIO", "COO", "Head Of Operations", "Head Of Business Development"
+        "Executive Director", "Director Of Operations", "Director Of Sales", "Director Of Business Development",
+        "Founder", "Co-Founder", "General Manager", "Head Of Operations", "Head Of Business Development",
+        "Founding Partner", "Co-Owner", "Business Owner", "CEO/President/Owner", "Executive Vice President",
+        "Principal", "Managing Director", "Director of Investments", "Director of Developments", "Partner",
+        "Managing Partner", "CEO", "President", "Vice President", "CIO", "COO"
     ];
 
     // Default seniorities
