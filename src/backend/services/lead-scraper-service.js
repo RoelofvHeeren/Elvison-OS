@@ -113,12 +113,44 @@ export class LeadScraperService {
         // 1. Extract domains from companies
         console.log(`[ApolloDomain] Received ${companies.length} companies for lead enrichment.`);
 
+        // Helper: Check if a string looks like a valid domain (has dot, no spaces)
+        const looksLikeDomain = (str) => {
+            if (!str || typeof str !== 'string') return false;
+            const trimmed = str.trim();
+            return trimmed.includes('.') && !trimmed.includes(' ') && trimmed.length > 3;
+        };
+
+        // Helper: Clean a URL/domain string to bare domain
+        const cleanDomain = (str) => {
+            if (!str) return null;
+            return str.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0].trim().toLowerCase();
+        };
+
         // DEBUG: Log the raw company data to see what we're working with
         companies.forEach((c, i) => {
             console.log(`[ApolloDomain] Company ${i + 1}: name="${c.company_name}", domain="${c.domain}", website="${c.website}"`);
         });
 
-        const rawDomains = companies.map(c => c.domain || c.website);
+        // Extract domains with smart fallback:
+        // - If `domain` looks like an actual domain, use it
+        // - Otherwise, fall back to `website`
+        const rawDomains = companies.map(c => {
+            // Check if domain field actually contains a domain
+            if (looksLikeDomain(c.domain)) {
+                return cleanDomain(c.domain);
+            }
+            // Fall back to website
+            if (looksLikeDomain(c.website)) {
+                return cleanDomain(c.website);
+            }
+            // Try cleaning website even if it has protocol
+            if (c.website && c.website.includes('.')) {
+                return cleanDomain(c.website);
+            }
+            console.warn(`[ApolloDomain] No valid domain found for "${c.company_name}"`);
+            return null;
+        }).filter(Boolean);
+
         console.log(`[ApolloDomain] Raw domains extracted: ${JSON.stringify(rawDomains)}`);
 
         const domains = rawDomains
