@@ -58,7 +58,20 @@ export const SENIORITY_EXCLUDES = [
     "Intern"
 ];
 
+// Mappings for titles that are valid in our app but rejected by the strict scraper schema
+export const API_TITLE_MAPPING = {
+    "Partner": "Co-Owner", // "Partner" is not allowed in job titles, but Co-Owner is
+    "Principal": "Director", // "Principal" is not allowed, mapping to Director
+    "Managing Partner": "Co-Owner",
+    "CIO": "Chief Information Officer",
+    "COO": "Chief Operating Officer",
+    "Vice President": "Executive Vice President", // "Vice President" is not allowed, but EVP is
+    "President": "CEO/President/Owner" // Map to the combined one
+};
+
 // Helper to check if a title is valid
 export const isTitleAllowed = (title) => {
-    return ALLOWED_PERSON_TITLES.includes(title) || ALLOWED_EXTRA_TITLES.includes(title);
+    return ALLOWED_PERSON_TITLES.includes(title) ||
+        ALLOWED_EXTRA_TITLES.includes(title) ||
+        Object.keys(API_TITLE_MAPPING).includes(title);
 };

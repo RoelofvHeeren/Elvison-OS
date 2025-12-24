@@ -2,7 +2,8 @@ import {
     ALLOWED_PERSON_TITLES,
     ALLOWED_SENIORITY,
     ALLOWED_EXTRA_TITLES,
-    SENIORITY_EXCLUDES
+    SENIORITY_EXCLUDES,
+    API_TITLE_MAPPING
 } from '../../config/pipelineLabs.js';
 import axios from 'axios';
 
@@ -49,7 +50,22 @@ export const buildPipelineLabsPayload = (companyNames, filters = {}) => {
             }
 
             if (validTitles.length > 0) {
-                personTitleIncludes = validTitles;
+                // MAP titles to the strict API allowed values
+                const mappedTitles = validTitles.map(t => {
+                    // 1. If it's a direct allowed text, use it
+                    if (ALLOWED_PERSON_TITLES.includes(t)) return t;
+
+                    // 2. If it has a mapping, use the mapping
+                    if (API_TITLE_MAPPING[t]) return API_TITLE_MAPPING[t];
+
+                    // 3. Fallback: Check if it's in extra titles but NOT mapped (shouldn't happen if config is correct, but safe fallback)
+                    // If we send it and it's not allowed, it crashes. So we must be careful.
+                    // For now, if no mapping exists, we drop it to be safe, unless it happens to be valid despite our check.
+                    return null;
+                }).filter(Boolean);
+
+                // Deduplicate
+                personTitleIncludes = [...new Set(mappedTitles)];
             } else {
                 console.warn("[PipelineLabs] No valid titles provided in filters. Fallback to default ALLOWED_PERSON_TITLES.");
             }
