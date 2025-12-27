@@ -84,10 +84,11 @@ export class LeadScraperService {
             await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
             const statusRes = await checkApifyRun(this.apifyApiKey, runId);
 
-            if (statusRes.status === 'SUCCEEDED') {
+            if (statusRes.status === 'SUCCEEDED' || statusRes.status === 'ABORTED') {
                 isComplete = true;
                 datasetId = statusRes.datasetId;
-            } else if (statusRes.status === 'FAILED' || statusRes.status === 'ABORTED') {
+                if (statusRes.status === 'ABORTED') console.warn('[PipelineLabs] Run ABORTED (likely cost limit). Fetching partial results.');
+            } else if (statusRes.status === 'FAILED') {
                 throw new Error(`Apify run failed with status: ${statusRes.status}`);
             }
             attempts++;
@@ -181,9 +182,11 @@ export class LeadScraperService {
         console.log(`[ApolloDomain] Processing ${cleanDomains.length} domains in ${batches.length} batches (limit 10/run)...`);
 
         // Run batches in parallel
-        const results = await Promise.all(batches.map((batch, index) =>
-            this._runApolloBatch(batch, filters, index + 1)
-        ));
+        // Fix: Pass idempotencyKey with batch suffix to avoid collisions
+        const results = await Promise.all(batches.map((batch, index) => {
+            const batchKey = idempotencyKey ? `${idempotencyKey}_batch_${index + 1}` : null;
+            return this._runApolloBatch(batch, filters, index + 1, batchKey);
+        }));
 
         // Aggregate results
         const rawItems = results.flat();
@@ -200,8 +203,8 @@ export class LeadScraperService {
     /**
      * Helper to run a single batch of domains
      */
-    async _runApolloBatch(domains, filters, batchId) {
-        console.log(`[ApolloDomain] Starting Batch ${batchId} with ${domains.length} domains (Strict Filtering Active)`);
+    async _runApolloBatch(domains, filters, batchId, idempotencyKey = null) {
+        console.log(`[ApolloDomain] Starting Batch ${batchId} with ${domains.length} domains (Strict Filtering Active). Key: ${idempotencyKey || 'N/A'}`);
 
         // Log Exclusions
         if (filters.excluded_functions?.length) {
@@ -210,7 +213,7 @@ export class LeadScraperService {
 
         try {
             // Start Job
-            const runId = await startApolloDomainScrape(this.apifyApiKey, domains, filters);
+            const runId = await startApolloDomainScrape(this.apifyApiKey, domains, filters, idempotencyKey);
 
             if (!runId) {
                 throw new Error(`Batch ${batchId}: No run ID returned`);
@@ -234,10 +237,11 @@ export class LeadScraperService {
                     console.log(`[ApolloDomain] Batch ${batchId} Poll ${attempts + 1}: Status = ${statusRes.status}`);
                 }
 
-                if (statusRes.status === 'SUCCEEDED') {
+                if (statusRes.status === 'SUCCEEDED' || statusRes.status === 'ABORTED') {
                     isComplete = true;
                     datasetId = statusRes.datasetId;
-                } else if (statusRes.status === 'FAILED' || statusRes.status === 'ABORTED') {
+                    if (statusRes.status === 'ABORTED') console.warn(`[ApolloDomain] Batch ${batchId} ABORTED (likely cost limit). Fetching partial results.`);
+                } else if (statusRes.status === 'FAILED') {
                     throw new Error(`Run failed with status: ${statusRes.status}`);
                 }
                 attempts++;

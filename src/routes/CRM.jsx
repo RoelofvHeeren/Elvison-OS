@@ -133,7 +133,7 @@ const CRM = () => {
   }, [rows, filters])
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-6 lg:p-8 max-w-[1600px] mx-auto animate-fade-in">
       <div className="glass-panel flex flex-wrap items-center justify-between gap-4 px-6 py-5">
         <div>
           <p className="text-xs uppercase tracking-[0.3em] font-bold text-primary">LeadFlow</p>

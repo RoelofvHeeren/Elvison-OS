@@ -375,7 +375,7 @@ export const runAgentWorkflow = async (input, config) => {
         let totalLeadsCollected = 0; // NEW: Track total leads instead of companies
         let leadsPerCompany = {}; // NEW: Track leads collected per company
         let attempts = 0;
-        const MAX_ATTEMPTS = 5;
+        const MAX_ATTEMPTS = 1; // RESTRICTION: Single Pass Only (Prevent Cost Runaway)
         const originalPrompt = input.input_as_text;
 
         let lastRoundFound = 0;

@@ -106,7 +106,8 @@ export const buildPipelineLabsPayload = (companyNames, filters = {}) => {
         seniorityExcludes: seniorityExcludes,
         companyNameIncludes: cleanNames,
         companyLocationCountryIncludes: companyLocationCountryIncludes,
-        companyEmployeeSizeIncludes: companyEmployeeSizeIncludes
+        companyEmployeeSizeIncludes: companyEmployeeSizeIncludes,
+        maxCost: 1 // Cost Cap ($1)
     };
 };
 
@@ -233,7 +234,8 @@ export const buildApolloDomainPayload = (domains, filters = {}) => {
         includeEmails: true,
         personTitle: filters.job_titles || defaultTitles,
         seniority: filters.seniority || defaultSeniorities,
-        totalResults: filters.maxResults || 1000
+        totalResults: filters.maxResults || 1000,
+        maxCost: 1 // Cost Cap ($1)
     };
 };
 

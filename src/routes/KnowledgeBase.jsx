@@ -120,99 +120,113 @@ const KnowledgeBase = () => {
     // ... (Vector Store ID logic moved to top in previous edit) ...
 
     return (
-        <div className="space-y-8 animate-fade-in">
-            <header className="flex items-center justify-between">
+        <div className="space-y-8 p-6 lg:p-8 max-w-[1600px] mx-auto animate-fade-in">
+            <header className="glass-panel px-6 py-5 flex items-center justify-between">
                 <div>
-                    <h1 className="font-serif text-3xl font-medium text-primary">Knowledge Base</h1>
-                    <p className="text-gray-400 mt-2">Manage documents for your AI agents to reference.</p>
+                    <h1 className="font-serif text-3xl font-bold text-white mb-1">Knowledge Base</h1>
+                    <p className="text-sm text-muted">Manage documents for your AI agents to reference.</p>
                 </div>
                 {syncing && (
-                    <div className="flex items-center gap-2 text-sm text-[#139187] bg-[#139187]/10 px-3 py-1.5 rounded-full animate-pulse border border-[#139187]/20">
-                        <RefreshCw className="h-4 w-4 animate-spin" />
+                    <div className="flex items-center gap-2 text-xs font-bold text-primary bg-primary/10 px-3 py-1.5 rounded-full animate-pulse border border-primary/20">
+                        <RefreshCw className="h-3 w-3 animate-spin" />
                         Restoring files from cache...
                     </div>
                 )}
             </header>
 
-            {/* Vector Store ID Input */}
-            <div className="rounded-xl border border-[#139187]/30 bg-[#139187]/5 p-4 flex flex-col gap-2">
-                <label className="text-sm font-bold text-[#139187]">Vector Store ID (OpenAI)</label>
-                <input
-                    type="text"
-                    value={vectorStoreId}
-                    onChange={handleVectorStoreIdChange}
-                    placeholder="vs_..."
-                    className="w-full rounded-lg border border-white/10 bg-black/20 p-2 text-sm text-white placeholder:text-gray-600 focus:border-[#139187] focus:outline-none"
-                />
-                <p className="text-xs text-gray-500">Enter your existing Vector Store ID here so agents can access files without re-uploading.</p>
-            </div>
+            <div className="grid gap-6 lg:grid-cols-[1fr,350px]">
+                {/* Files List */}
+                <div className="glass-panel p-6">
+                    <h2 className="mb-4 text-xs font-bold uppercase tracking-wider text-muted">Uploaded Documents ({files.length})</h2>
 
-            {/* Upload Area */}
-            <div className="rounded-2xl border-2 border-dashed border-outline/50 bg-surface/30 p-10 text-center transition-all hover:border-primary/50 hover:bg-surface/50">
-                <input
-                    type="file"
-                    id="file-upload"
-                    className="hidden"
-                    onChange={handleUpload}
-                    disabled={uploading}
-                />
-                <label
-                    htmlFor="file-upload"
-                    className="flex flex-col items-center gap-4 cursor-pointer"
-                >
-                    <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-primary">
-                        <Upload className="h-8 w-8" />
-                    </div>
-                    <div>
-                        <span className="text-lg font-medium text-primary">Click to upload</span>
-                        <span className="text-muted"> or drag and drop</span>
-                    </div>
-                    <p className="text-sm text-muted/70">PDF, TXT, DOCX (Max 10MB)</p>
-                </label>
-                {uploading && <p className="mt-4 text-sm text-primary animate-pulse">Uploading...</p>}
-            </div>
-
-            {/* Files List */}
-            <div className="rounded-2xl border border-outline bg-white p-6 shadow-sm">
-                <h2 className="mb-4 text-lg font-medium text-secondary">Uploaded Documents ({files.length})</h2>
-
-                {files.length === 0 ? (
-                    <div className="text-center py-10 text-muted">No documents uploaded yet.</div>
-                ) : (
-                    <div className="space-y-3">
-                        {files.map((file) => (
-                            <div key={file.id} className="group flex items-center justify-between rounded-xl bg-surface p-4 transition-all hover:bg-surface/80 hover:shadow-sm">
-                                <div className="flex items-center gap-4">
-                                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white shadow-sm">
-                                        <FileText className="h-5 w-5 text-secondary" />
+                    {files.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-20 text-center border-2 border-dashed border-white/5 rounded-2xl bg-white/5">
+                            <FileText className="h-10 w-10 text-gray-600 mb-3" />
+                            <p className="text-gray-400 font-medium">No documents uploaded</p>
+                            <p className="text-xs text-gray-600 mt-1 max-w-xs">Upload files to let your agents use them as context.</p>
+                        </div>
+                    ) : (
+                        <div className="space-y-2">
+                            {files.map((file) => (
+                                <div key={file.id} className="group flex items-center justify-between rounded-xl bg-white/5 p-3 hover:bg-white/10 transition-all border border-transparent hover:border-white/10">
+                                    <div className="flex items-center gap-4">
+                                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-black/20 border border-white/10 text-primary">
+                                            <FileText className="h-5 w-5" />
+                                        </div>
+                                        <div>
+                                            <h3 className="font-medium text-white text-sm">{file.name}</h3>
+                                            <p className="text-[10px] text-gray-500 uppercase tracking-wide">
+                                                {new Date(file.uploadedAt).toLocaleDateString()}
+                                            </p>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <h3 className="font-medium text-gray-800">{file.name}</h3>
-                                        <p className="text-xs text-gray-500">
-                                            {new Date(file.uploadedAt).toLocaleDateString()} • {new Date(file.uploadedAt).toLocaleTimeString()}
-                                        </p>
+
+                                    <div className="flex items-center gap-3">
+                                        <div className={`flex items-center gap-1.5 text-[10px] font-bold px-2 py-1 rounded-full ${file.status === 'ready' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                                            }`}>
+                                            {file.status === 'ready' ? <CheckCircle className="h-3 w-3" /> : <Clock className="h-3 w-3 animate-spin-slow" />}
+                                            <span className="uppercase">{file.status}</span>
+                                        </div>
+
+                                        <button
+                                            onClick={() => handleDelete(file.id)}
+                                            className="p-2 text-gray-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                                            title="Delete file"
+                                        >
+                                            <Trash2 className="h-4 w-4" />
+                                        </button>
                                     </div>
                                 </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
 
-                                <div className="flex items-center gap-4">
-                                    <div className={`flex items-center gap-2 text-sm px-3 py-1 rounded-full ${file.status === 'ready' ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'
-                                        }`}>
-                                        {file.status === 'ready' ? <CheckCircle className="h-4 w-4" /> : <Clock className="h-4 w-4 animate-spin-slow" />}
-                                        <span className="capitalize">{file.status}</span>
-                                    </div>
-
-                                    <button
-                                        onClick={() => handleDelete(file.id)}
-                                        className="p-2 text-muted hover:text-rose-500 transition-colors"
-                                        title="Delete file"
-                                    >
-                                        <Trash2 className="h-5 w-5" />
-                                    </button>
+                {/* Sidebar: Upload & Settings */}
+                <div className="space-y-6">
+                    {/* Upload Area */}
+                    <div className="glass-panel p-6">
+                        <h3 className="mb-4 text-xs font-bold uppercase tracking-wider text-muted">Upload New</h3>
+                        <div className="rounded-2xl border-2 border-dashed border-white/10 bg-white/5 p-8 text-center transition-all hover:border-primary/50 hover:bg-primary/5 group relative overflow-hidden">
+                            <input
+                                type="file"
+                                id="file-upload"
+                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                onChange={handleUpload}
+                                disabled={uploading}
+                            />
+                            <div className="flex flex-col items-center gap-3 pointer-events-none">
+                                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary group-hover:scale-110 transition-transform">
+                                    <Upload className="h-6 w-6" />
+                                </div>
+                                <div>
+                                    <span className="text-sm font-bold text-white block">Click or Drag File</span>
+                                    <span className="text-xs text-muted">PDF, TXT, DOCX</span>
                                 </div>
                             </div>
-                        ))}
+                            {uploading && (
+                                <div className="absolute inset-0 bg-black/80 flex items-center justify-center backdrop-blur-sm">
+                                    <p className="text-sm font-bold text-primary animate-pulse">Uploading...</p>
+                                </div>
+                            )}
+                        </div>
                     </div>
-                )}
+
+                    {/* Vector Store ID Input */}
+                    <div className="glass-panel p-6">
+                        <label className="text-xs font-bold uppercase tracking-wider text-primary mb-2 block">OpenAI Vector Store ID</label>
+                        <input
+                            type="text"
+                            value={vectorStoreId}
+                            onChange={handleVectorStoreIdChange}
+                            placeholder="vs_..."
+                            className="w-full rounded-lg border-2 border-white/10 bg-black/20 p-2.5 text-sm text-white placeholder:text-gray-700 focus:border-primary focus:outline-none transition-all"
+                        />
+                        <p className="text-[10px] text-gray-500 mt-2 leading-relaxed">
+                            Connect an existing vector store to skip manual uploads. Agents will use this ID for knowledge retrieval.
+                        </p>
+                    </div>
+                </div>
             </div>
         </div>
     )

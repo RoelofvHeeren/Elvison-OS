@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { safeUUID } from '../utils/security'
 import { PlayCircle, Terminal, CheckCircle, AlertCircle, Loader2, Send, FileText, Bot, Users, StopCircle } from 'lucide-react'
+import { useIcp } from '../context/IcpContext'
 
 const STEPS = [
     { id: 'Company Profiler', label: 'Company Profiler' },
@@ -14,6 +15,7 @@ const STEPS = [
 
 const AgentRunner = () => {
     const navigate = useNavigate()
+    const { icps, selectedIcp, setSelectedIcp } = useIcp()
     const [prompt, setPrompt] = useState('Find 3 law firms in Toronto, Canada and identify 1 Partner per firm.')
     const [mode, setMode] = useState('default') // 'default' or 'list_builder'
     const [isRunning, setIsRunning] = useState(false)
@@ -211,6 +213,31 @@ const AgentRunner = () => {
                     </h2>
 
                     <div className="space-y-4">
+                        {/* Strategy Selector */}
+                        <div>
+                            <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-gray-400">
+                                Strategy (ICP)
+                            </label>
+                            <select
+                                value={selectedIcp?.id || ''}
+                                onChange={(e) => {
+                                    const icp = icps.find(i => i.id === e.target.value)
+                                    if (icp) setSelectedIcp(icp)
+                                }}
+                                className="w-full rounded-lg border-2 border-white/10 bg-black/20 p-3 text-sm text-white focus:border-[#139187] focus:outline-none transition-all"
+                            >
+                                <option value="" disabled>Select a Strategy</option>
+                                {icps.map(icp => (
+                                    <option key={icp.id} value={icp.id}>{icp.name}</option>
+                                ))}
+                            </select>
+                            {selectedIcp && (
+                                <p className="mt-1 text-[10px] text-gray-500">
+                                    Using config from: <span className="text-[#139187]">{selectedIcp.name}</span>
+                                </p>
+                            )}
+                        </div>
+
                         <div>
                             <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-gray-400">
                                 Objective

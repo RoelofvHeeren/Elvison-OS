@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useIcp } from '../context/IcpContext';
 import axios from 'axios';
-import { ChevronDown, ChevronRight, ThumbsUp, ThumbsDown, MessageSquare, Zap, CheckCircle } from 'lucide-react';
+import { ChevronDown, ChevronRight, ThumbsUp, ThumbsDown, MessageSquare, Zap, CheckCircle, RotateCw } from 'lucide-react';
 
 const Optimize = () => {
     const { selectedIcp } = useIcp();
@@ -14,18 +14,6 @@ const Optimize = () => {
     // Load Runs for ICP
     useEffect(() => {
         if (!selectedIcp) return;
-        // Mocking fetching runs for now, or use real endpoint if exists
-        // TODO: Implement GET /api/icps/:id/runs
-        const loadRuns = async () => {
-            // Placeholder: Fetch all runs and filter client-side if endpoint not ready
-            // Or assumes /api/runs returns all user runs
-            try {
-                // const { data } = await axios.get('/api/runs');
-                // const icpRuns = data.filter(r => r.icp_id === selectedIcp.id);
-                // setRuns(icpRuns);
-            } catch (e) { console.error(e) }
-        };
-        // loadRuns();
 
         // MOCK DATA FOR UI DEV
         setRuns([{ id: 'run_123', started_at: new Date().toISOString(), status: 'COMPLETED' }]);
@@ -34,14 +22,29 @@ const Optimize = () => {
             {
                 id: 'comp_1', name: 'Acme Corp', website: 'acme.com',
                 contacts: [
-                    { id: 'cont_1', name: 'John Doe', title: 'CEO', email: 'john@acme.com' },
-                    { id: 'cont_2', name: 'Jane Smith', title: 'HR Manager', email: 'jane@acme.com' }
+                    {
+                        id: 'cont_1', name: 'John Doe', title: 'CEO', email: 'john@acme.com',
+                        messages: [
+                            { id: 'msg_1', subject: 'Partnership Opportunity', body: 'Hi John, saw you are leading Acme...' }
+                        ]
+                    },
+                    {
+                        id: 'cont_2', name: 'Jane Smith', title: 'HR Manager', email: 'jane@acme.com',
+                        messages: [
+                            { id: 'msg_2', subject: 'Hiring Solutions', body: 'Jane, regarding your hiring needs...' }
+                        ]
+                    }
                 ]
             },
             {
                 id: 'comp_2', name: 'TechStart', website: 'techstart.io',
                 contacts: [
-                    { id: 'cont_3', name: 'Bob Dev', title: 'CTO', email: 'bob@techstart.io' }
+                    {
+                        id: 'cont_3', name: 'Bob Dev', title: 'CTO', email: 'bob@techstart.io',
+                        messages: [
+                            { id: 'msg_3', subject: 'Tech Stack Integration', body: 'Bob, love what you built at TechStart...' }
+                        ]
+                    }
                 ]
             }
         ]);
@@ -66,19 +69,18 @@ const Optimize = () => {
         setIsOptimizing(true);
         try {
             const feedbacks = Object.entries(feedback).map(([id, data]) => ({
-                entity_identifier: id, // In real app, might need more specific ID mapping
+                entity_identifier: id,
                 entity_type: data.entityType,
                 grade: data.grade,
                 notes: data.notes
             }));
 
-            await axios.post(`/api/runs/${selectedRunId}/feedback`, {
-                icpId: selectedIcp.id,
-                feedbacks
-            });
+            // TODO: Connect to backend
+            // await axios.post(`/api/runs/${selectedRunId}/feedback`, { icpId: selectedIcp.id, feedbacks });
+            // await axios.post(`/api/icps/${selectedIcp.id}/optimize`);
 
-            // Trigger Optimization Agent
-            await axios.post(`/api/icps/${selectedIcp.id}/optimize`);
+            // Simulate delay
+            await new Promise(r => setTimeout(r, 1000));
 
             alert('Optimization Feedback Submitted!');
             setFeedback({});
@@ -90,55 +92,66 @@ const Optimize = () => {
         }
     };
 
-    if (!selectedIcp) return <div className="p-8 text-gray-400">Please select a Strategy (ICP) from your Profile first.</div>;
+    if (!selectedIcp) return (
+        <div className="flex items-center justify-center h-full p-8 text-gray-400">
+            <div className="text-center">
+                <p className="text-xl mb-2">No Strategy Selected</p>
+                <p className="text-sm opacity-60">Please select a Strategy (ICP) from your Profile to optimize.</p>
+            </div>
+        </div>
+    );
 
     return (
-        <div className="flex h-full bg-gray-900 text-gray-100">
+        <div className="flex h-full gap-6 p-6 lg:p-8 max-w-[1600px] mx-auto animate-fade-in">
             {/* Run Sidebar */}
-            <div className="w-64 border-r border-gray-800 p-4">
-                <h2 className="text-xl font-serif font-bold text-teal-400 mb-4">Run History</h2>
-                <div className="space-y-2">
+            <div className="w-64 glass-panel p-4 flex flex-col gap-4 h-fit">
+                <h2 className="text-xs uppercase tracking-wider font-bold text-primary px-2">Run History</h2>
+                <div className="space-y-1">
                     {runs.map(run => (
                         <button
                             key={run.id}
                             onClick={() => setSelectedRunId(run.id)}
-                            className={`w-full text-left p-3 rounded-lg text-sm ${selectedRunId === run.id ? 'bg-teal-900/40 text-teal-300 border border-teal-500/30' : 'hover:bg-gray-800'}`}
+                            className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${selectedRunId === run.id
+                                    ? 'bg-primary/20 text-accent border border-primary/30'
+                                    : 'text-muted hover:bg-white/5 hover:text-white'
+                                }`}
                         >
                             <div className="font-bold">Run {run.id.slice(0, 6)}</div>
-                            <div className="text-xs text-gray-500">{new Date(run.started_at).toLocaleDateString()}</div>
+                            <div className="text-[10px] opacity-70">{new Date(run.started_at).toLocaleDateString()}</div>
                         </button>
                     ))}
                 </div>
             </div>
 
             {/* Main Content */}
-            <div className="flex-1 p-8 overflow-y-auto">
-                <div className="flex justify-between items-center mb-8">
+            <div className="flex-1 overflow-y-auto space-y-6">
+                <div className="glass-panel p-6 flex justify-between items-center">
                     <div>
-                        <h1 className="text-3xl font-bold flex items-center gap-3">
-                            <Zap className="text-yellow-400" /> Optimize Strategy
-                        </h1>
-                        <p className="text-gray-400 mt-2">Grade results to teach the AI what you like.</p>
+                        <div className="flex items-center gap-2 mb-1">
+                            <Zap className="w-5 h-5 text-accent" />
+                            <h1 className="font-serif text-2xl font-bold text-white">Optimize Strategy</h1>
+                        </div>
+                        <p className="text-sm text-muted">Review generated messages to train your AI agent.</p>
                     </div>
 
                     <button
                         onClick={submitOptimization}
                         disabled={isOptimizing || Object.keys(feedback).length === 0}
-                        className="bg-teal-500 hover:bg-teal-400 text-white px-6 py-2 rounded-lg font-bold disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                        className="flex items-center gap-2 rounded-2xl bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-brand transition-all duration-200 hover:-translate-y-[1px] hover:bg-primaryDark disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                        {isOptimizing ? <RotateCw className="animate-spin" /> : <CheckCircle />}
+                        {isOptimizing ? <RotateCw className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
                         Apply Feedback
                     </button>
                 </div>
 
-                <div className="space-y-8">
+                <div className="space-y-4">
                     {runData.map(company => (
-                        <div key={company.id} className="bg-gray-800/50 border border-gray-700 rounded-xl overflow-hidden">
+                        <div key={company.id} className="glass-panel overflow-hidden">
                             {/* Company Header */}
-                            <div className="p-4 bg-gray-800 flex justify-between items-center">
+                            <div className="px-6 py-4 border-b border-white/5 bg-white/5 flex justify-between items-center">
                                 <div>
                                     <h3 className="text-lg font-bold text-white">{company.name}</h3>
-                                    <a href={`https://${company.website}`} target="_blank" className="text-xs text-teal-400 hover:underline">{company.website}</a>
+                                    <a href={`https://${company.website}`} target="_blank" rel="noreferrer" className="text-xs text-primary hover:underline">{company.website}</a>
                                 </div>
                                 <FeedbackControl
                                     type="company"
@@ -149,22 +162,51 @@ const Optimize = () => {
                             </div>
 
                             {/* Contacts */}
-                            <div className="p-4 space-y-4">
+                            <div className="p-6 space-y-6">
                                 {company.contacts.map(contact => (
-                                    <div key={contact.id} className="flex items-start justify-between p-3 bg-gray-900/50 rounded-lg border border-gray-700/50">
-                                        <div>
-                                            <div className="font-medium text-white">{contact.name}</div>
-                                            <div className="text-sm text-teal-300">{contact.title}</div>
-                                            <div className="text-xs text-gray-500">{contact.email}</div>
+                                    <div key={contact.id} className="space-y-4">
+                                        <div className="flex items-start justify-between">
+                                            <div className="flex items-center gap-3">
+                                                <div className="h-10 w-10 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold">
+                                                    {contact.name.charAt(0)}
+                                                </div>
+                                                <div>
+                                                    <div className="font-medium text-white">{contact.name}</div>
+                                                    <div className="text-sm text-primary/80">{contact.title}</div>
+                                                </div>
+                                            </div>
+                                            <FeedbackControl
+                                                type="contact"
+                                                id={contact.id}
+                                                feedback={feedback[contact.id]}
+                                                onGrade={(g) => handleFeedback('contact', contact.id, g)}
+                                                showNotes
+                                                onNote={(n) => handleNote('contact', contact.id, n)}
+                                            />
                                         </div>
-                                        <FeedbackControl
-                                            type="contact"
-                                            id={contact.id}
-                                            feedback={feedback[contact.id]}
-                                            onGrade={(g) => handleFeedback('contact', contact.id, g)}
-                                            showNotes
-                                            onNote={(n) => handleNote('contact', contact.id, n)}
-                                        />
+
+                                        {/* Messages Section */}
+                                        <div className="pl-12 space-y-3">
+                                            {contact.messages?.map(msg => (
+                                                <div key={msg.id} className="rounded-xl border border-white/10 bg-black/20 p-4 relative group">
+                                                    <div className="mb-2 flex items-center justify-between">
+                                                        <span className="text-xs font-bold uppercase tracking-wider text-muted flex items-center gap-2">
+                                                            <MessageSquare className="w-3 h-3" /> Outreach Message
+                                                        </span>
+                                                        <FeedbackControl
+                                                            type="message"
+                                                            id={msg.id}
+                                                            feedback={feedback[msg.id]}
+                                                            onGrade={(g) => handleFeedback('message', msg.id, g)}
+                                                            showNotes
+                                                            onNote={(n) => handleNote('message', msg.id, n)}
+                                                        />
+                                                    </div>
+                                                    <div className="text-sm font-semibold text-white mb-1">{msg.subject}</div>
+                                                    <div className="text-sm text-gray-300 whitespace-pre-wrap">{msg.body}</div>
+                                                </div>
+                                            ))}
+                                        </div>
                                     </div>
                                 ))}
                             </div>
@@ -179,35 +221,36 @@ const Optimize = () => {
 const FeedbackControl = ({ type, id, feedback, onGrade, showNotes, onNote }) => {
     const grade = feedback?.grade;
     return (
-        <div className="flex flex-col items-end gap-2">
-            <div className="flex items-center gap-2 bg-gray-900 rounded-lg p-1 border border-gray-700">
-                <button
-                    onClick={() => onGrade('positive')}
-                    className={`p-1.5 rounded hover:bg-green-900/50 transition-colors ${grade === 'positive' ? 'text-green-400 bg-green-900/30' : 'text-gray-500'}`}
-                >
-                    <ThumbsUp className="w-4 h-4" />
-                </button>
-                <button
-                    onClick={() => onGrade('negative')}
-                    className={`p-1.5 rounded hover:bg-red-900/50 transition-colors ${grade === 'negative' ? 'text-red-400 bg-red-900/30' : 'text-gray-500'}`}
-                >
-                    <ThumbsDown className="w-4 h-4" />
-                </button>
-            </div>
+        <div className="flex items-center gap-3">
             {showNotes && (grade === 'negative' || grade === 'positive') && (
                 <input
                     type="text"
-                    placeholder="Why? (e.g. 'bad title')"
-                    className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs w-48 focus:border-teal-500 outline-none"
+                    placeholder="Rational (optional)..."
+                    className="bg-transparent border-b border-white/20 px-2 py-1 text-xs text-white placeholder:text-gray-600 focus:border-primary outline-none min-w-[150px] transition-all animate-in fade-in slide-in-from-right-2"
                     onChange={(e) => onNote(e.target.value)}
                 />
             )}
+            <div className="flex items-center gap-1 bg-black/40 rounded-lg p-1 border border-white/10">
+                <button
+                    onClick={() => onGrade('positive')}
+                    className={`p-1.5 rounded transition-colors ${grade === 'positive' ? 'bg-emerald-500/20 text-emerald-400' : 'text-gray-500 hover:text-emerald-400'
+                        }`}
+                    title="Good Match"
+                >
+                    <ThumbsUp className="w-3.5 h-3.5" />
+                </button>
+                <div className="w-[1px] h-3 bg-white/10"></div>
+                <button
+                    onClick={() => onGrade('negative')}
+                    className={`p-1.5 rounded transition-colors ${grade === 'negative' ? 'bg-rose-500/20 text-rose-400' : 'text-gray-500 hover:text-rose-400'
+                        }`}
+                    title="Bad Match"
+                >
+                    <ThumbsDown className="w-3.5 h-3.5" />
+                </button>
+            </div>
         </div>
     )
-}
-
-function RotateCw(props) {
-    return <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
 }
 
 export default Optimize;
