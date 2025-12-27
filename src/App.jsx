@@ -14,6 +14,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { IcpProvider } from './context/IcpContext'
 import Profile from './routes/Profile'
 import Optimize from './routes/Optimize'
+import IcpSettings from './routes/IcpSettings'
 
 // Protected Route wrapper
 const ProtectedRoute = ({ children }) => {
@@ -96,6 +97,7 @@ const AppContent = () => {
           <Route path="/agents" element={<ProtectedRoute><AgentConfig /></ProtectedRoute>} />
           <Route path="/logbook" element={<ProtectedRoute><Logbook /></ProtectedRoute>} />
           <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+          <Route path="/icp/:icpId/settings" element={<ProtectedRoute><IcpSettings /></ProtectedRoute>} />
           <Route path="/optimize" element={<ProtectedRoute><Optimize /></ProtectedRoute>} />
 
           <Route path="/" element={<div />} />
