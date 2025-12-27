@@ -87,7 +87,8 @@ const AgentRunner = () => {
             abortControllerRef.current = new AbortController()
 
             // Generate Idempotency Key for this specific run attempt
-            const idempotencyKey = crypto.randomUUID ? crypto.randomUUID() : `run_${Date.now()}_${Math.random().toString(36).substring(2)}`;
+            const hasCrypto = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function';
+            const idempotencyKey = hasCrypto ? crypto.randomUUID() : `run_${Date.now()}_${Math.random().toString(36).substring(2)}`;
             console.log('Run triggered with Idempotency Key:', idempotencyKey);
 
             const response = await fetch('/api/agents/run', {

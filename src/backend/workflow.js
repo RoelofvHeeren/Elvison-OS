@@ -145,7 +145,14 @@ export const runAgentWorkflow = async (input, config) => {
     }
 
     // Helper for logging
-    const logStep = listeners.onLog || ((step, detail) => console.log(`[${step}] ${detail}`));
+    // Helper for logging
+    const logStep = (step, detail) => {
+        if (listeners && listeners.onLog) {
+            listeners.onLog({ step, detail });
+        } else {
+            console.log(`[${step}] ${detail}`);
+        }
+    };
     const logSection = (title) => logStep('System', `\n=== ${title} ===`);
 
     if (idempotencyKey) logStep('System', `🔑 Idempotency Key: ${idempotencyKey}`);
