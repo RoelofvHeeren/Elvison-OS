@@ -67,7 +67,6 @@ const AppContent = () => {
   const isAuthPage = ['/login', '/signup', '/onboarding'].includes(location.pathname)
 
   return (
-  return (
     <div className="flex h-screen bg-transparent text-gray-100 overflow-hidden font-sans relative">
       <div className="absolute inset-0 z-0 pointer-events-none">
         <video
@@ -102,7 +101,6 @@ const AppContent = () => {
         </Routes>
       </main>
     </div>
-  )
   )
 }
 
