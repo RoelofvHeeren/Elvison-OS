@@ -957,12 +957,15 @@ app.put('/api/icps/:id', requireAuth, async (req, res) => {
         if (updates.length > 0) {
             values.push(id) // ID is last param
             await query(
-                `UPDATE icps SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $${idx}`,
+                `UPDATE icps SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $${idx} RETURNING *`,
                 values
             )
+            const updatedRow = (await query('SELECT * FROM icps WHERE id = $1', [id])).rows[0]
+            res.json({ success: true, icp: updatedRow })
+        } else {
+            const existing = await query('SELECT * FROM icps WHERE id = $1', [id])
+            res.json({ success: true, icp: existing.rows[0] })
         }
-
-        res.json({ success: true })
     } catch (err) {
         console.error('Failed to update ICP:', err)
         res.status(500).json({ error: 'Failed to update ICP' })

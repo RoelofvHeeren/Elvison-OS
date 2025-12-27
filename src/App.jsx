@@ -15,6 +15,7 @@ import { IcpProvider } from './context/IcpContext'
 import Profile from './routes/Profile'
 import Optimize from './routes/Optimize'
 import IcpSettings from './routes/IcpSettings'
+import ErrorBoundary from './components/ErrorBoundary'
 
 // Protected Route wrapper
 const ProtectedRoute = ({ children }) => {
@@ -68,42 +69,44 @@ const AppContent = () => {
   const isAuthPage = ['/login', '/signup', '/onboarding'].includes(location.pathname)
 
   return (
-    <div className="flex h-screen bg-transparent text-gray-100 overflow-hidden font-sans relative">
-      <div className="absolute inset-0 z-0 pointer-events-none">
-        <video
-          autoPlay
-          loop
-          muted
-          playsInline
-          className="w-full h-full object-cover opacity-60"
-          src="/bg-video.mp4"
-        />
-        <div className="absolute inset-0 bg-black/60" />
+    <ErrorBoundary>
+      <div className="flex h-screen bg-transparent text-gray-100 overflow-hidden font-sans relative">
+        <div className="absolute inset-0 z-0 pointer-events-none">
+          <video
+            autoPlay
+            loop
+            muted
+            playsInline
+            className="w-full h-full object-cover opacity-60"
+            src="/bg-video.mp4"
+          />
+          <div className="absolute inset-0 bg-black/60" />
+        </div>
+
+        {/* Global sidebar - uses onToggle prop to control collapse */}
+        {!isAuthPage && user && <Sidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} />}
+
+        <main className={`relative z-10 flex-1 overflow-auto transition-all duration-300 ${!isAuthPage && user ? 'p-0' : ''}`}>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route path="/signup" element={<Signup />} />
+            <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
+
+            <Route path="/runner" element={<ProtectedRoute><AgentRunner /></ProtectedRoute>} />
+            <Route path="/crm" element={<ProtectedRoute><CRM /></ProtectedRoute>} />
+            <Route path="/connections" element={<ProtectedRoute><Connections /></ProtectedRoute>} />
+            <Route path="/kb" element={<ProtectedRoute><KnowledgeBase /></ProtectedRoute>} />
+            <Route path="/agents" element={<ProtectedRoute><AgentConfig /></ProtectedRoute>} />
+            <Route path="/logbook" element={<ProtectedRoute><Logbook /></ProtectedRoute>} />
+            <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+            <Route path="/icp/:icpId/settings" element={<ProtectedRoute><IcpSettings /></ProtectedRoute>} />
+            <Route path="/optimize" element={<ProtectedRoute><Optimize /></ProtectedRoute>} />
+
+            <Route path="/" element={<div />} />
+          </Routes>
+        </main>
       </div>
-
-      {/* Global sidebar - uses onToggle prop to control collapse */}
-      {!isAuthPage && user && <Sidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} />}
-
-      <main className={`relative z-10 flex-1 overflow-auto transition-all duration-300 ${!isAuthPage && user ? 'p-0' : ''}`}>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/signup" element={<Signup />} />
-          <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
-
-          <Route path="/runner" element={<ProtectedRoute><AgentRunner /></ProtectedRoute>} />
-          <Route path="/crm" element={<ProtectedRoute><CRM /></ProtectedRoute>} />
-          <Route path="/connections" element={<ProtectedRoute><Connections /></ProtectedRoute>} />
-          <Route path="/kb" element={<ProtectedRoute><KnowledgeBase /></ProtectedRoute>} />
-          <Route path="/agents" element={<ProtectedRoute><AgentConfig /></ProtectedRoute>} />
-          <Route path="/logbook" element={<ProtectedRoute><Logbook /></ProtectedRoute>} />
-          <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-          <Route path="/icp/:icpId/settings" element={<ProtectedRoute><IcpSettings /></ProtectedRoute>} />
-          <Route path="/optimize" element={<ProtectedRoute><Optimize /></ProtectedRoute>} />
-
-          <Route path="/" element={<div />} />
-        </Routes>
-      </main>
-    </div>
+    </ErrorBoundary>
   )
 }
 
