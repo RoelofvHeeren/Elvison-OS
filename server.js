@@ -892,8 +892,9 @@ app.get('/api/integrations/apify/status/:runId', async (req, res) => {
 
 // Trigger Analysis Run (SSE Streaming)
 app.post('/api/agents/run', requireAuth, async (req, res) => {
-    const { prompt, vectorStoreId, agentConfigs, mode, filters } = req.body
+    const { prompt, vectorStoreId, agentConfigs, mode, filters, idempotencyKey } = req.body
     console.log(`Starting live workflow (Mode: ${mode || 'default'}) with prompt:`, prompt)
+    if (idempotencyKey) console.log(`🔑 Idempotency Key received: ${idempotencyKey}`)
 
     // 1. Setup SSE Headers
     res.writeHead(200, {
@@ -907,7 +908,7 @@ app.post('/api/agents/run', requireAuth, async (req, res) => {
     try {
         const { rows } = await query(
             `INSERT INTO workflow_runs (agent_id, status, started_at, metadata, user_id) VALUES ('main_workflow', 'RUNNING', NOW(), $1, $2) RETURNING id`,
-            [JSON.stringify({ prompt, vectorStoreId, mode: mode || 'default' }), req.userId]
+            [JSON.stringify({ prompt, vectorStoreId, mode: mode || 'default', idempotencyKey }), req.userId]
         )
         runId = rows[0].id
         // Send initial connection confirmation
@@ -928,6 +929,7 @@ app.post('/api/agents/run', requireAuth, async (req, res) => {
             agentConfigs: agentConfigs || {},
             mode: mode, // Pass mode to workflow
             filters: filters || {}, // Pass filters from onboarding
+            idempotencyKey: idempotencyKey, // NEW: Pass idempotency key
             listeners: {
                 onLog: async (logParams) => {
                     const eventData = JSON.stringify({

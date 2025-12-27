@@ -86,6 +86,10 @@ const AgentRunner = () => {
             // Create abort controller for cancellation
             abortControllerRef.current = new AbortController()
 
+            // Generate Idempotency Key for this specific run attempt
+            const idempotencyKey = crypto.randomUUID ? crypto.randomUUID() : `run_${Date.now()}_${Math.random().toString(36).substring(2)}`;
+            console.log('Run triggered with Idempotency Key:', idempotencyKey);
+
             const response = await fetch('/api/agents/run', {
                 method: 'POST',
                 headers: {
@@ -95,7 +99,8 @@ const AgentRunner = () => {
                     prompt,
                     vectorStoreId, // Pass the persistent ID
                     mode, // Pass the selected mode
-                    filters: JSON.parse(localStorage.getItem('onboarding_state') || '{}') // Pass user filters
+                    filters: JSON.parse(localStorage.getItem('onboarding_state') || '{}'), // Pass user filters
+                    idempotencyKey // NEW: Send unique key
                 }),
                 signal: abortControllerRef.current.signal
             })

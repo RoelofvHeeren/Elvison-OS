@@ -130,7 +130,8 @@ export const runAgentWorkflow = async (input, config) => {
         minBatchSize = 5,
         maxDiscoveryAttempts = 5,
         mode,
-        filters
+        filters,
+        idempotencyKey = null // NEW: Idempotency Key
     } = config;
 
     // Validate userId requirement
@@ -138,14 +139,16 @@ export const runAgentWorkflow = async (input, config) => {
         throw new Error('userId is required for company tracking');
     }
 
+    // Ensure idempotency key is passed to filters for scraper
+    if (idempotencyKey) {
+        filters = { ...filters, idempotencyKey };
+    }
+
     // Helper for logging
-    const logStep = (step, detail) => {
-        if (listeners && listeners.onLog) {
-            listeners.onLog({ step, detail });
-        } else {
-            console.log(`[${step}] ${detail}`);
-        }
-    };
+    const logStep = listeners.onLog || ((step, detail) => console.log(`[${step}] ${detail}`));
+    const logSection = (title) => logStep('System', `\n=== ${title} ===`);
+
+    if (idempotencyKey) logStep('System', `🔑 Idempotency Key: ${idempotencyKey}`);
 
     // Default Vector Store Logic
     if (!vectorStoreId) {

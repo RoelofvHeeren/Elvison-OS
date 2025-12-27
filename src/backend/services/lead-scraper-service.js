@@ -109,7 +109,10 @@ export class LeadScraperService {
      * This uses DOMAINS instead of company names for better accuracy.
      * Cost: ~$0.0026 per lead
      */
-    async _fetchFromApolloDomain(companies, filters) {
+    async _fetchFromApolloDomain(companies, filters, idempotencyKey = null) {
+        // Note: idempotencyKey is also available in filters from fetchLeads but passing explicit arg is clearer
+        if (idempotencyKey) filters.idempotencyKey = idempotencyKey;
+
         // 1. Extract domains from companies
         console.log(`[ApolloDomain] Received ${companies.length} companies for lead enrichment.`);
 

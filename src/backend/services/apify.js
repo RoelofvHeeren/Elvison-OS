@@ -117,7 +117,7 @@ export const buildPipelineLabsPayload = (companyNames, filters = {}) => {
  * @param {Object} filters - Dynamic filters
  * @returns {Promise<string>} - The Run ID
  */
-export const startApifyScrape = async (token, companyNames, filters = {}) => {
+export const startApifyScrape = async (token, companyNames, filters = {}, idempotencyKey = null) => {
     try {
         if (!companyNames || companyNames.length === 0) {
             console.warn("startApifyScrape called with no company names.");
@@ -130,8 +130,14 @@ export const startApifyScrape = async (token, companyNames, filters = {}) => {
         // PIPELINELABS ACTOR ID
         const ACTOR_ID = 'pipelinelabs~lead-scraper-apollo-zoominfo-lusha';
 
+        // URL construction with optional idempotencyKey
+        let url = `${APIFY_API_URL}/acts/${ACTOR_ID}/runs?token=${token}`;
+        if (idempotencyKey) {
+            url += `&idempotencyKey=${idempotencyKey}`;
+        }
+
         const response = await axios.post(
-            `${APIFY_API_URL}/acts/${ACTOR_ID}/runs?token=${token}`,
+            url,
             input,
             { headers: { 'Content-Type': 'application/json' } }
         );
@@ -238,7 +244,7 @@ export const buildApolloDomainPayload = (domains, filters = {}) => {
  * @param {Object} filters - Dynamic filters
  * @returns {Promise<string>} - The Run ID
  */
-export const startApolloDomainScrape = async (token, domains, filters = {}) => {
+export const startApolloDomainScrape = async (token, domains, filters = {}, idempotencyKey = null) => {
     try {
         if (!domains || domains.length === 0) {
             console.warn("[ApolloDomain] No domains provided.");
@@ -253,8 +259,15 @@ export const startApolloDomainScrape = async (token, domains, filters = {}) => {
 
         console.log(`[ApolloDomain] Sending payload to ${ACTOR_ID}:`, JSON.stringify(input, null, 2));
 
+        // URL construction with optional idempotencyKey
+        let url = `${APIFY_API_URL}/acts/${ACTOR_ID}/runs?token=${token}`;
+        if (idempotencyKey) {
+            url += `&idempotencyKey=${idempotencyKey}`;
+            console.log(`[ApolloDomain] Using idempotencyKey: ${idempotencyKey}`);
+        }
+
         const response = await axios.post(
-            `${APIFY_API_URL}/acts/${ACTOR_ID}/runs?token=${token}`,
+            url,
             input,
             { headers: { 'Content-Type': 'application/json' } }
         );
