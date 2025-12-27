@@ -51,15 +51,41 @@ CREATE TABLE IF NOT EXISTS leads (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- Table: icps (Multi-ICP Configurations)
+CREATE TABLE IF NOT EXISTS icps (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES users(id),
+    name VARCHAR(100) NOT NULL,
+    config JSONB DEFAULT '{}'::jsonb, -- Stores onboarding answers/filters
+    agent_config JSONB DEFAULT '{}'::jsonb, -- Stores optimized agent instructions
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- Table: workflow_runs (Logging)
+-- Modified to link to ICP
 CREATE TABLE IF NOT EXISTS workflow_runs (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    icp_id UUID REFERENCES icps(id), -- Nullable for legacy/generic runs
     agent_id VARCHAR(50) NOT NULL,
     status VARCHAR(50) NOT NULL, -- 'RUNNING', 'COMPLETED', 'FAILED'
     started_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     completed_at TIMESTAMP WITH TIME ZONE,
     error_log TEXT,
-    metadata JSONB DEFAULT '{}'::jsonb
+    metadata JSONB DEFAULT '{}'::jsonb,
+    user_id UUID REFERENCES users(id) -- Ensure we track user ownership
+);
+
+-- Table: run_feedback (Optimization Data)
+CREATE TABLE IF NOT EXISTS run_feedback (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    run_id UUID REFERENCES workflow_runs(id),
+    icp_id UUID REFERENCES icps(id),
+    entity_type VARCHAR(50) NOT NULL, -- 'company', 'contact', 'message'
+    entity_identifier VARCHAR(255), -- ID or Name/Email
+    grade VARCHAR(20), -- 'positive', 'negative', 'neutral'
+    notes TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- Table: agent_results (Agent Outputs)

@@ -19,6 +19,14 @@ export const WORKFLOW_CONFIG = {
     DEFAULT_LEADS_PER_COMPANY: 3,
 };
 
+export const AGENT_MODELS = {
+    company_finder: "gpt-4o-mini",
+    company_profiler: "gpt-4o-mini", // Cost-saving trial. Revert to gpt-4o if quality suffers.
+    apollo_lead_finder: "gpt-4o-mini",
+    outreach_creator: "gpt-4o-mini",
+    default: "gpt-4o-mini"
+};
+
 export const getEffectiveMaxLeads = () => {
     return IS_TESTING ? WORKFLOW_CONFIG.MAX_LEADS_TESTING : WORKFLOW_CONFIG.MAX_LEADS_PRODUCTION;
 };

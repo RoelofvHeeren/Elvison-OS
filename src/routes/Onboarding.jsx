@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Sparkles, ChevronRight, Check, Rocket, Bot, Edit3, Save, RotateCw, Plus, X, CheckCircle2 } from 'lucide-react'
+import { Sparkles, ChevronRight, Check, Rocket, Bot, Edit3, Save, RotateCw, Plus, X, CheckCircle2, Users, AlertCircle } from 'lucide-react'
 import Typewriter from '../components/Typewriter'
 import { saveAgentPrompts, saveCrmColumns, fetchAgentPrompts, fetchCrmColumns, optimizeAgentPrompt, createInternalKnowledgeBase, completeOnboarding } from '../utils/api'
 import { useAuth } from '../contexts/AuthContext'
@@ -18,7 +18,58 @@ const JOB_TITLE_SUGGESTIONS = [
 
 const COUNTRY_SUGGESTIONS = [
     "United States", "United Kingdom", "Canada", "Australia", "Germany", "France", "Netherlands",
-    "Sweden", "Singapore", "United Arab Emirates"
+    "Sweden", "Singapore", "United Arab Emirates", "Global (with local exposure)"
+]
+
+const ORG_TYPE_OPTIONS = [
+    "Family Office",
+    "Private Equity Firm",
+    "Real Estate Investment Manager",
+    "Pension Fund",
+    "Institutional Asset Manager",
+    "Debt Fund / Mortgage Fund",
+    "Developer Operator",
+    "Venture Capital Firm",
+    "Hedge Fund",
+    "Sovereign Wealth Fund"
+]
+
+const JOB_FUNCTION_OPTIONS = [
+    "Investments",
+    "Acquisitions",
+    "Portfolio Management",
+    "Capital Markets",
+    "Private Equity",
+    "Fund Management",
+    "Development",
+    "Finance / Treasury"
+]
+
+const EXCLUDED_FUNCTION_OPTIONS = [
+    "HR / People",
+    "Marketing / Communications",
+    "Operations / Admin",
+    "IT / Technology",
+    "Legal / Compliance",
+    "Client Services / IR",
+    "Sales / Business Development",
+    "Enterprise Solutions"
+]
+
+const SENIORITY_OPTIONS = [
+    "Partner / Principal",
+    "C-Level (CEO, CIO, COO)",
+    "Managing Director",
+    "VP / Director",
+    "Head of X",
+    "Manager / Associate"
+]
+
+const INTENT_OPTIONS = [
+    "Direct Capital Allocation (High Strictness)",
+    "Strategic Partnerships (Medium Strictness)",
+    "Deal Sourcing (Medium Strictness)",
+    "Market Mapping (Low Strictness / Broad)"
 ]
 
 const DATA_FIELD_OPTIONS = [
@@ -34,30 +85,30 @@ const AGENTS = [
     {
         id: 'company_finder',
         name: 'Company Finder',
-        description: 'Discover the right companies and know how to search when results are not obvious.',
+        description: 'Define your strictly qualified Ideal Customer Profile (ICP).',
         questions: [
-            { id: 'target_companies', label: 'Who should this agent find?', placeholder: 'Describe the exact type of companies... what do they do, how do they operate?', type: 'textarea' },
-            { id: 'negative_constraints', label: 'Who should this agent NEVER return?', placeholder: 'Describe companies, roles, or edge cases to exclude...', type: 'textarea' },
-            { id: 'geography', label: 'Target geography', type: 'multi-select', options: COUNTRY_SUGGESTIONS, helper: 'Select countries where companies must have activity or exposure.' },
-            { id: 'quality_bar', label: 'Quality bar', placeholder: 'What makes a company worth contacting? (Size, reputation, etc.)', type: 'textarea' },
-            { id: 'discovery_behavior', label: 'Discovery behavior when results are weak', placeholder: 'How should the agent think creatively if obvious searches fail?', type: 'textarea' },
+            { id: 'org_types', label: 'Target Organization Types', type: 'multi-select', options: ORG_TYPE_OPTIONS, helper: 'Select all that apply.' },
+            { id: 'geography', label: 'Geographic Scope', type: 'multi-select', options: COUNTRY_SUGGESTIONS, helper: 'Where must they be based or investing?' },
+            { id: 'allocator_types', label: 'Institutional Allocators?', type: 'radio', options: ['Include Large Allocators (Pension/Sovereign)', 'Exclude Large Allocators (Private Capital Only)'] },
+            { id: 'intent', label: 'Outreach Intent Strategy', type: 'radio', options: INTENT_OPTIONS, helper: 'This determines how strict our filtering is.' },
+            { id: 'quality_bar', label: 'Quality / Niche Criteria', placeholder: 'e.g. "AUM > $100M", "Focus on Multifamily", "Must have ESG mandate"', type: 'textarea' },
         ],
-        template: (a) => `You are an expert lead researcher. Find companies matching this profile:
-Target: ${a.target_companies}
-Avoid: ${a.negative_constraints}
+        template: (a) => `You are an expert lead researcher. Find companies matching this strict profile:
+Org Types: ${Array.isArray(a.org_types) ? a.org_types.join(', ') : a.org_types}
 Geo: ${Array.isArray(a.geography) ? a.geography.join(', ') : a.geography}
+Allocator Rule: ${a.allocator_types}
+Intent: ${a.intent}
 Quality Bar: ${a.quality_bar}
-Strategy: ${a.discovery_behavior}
 Output the list in JSON format.`
     },
     {
         id: 'company_profiler',
         name: 'Company Profiler',
-        description: 'Analyze companies to confirm they match criteria.',
+        description: 'Verify companies against your strict intent.',
         questions: [
-            { id: 'key_attributes', label: 'Key attributes to verify', placeholder: 'e.g. "Must be an LP", "Must have invested in Canada"', type: 'textarea' },
-            { id: 'red_flags', label: 'Red flags / Exclusion criteria', placeholder: 'e.g. "Focuses only on Tech", "Defunct website"', type: 'textarea' },
-            { id: 'depth', label: 'Analysis depth', type: 'radio', options: ['Quick Scan (Homepage)', 'Deep Dive (News, LinkedIn, Reports)'] },
+            { id: 'key_attributes', label: 'Must-Have Attributes', placeholder: 'e.g. "Must be an LP", "Must have invested in Canada"', type: 'textarea' },
+            { id: 'red_flags', label: 'Deal-Breakers / Red Flags', placeholder: 'e.g. "Focuses only on Tech", "Defunct website", "Broker/Intermediary only"', type: 'textarea' },
+            { id: 'depth', label: 'Analysis Depth', type: 'radio', options: ['Quick Scan (Homepage)', 'Deep Dive (News, LinkedIn, Reports)'] },
         ],
         template: (a) => `You are a Research Analyst. Profile these companies.
 Attributes: ${a.key_attributes}
@@ -68,20 +119,20 @@ Verify against criteria.`
     {
         id: 'apollo_lead_finder',
         name: 'Apollo Lead Finder',
-        description: 'Identify the right people and return the right data.',
+        description: 'Define the exact Decision Makers to contact.',
         questions: [
-            { id: 'job_titles', label: 'Which titles should the agent target?', type: 'multi-select', options: JOB_TITLE_SUGGESTIONS },
-            { id: 'seniority', label: 'Seniority rules or exceptions', placeholder: 'e.g. "Founder or CIO only", "Director+ is fine"', type: 'textarea' },
-            { id: 'data_fields', label: 'What data should Apollo return for each contact?', type: 'multi-select', options: DATA_FIELD_OPTIONS, helper: 'These fields will become columns in your database.' },
-            { id: 'max_contacts', label: 'Maximum contacts per company', type: 'number', placeholder: '3' },
-            { id: 'email_quality', label: 'Email quality rule', type: 'radio', options: ['Only include contacts with verified emails', 'LinkedIn-only contacts are acceptable'] },
+            { id: 'seniority', label: 'Allowed Seniority Levels', type: 'multi-select', options: SENIORITY_OPTIONS, helper: 'Who has the authority you need?' },
+            { id: 'job_functions', label: 'Target Job Functions', type: 'multi-select', options: JOB_FUNCTION_OPTIONS, helper: 'Which departments hold the budget/decision?' },
+            { id: 'excluded_functions', label: 'Excluded Job Functions', type: 'multi-select', options: EXCLUDED_FUNCTION_OPTIONS, helper: 'Select departments to STRICTLY avoid (e.g. HR, Marketing).' }, // CRITICAL
+            { id: 'job_titles', label: 'Specific Title Keywords (Optional)', type: 'multi-select', options: JOB_TITLE_SUGGESTIONS, helper: 'Add specific keywords if needed.' },
+            { id: 'max_contacts', label: 'Max Contacts per Company', type: 'number', placeholder: '3' },
         ],
         template: (a) => `You are a data enrichment specialist. Find contacts.
+Seniority: ${Array.isArray(a.seniority) ? a.seniority.join(', ') : a.seniority}
+Functions: ${Array.isArray(a.job_functions) ? a.job_functions.join(', ') : a.job_functions}
+Exclude: ${Array.isArray(a.excluded_functions) ? a.excluded_functions.join(', ') : a.excluded_functions}
 Titles: ${Array.isArray(a.job_titles) ? a.job_titles.join(', ') : a.job_titles}
-Seniority: ${a.seniority}
-Fields: ${Array.isArray(a.data_fields) ? a.data_fields.join(', ') : a.data_fields}
 Max Contacts: ${a.max_contacts}
-Email Rule: ${a.email_quality}
 Use Apollo API.`
     },
     {
@@ -92,15 +143,11 @@ Use Apollo API.`
             { id: 'template', label: 'Write your ideal first-message template', placeholder: 'Hi {{first_name}}, I noticed {{research_fact}}...', type: 'textarea' },
             { id: 'channels', label: 'Messaging channels', type: 'multi-select', options: CHANNEL_OPTIONS },
             { id: 'success_definition', label: 'What does a successful first message mean?', placeholder: 'What do you want the person to do?', type: 'textarea' },
-            { id: 'credibility', label: 'What should the message reference to feel credible?', placeholder: 'Real info so it doesn\'t feel generic...', type: 'textarea' },
-            { id: 'forbidden', label: 'Forbidden language or behavior', placeholder: 'Phrases, styles, claims to avoid...', type: 'textarea' },
         ],
         template: (a) => `You are an expert copywriter. Draft outreach messages.
 Template: ${a.template}
 Channels: ${Array.isArray(a.channels) ? a.channels.join(', ') : a.channels}
 Goal: ${a.success_definition}
-Credibility: ${a.credibility}
-Forbidden: ${a.forbidden}
 Create unique drafts.`
     },
     {
@@ -120,17 +167,13 @@ Map incoming data to these fields.`
         description: 'Teach the agent how to think and search.',
         questions: [
             { id: 'facts_to_mention', label: 'What facts would you like to mention in outreach?', placeholder: 'Facts that help personalize messages...', type: 'textarea' },
-            { id: 'research_depth', label: 'How deep should research go?', placeholder: 'When is research "enough"?', type: 'textarea' },
-            { id: 'search_keywords', label: 'Keywords, phrases, or lists to search for', placeholder: 'e.g. "Top family offices Canada"', type: 'textarea' },
+            { id: 'search_keywords', label: 'Keywords or Source Lists', placeholder: 'e.g. "Top family offices Canada"', type: 'textarea' },
             { id: 'manual_workflow', label: 'How would you do this manually?', placeholder: 'I\'d Google X, scan websites...', type: 'textarea' },
-            { id: 'sources', label: 'Sources to prioritize or avoid', placeholder: 'Trust X, avoid Y...', type: 'textarea' },
         ],
         template: (a) => `You are a market researcher.
 Facts: ${a.facts_to_mention}
-Depth: ${a.research_depth}
 Keywords: ${a.search_keywords}
 Workflow: ${a.manual_workflow}
-Sources: ${a.sources}
 Conduct deep analysis.`
     }
 ]
@@ -469,6 +512,126 @@ const StepAgentSurvey = ({ agent, answers, setAnswers, onNext, onBack, onGenerat
     )
 }
 
+const StepCostEstimator = ({ onNext, onBack, targetCompanies = 50, maxLeads = 3 }) => {
+    // Basic heuristics for Apify / General Cost
+    // Assume ~0.5 mins per company search + ~0.2 mins per lead enrich ?
+    // Or just "Credits".
+    // Let's stick to "Credits" or "Estimated Runs".
+    // 1 Company Scrape + 1 Enrichment Run per company.
+
+    const totalLeads = targetCompanies * maxLeads
+    const estimatedApifyRuns = targetCompanies // Rough 1-1 mapping for deep profile runs or domains
+    const estimatedCost = (estimatedApifyRuns * 0.05) + (totalLeads * 0.02) // Fake currency logic
+
+    // Strictness factor (visual only for now)
+    const noiseRisk = targetCompanies > 100 ? "High" : "Low"
+
+    return (
+        <div className="flex flex-col items-center justify-center h-full max-w-2xl mx-auto text-center">
+            <div className="mb-6 rounded-full bg-teal-500/10 p-4 border border-teal-500/30 shadow-[0_0_20px_rgba(20,184,166,0.2)]">
+                <Users className="w-10 h-10 text-teal-400" />
+            </div>
+
+            <h2 className="text-3xl font-serif font-bold mb-4 text-white drop-shadow-md">Run Estimation & Safeguards</h2>
+            <p className="text-gray-300 mb-8 max-w-lg mx-auto">
+                Based on your strict ICP settings, here is the estimated scope of your first run.
+            </p>
+
+            <div className="grid grid-cols-2 gap-4 w-full mb-8">
+                <div className="bg-white/5 border border-white/10 rounded-xl p-6 backdrop-blur-sm">
+                    <div className="text-gray-400 text-xs font-bold uppercase tracking-wider mb-2">Target Volume</div>
+                    <div className="text-3xl font-bold text-white">{targetCompanies} <span className="text-lg font-normal text-gray-500">companies</span></div>
+                    <div className="text-sm text-gray-400 mt-1">x {maxLeads} leads/co</div>
+                </div>
+                <div className="bg-white/5 border border-white/10 rounded-xl p-6 backdrop-blur-sm">
+                    <div className="text-gray-400 text-xs font-bold uppercase tracking-wider mb-2">Est. Max Leads</div>
+                    <div className="text-3xl font-bold text-teal-400">~{totalLeads}</div>
+                    <div className="text-sm text-gray-400 mt-1">Tier 1 Qualified</div>
+                </div>
+            </div>
+
+            <div className="w-full bg-black/40 border border-yellow-500/30 rounded-xl p-4 mb-8 flex items-start gap-4 text-left">
+                <AlertCircle className="w-6 h-6 text-yellow-500 shrink-0 mt-0.5" />
+                <div>
+                    <h4 className="text-yellow-400 font-bold text-sm uppercase">Noise Risk: {noiseRisk}</h4>
+                    <p className="text-gray-300 text-sm mt-1">
+                        {noiseRisk === "High"
+                            ? "You are targeting a large volume. We recommend doing a smaller test run (10 companies) first to verify strict filtering."
+                            : "Your targeting volume is safe for a test run. Strict filters will be applied."}
+                    </p>
+                </div>
+            </div>
+
+            <div className="flex gap-4">
+                <button onClick={onBack} className={PREMIUM_BUTTON_SECONDARY}>Adjust Filters</button>
+                <button onClick={onNext} className={PREMIUM_BUTTON_PRIMARY}>
+                    Accept & Initialize <ChevronRight className="w-4 h-4" />
+                </button>
+            </div>
+        </div>
+    )
+}
+
+const StepCostEstimator = ({ onNext, onBack, targetCompanies = 50, maxLeads = 3 }) => {
+    // Basic heuristics for Apify / General Cost
+    // Assume ~0.5 mins per company search + ~0.2 mins per lead enrich ?
+    // Or just "Credits".
+    // Let's stick to "Credits" or "Estimated Runs".
+    // 1 Company Scrape + 1 Enrichment Run per company.
+
+    const totalLeads = targetCompanies * maxLeads
+    const estimatedApifyRuns = targetCompanies // Rough 1-1 mapping for deep profile runs or domains
+    const estimatedCost = (estimatedApifyRuns * 0.05) + (totalLeads * 0.02) // Fake currency logic
+
+    // Strictness factor (visual only for now)
+    const noiseRisk = targetCompanies > 100 ? "High" : "Low"
+
+    return (
+        <div className="flex flex-col items-center justify-center h-full max-w-2xl mx-auto text-center">
+            <div className="mb-6 rounded-full bg-teal-500/10 p-4 border border-teal-500/30 shadow-[0_0_20px_rgba(20,184,166,0.2)]">
+                <Users className="w-10 h-10 text-teal-400" />
+            </div>
+
+            <h2 className="text-3xl font-serif font-bold mb-4 text-white drop-shadow-md">Run Estimation & Safeguards</h2>
+            <p className="text-gray-300 mb-8 max-w-lg mx-auto">
+                Based on your strict ICP settings, here is the estimated scope of your first run.
+            </p>
+
+            <div className="grid grid-cols-2 gap-4 w-full mb-8">
+                <div className="bg-white/5 border border-white/10 rounded-xl p-6 backdrop-blur-sm">
+                    <div className="text-gray-400 text-xs font-bold uppercase tracking-wider mb-2">Target Volume</div>
+                    <div className="text-3xl font-bold text-white">{targetCompanies} <span className="text-lg font-normal text-gray-500">companies</span></div>
+                    <div className="text-sm text-gray-400 mt-1">x {maxLeads} leads/co</div>
+                </div>
+                <div className="bg-white/5 border border-white/10 rounded-xl p-6 backdrop-blur-sm">
+                    <div className="text-gray-400 text-xs font-bold uppercase tracking-wider mb-2">Est. Max Leads</div>
+                    <div className="text-3xl font-bold text-teal-400">~{totalLeads}</div>
+                    <div className="text-sm text-gray-400 mt-1">Tier 1 Qualified</div>
+                </div>
+            </div>
+
+            <div className="w-full bg-black/40 border border-yellow-500/30 rounded-xl p-4 mb-8 flex items-start gap-4 text-left">
+                <AlertCircle className="w-6 h-6 text-yellow-500 shrink-0 mt-0.5" />
+                <div>
+                    <h4 className="text-yellow-400 font-bold text-sm uppercase">Noise Risk: {noiseRisk}</h4>
+                    <p className="text-gray-300 text-sm mt-1">
+                        {noiseRisk === "High"
+                            ? "You are targeting a large volume. We recommend doing a smaller test run (10 companies) first to verify strict filtering."
+                            : "Your targeting volume is safe for a test run. Strict filters will be applied."}
+                    </p>
+                </div>
+            </div>
+
+            <div className="flex gap-4">
+                <button onClick={onBack} className={PREMIUM_BUTTON_SECONDARY}>Adjust Filters</button>
+                <button onClick={onNext} className={PREMIUM_BUTTON_PRIMARY}>
+                    Accept & Initialize <ChevronRight className="w-4 h-4" />
+                </button>
+            </div>
+        </div>
+    )
+}
+
 const StepVerifyPrompt = ({ agent, prompt, setPrompt, onConfirm, onBack, isOptimizing }) => {
     if (isOptimizing) {
         return (
@@ -722,19 +885,23 @@ const OnboardingSidebar = ({ currentStep, currentAgentIndex, agents }) => {
 
 const Onboarding = () => {
     const navigate = useNavigate()
-    const { user } = useAuth() // Add auth context access
+    const { user } = useAuth()
+    const [searchParams] = useSearchParams()
+    const mode = searchParams.get('mode') // 'create_icp' or null (initial)
+
     // --- State ---
     const [isLoaded, setIsLoaded] = useState(false)
     const [step, setStep] = useState('welcome')
     const [currentAgentIndex, setCurrentAgentIndex] = useState(0)
     const [userData, setUserData] = useState({ userName: 'Roelof', companyName: '' })
     const [surveyAnswers, setSurveyAnswers] = useState({})
+
+    // ... (rest of state vars)
     const [crmColumns, setCrmColumns] = useState([])
     const [generatedPrompts, setGeneratedPrompts] = useState({})
     const [currentDraftPrompt, setCurrentDraftPrompt] = useState('')
     const [isSaving, setIsSaving] = useState(false)
     const [isOptimizing, setIsOptimizing] = useState(false)
-
     // --- Persistence ---
     useEffect(() => {
         // Load from localStorage
@@ -828,81 +995,98 @@ const Onboarding = () => {
             setCurrentAgentIndex(prev => prev + 1)
             setStep('agent_survey')
         } else {
-            setStep('completion')
+            // Done with agents -> Cost Estimator
+            setStep('cost_estimator')
         }
     }
 
     const handleGlobalBack = () => {
         if (step === 'completion') {
-            setStep('agent_verify') // Or agent_survey depending on flow, but verify is last step before complete
-            // Actually, before completion was agent_verify for the last agent.
+            setStep('cost_estimator')
+        } else if (step === 'cost_estimator') {
+            // Back to Agent Verify of LAST agent
             setCurrentAgentIndex(AGENTS.length - 1)
+            setStep('agent_verify')
+            setCurrentDraftPrompt(generatedPrompts[AGENTS[AGENTS.length - 1].id] || '')
         } else if (step === 'agent_verify') {
-            // Go back to survey for this agent
             setStep('agent_survey')
         } else if (step === 'agent_survey') {
             if (currentAgentIndex > 0) {
-                // Go to verify of PREVIOUS agent
                 setCurrentAgentIndex(prev => prev - 1)
                 setStep('agent_verify')
+                setCurrentDraftPrompt(generatedPrompts[AGENTS[currentAgentIndex - 1].id] || '')
             } else {
-                // Go to Company Info
-                setStep('company_info')
+                setStep('welcome')
             }
-        } else if (step === 'company_info') {
-            setStep('welcome')
         }
     }
 
     const handleLaunch = async () => {
         setIsSaving(true)
+        console.log('Launching with Prompts:', generatedPrompts)
+
         try {
-            // 1. Save Prompts & Configs
-            const promptsToSave = AGENTS.map(a => {
-                // Determine Default Tools
-                let enabledToolIds = []
-                if (a.id === 'company_finder') enabledToolIds = ['file_search', 'web_search']
-                if (a.id === 'company_profiler') enabledToolIds = ['file_search', 'web_search']
-                if (a.id === 'apollo_lead_finder') enabledToolIds = ['apollo_mcp']
-                if (a.id === 'outreach_creator') enabledToolIds = ['file_search'] // Per instructions
+            // Save to DB
 
-                // Get answers for this agent to use in fallback template
-                const agentAnswers = surveyAnswers[a.id] || {}
-                const fallbackPrompt = a.template ? a.template(agentAnswers, crmColumns) : ''
+            // 1. Separate Filters from Onboarding State
+            const apolloAnswers = surveyAnswers?.apollo_lead_finder || {}
+            const companyAnswers = surveyAnswers?.company_finder || {}
 
-                return {
-                    id: a.id,
-                    name: a.name,
-                    prompt: generatedPrompts[a.id] || fallbackPrompt || "Standard Agent Behavior configured.",
-                    config: { enabledToolIds } // Send config to backend
-                }
-            }).filter(p => p.prompt)
+            const icpConfig = {
+                // Apollo Lead Finder Filters
+                job_titles: apolloAnswers.job_titles || [],
+                seniority: apolloAnswers.seniority || [],
+                job_functions: apolloAnswers.job_functions || [],
+                excluded_functions: apolloAnswers.excluded_functions || [],
+                max_contacts: parseInt(apolloAnswers.max_contacts || 3),
 
-            await saveAgentPrompts(promptsToSave)
+                // Company Finder Filters
+                geography: companyAnswers.geography || [],
+                org_types: companyAnswers.org_types || [],
+                allocator_types: companyAnswers.allocator_types || [],
+                intent: companyAnswers.intent,
 
-            // 2. Save CRM Columns
-            await saveCrmColumns(crmColumns)
-
-            // 3. Create Internal Knowledge Base w/ User Answers
-            const allAnswers = surveyAnswers
-            await createInternalKnowledgeBase(allAnswers)
-
-            // 4. Mark onboarding as complete in backend
-            const response = await completeOnboarding()
-
-            // 5. Update auth context with completed user state
-            if (response.user) {
-                // Force auth context to refresh
-                window.location.href = '/runner' // Hard navigation to ensure route guards see updated state
-            } else {
-                // Fallback to soft navigation
-                localStorage.removeItem('onboarding_state')
-                navigate('/runner')
+                // Keep raw surveys too if needed
+                surveys: surveyAnswers
             }
-        } catch (err) {
-            console.error("Launch Error:", err)
-            const msg = err.response?.data?.error || err.message || "Unknown error"
-            alert(`Failed to save configuration: ${msg}`)
+
+            // 2. Determine Action based on Mode
+            if (mode === 'create_icp') {
+                // --- CREATE NEW ICP ---
+                const icpName = `${companyAnswers.org_types?.[0] || 'New'} Strategy`
+
+                const response = await fetch('/api/icps', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: icpName,
+                        config: icpConfig,
+                        agent_config: generatedPrompts // Save prompts here
+                    })
+                })
+
+                if (!response.ok) throw new Error('Failed to create ICP')
+
+                // Clear state and go to profile
+                localStorage.removeItem('onboarding_state')
+                navigate('/profile')
+
+            } else {
+                // --- LEGACY INITIAL ONBOARDING ---
+                await saveAgentPrompts(generatedPrompts)
+                await saveCrmColumns(crmColumns, icpConfig.job_titles) // Pass filters if needed
+
+                // Add filters to config for specific agents (Company Finder / Lead Finder)
+                // This updates the 'agent_prompts' table directly (legacy behavior)
+                // We keep this for the "Default" ICP if we treat the first run as such.
+
+                await completeOnboarding()
+                setStep('completion')
+            }
+
+        } catch (e) {
+            console.error('Failed to save configuration', e)
+            alert('Failed to save configuration. Please try again.')
         } finally {
             setIsSaving(false)
         }
@@ -912,7 +1096,7 @@ const Onboarding = () => {
     if (!isLoaded) return null // Prevent flash of wrong state
 
     return (
-        <div className="w-full h-full relative flex rounded-3xl overflow-hidden shadow-none bg-transparent">
+        <div className="min-h-screen bg-black text-white selection:bg-teal-500/30 font-sans overflow-hidden relative">
             {/* Background Video */}
             <div className="absolute inset-0 z-0 pointer-events-none">
                 <video
@@ -925,7 +1109,6 @@ const Onboarding = () => {
                 />
             </div>
 
-            {/* Sidebar (Show after welcome) */}
             {step !== 'welcome' && (
                 <OnboardingSidebar
                     currentStep={step}
@@ -968,8 +1151,18 @@ const Onboarding = () => {
                                 prompt={currentDraftPrompt}
                                 setPrompt={setCurrentDraftPrompt}
                                 onConfirm={handleConfirmPrompt}
-                                onBack={() => setStep('agent_survey')}
+                                onBack={handleGlobalBack}
                                 isOptimizing={isOptimizing}
+                            />
+                        </motion.div>
+                    )}
+                    {step === 'cost_estimator' && (
+                        <motion.div key="cost" className="h-full" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}>
+                            <StepCostEstimator
+                                onNext={() => setStep('completion')}
+                                onBack={handleGlobalBack}
+                                targetCompanies={50}
+                                maxLeads={parseInt(surveyAnswers['apollo_lead_finder']?.max_contacts || 3)}
                             />
                         </motion.div>
                     )}

@@ -11,6 +11,8 @@ import Onboarding from './routes/Onboarding'
 import Login from './routes/Login'
 import Signup from './routes/Signup'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
+import { IcpProvider } from './context/IcpContext'
+import Profile from './routes/Profile'
 
 // Protected Route wrapper
 const ProtectedRoute = ({ children }) => {
@@ -30,6 +32,11 @@ const ProtectedRoute = ({ children }) => {
   }
 
   // If user hasn't completed onboarding, redirect to onboarding
+  // UNLESS accessing /onboarding (create/edit) or /profile (manage)
+  // Logic tweak: If user has completed "account" onboarding but wants to make new ICP, they go to /onboarding?mode=create
+  // That is fine.
+
+  // The original check: 
   if (!user.onboardingCompleted && location.pathname !== '/onboarding') {
     return <Navigate to="/onboarding" replace />
   }
@@ -53,41 +60,52 @@ const AppContent = () => {
       if (!user.onboardingCompleted) {
         navigate('/onboarding')
       } else {
+        navigate('/profile') // Redirect to Profile to select/create ICP instead of runner directly? Or runner defaults?
+        // Updated to runner for now, but cleaner flow might be Profile.
         navigate('/runner')
       }
     }
   }, [location, navigate, user, loading])
 
-  // Public routes (login/signup)
-  const isPublicRoute = ['/login', '/signup'].includes(location.pathname)
+  if (loading) return null
 
-  if (isPublicRoute) {
-    return (
-      <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route path="/signup" element={<Signup />} />
-      </Routes>
-    )
-  }
+  const isAuthPage = ['/login', '/signup', '/onboarding'].includes(location.pathname)
 
-  // Protected routes with sidebar
   return (
-    <div className="flex h-screen w-full bg-background text-foreground overflow-hidden font-sans">
-      <Sidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(prev => !prev)} />
+    <div className="flex h-screen bg-gray-900 text-gray-100 overflow-hidden font-sans">
+      {!isAuthPage && user && <Sidebar collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} />}
 
-      <main className={`flex-1 flex flex-col transition-all duration-300 ${sidebarCollapsed ? 'ml-20' : 'ml-72'}`}>
-        {/* Content Area */}
-        <div className="flex-1 overflow-y-auto p-6 relative h-full">
+      <main className={`flex-1 overflow-auto transition-all duration-300 ${!isAuthPage && user ? 'p-0' : ''}`}>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="/signup" element={<Signup />} />
+          <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
+
+          <Route path="/runner" element={<ProtectedRoute><AgentRunner /></ProtectedRoute>} />
+          <Route path="/crm" element={<ProtectedRoute><CRM /></ProtectedRoute>} />
+          <Route path="/connections" element={<ProtectedRoute><Connections /></ProtectedRoute>} />
+          <Route path="/kb" element={<ProtectedRoute><KnowledgeBase /></ProtectedRoute>} />
+          <Route path="/agents" element={<ProtectedRoute><AgentConfig /></ProtectedRoute>} />
+          <Route path="/logbook" element={<ProtectedRoute><Logbook /></ProtectedRoute>} />
+          import Profile from './routes/Profile'
+          import Optimize from './routes/Optimize'
+
+// ... (existing imports)
+
+const AppContent = () => {
+  // ...
+  return (
+          // ...
           <Routes>
-            <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
-            <Route path="/agents" element={<ProtectedRoute><AgentConfig /></ProtectedRoute>} />
-            <Route path="/knowledge" element={<ProtectedRoute><KnowledgeBase /></ProtectedRoute>} />
-            <Route path="/runner" element={<ProtectedRoute><AgentRunner /></ProtectedRoute>} />
-            <Route path="/crm" element={<ProtectedRoute><CRM /></ProtectedRoute>} />
-            <Route path="/connections" element={<ProtectedRoute><Connections /></ProtectedRoute>} />
-            <Route path="/logbook" element={<ProtectedRoute><Logbook /></ProtectedRoute>} />
+            {/* ... existing routes ... */}
+            <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+            <Route path="/optimize" element={<ProtectedRoute><Optimize /></ProtectedRoute>} />
+
+            <Route path="/" element={<div />} />
           </Routes>
-        </div>
+    // ...
+          )
+}
       </main>
     </div>
   )
@@ -96,7 +114,9 @@ const AppContent = () => {
 const App = () => {
   return (
     <AuthProvider>
-      <AppContent />
+      <IcpProvider>
+        <AppContent />
+      </IcpProvider>
     </AuthProvider>
   )
 }

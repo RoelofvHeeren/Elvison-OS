@@ -69,27 +69,56 @@ const AgentRunner = () => {
     }
 
     const handleRun = async () => {
-        if (!prompt.trim()) return
-
-        // Persist prompt
-        localStorage.setItem('elvison_prompt_diagnostic', prompt)
-
-        setIsRunning(true)
+        if (status === 'running') return
+        setStatus('running')
         setLogs([])
-        setResult(null)
-        setError(null)
-        setCurrentStep(STEPS[0].id)
+        setProgress(0)
+
+        // Generate Idempotency Key
+        const idempotencyKey = safeUUID();
+
+        abortControllerRef.current = new AbortController()
 
         try {
-            // Get vectorStoreId from local storage
-            const vectorStoreId = localStorage.getItem('elvison_vector_store_id')
+            // Build Prompt Context
+            // Use ICP config prompts if available, else legacy
+            let prompt = agentPrompts.company_finder?.system_prompt || "Find SaaS companies"
+            // If using ICP, maybe we want to send the ICP ID to the backend so it can load the *latest* optimized config?
+            // Yes, passing icpId is better than passing raw prompts if backend supports loading it.
+            // But currently verify backend:
+            // Backend endpoint uses `req.body.agentConfigs` if passed, OR loads from DB?
+            // Actually `workflow.js` loads from `agent_prompts` table by default.
+            // We should pass `icpId` and let backend handle it?
+            // The plan said: "Update POST /api/agents/run to accept and log icpId"
+            // And "backend must load the agent_config from the DB for that icpId"
 
-            // Create abort controller for cancellation
-            abortControllerRef.current = new AbortController()
+            const vectorStoreId = "vs_123_placeholder"
 
-            // Generate Idempotency Key for this specific run attempt
-            const idempotencyKey = safeUUID();
-            console.log('Run triggered with Idempotency Key:', idempotencyKey);
+            // Extract and Flatten Filters from ICP Config or Onboarding State
+            // Prefer Selected ICP Config
+            let filters = {}
+            if (selectedIcp && selectedIcp.config) {
+                filters = selectedIcp.config
+            } else {
+                // Fallback to local storage (legacy single-ICP)
+                const onboardingState = JSON.parse(localStorage.getItem('onboarding_state') || '{}')
+                const apolloAnswers = onboardingState.surveyAnswers?.apollo_lead_finder || {}
+                const companyAnswers = onboardingState.surveyAnswers?.company_finder || {}
+
+                filters = {
+                    job_titles: apolloAnswers.job_titles || [],
+                    seniority: apolloAnswers.seniority || [],
+                    job_functions: apolloAnswers.job_functions || [],
+                    excluded_functions: apolloAnswers.excluded_functions || [],
+                    max_contacts: parseInt(apolloAnswers.max_contacts || 3),
+                    countries: companyAnswers.geography || [],
+                    org_types: companyAnswers.org_types || [],
+                    intent: companyAnswers.intent,
+                    ...apolloAnswers
+                }
+            }
+
+            console.log('Using Active Filters:', filters)
 
             const response = await fetch('/api/agents/run', {
                 method: 'POST',
@@ -98,10 +127,13 @@ const AgentRunner = () => {
                 },
                 body: JSON.stringify({
                     prompt,
-                    vectorStoreId, // Pass the persistent ID
-                    mode, // Pass the selected mode
-                    filters: JSON.parse(localStorage.getItem('onboarding_state') || '{}'), // Pass user filters
-                    idempotencyKey // NEW: Send unique key
+                    vectorStoreId,
+                    mode,
+                    filters,
+                    targetLeads: 50,
+                    maxLeadsPerCompany: filters.max_contacts,
+                    idempotencyKey,
+                    icpId: selectedIcp?.id // Pass Selected ICP ID
                 }),
                 signal: abortControllerRef.current.signal
             })

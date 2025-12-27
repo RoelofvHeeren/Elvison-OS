@@ -193,15 +193,20 @@ export class LeadScraperService {
 
         console.log(`[ApolloDomain] Retrieved ${actualLeads.length} total leads with emails from all batches.`);
 
-        // 5. Normalize Data
-        return this._normalizeApolloDomainResults(actualLeads, companies);
+        // 5. Normalize Data with Tiering
+        return this._normalizeApolloDomainResults(actualLeads, companies, filters);
     }
 
     /**
      * Helper to run a single batch of domains
      */
     async _runApolloBatch(domains, filters, batchId) {
-        console.log(`[ApolloDomain] Starting Batch ${batchId} with ${domains.length} domains: ${domains.join(', ')}`);
+        console.log(`[ApolloDomain] Starting Batch ${batchId} with ${domains.length} domains (Strict Filtering Active)`);
+
+        // Log Exclusions
+        if (filters.excluded_functions?.length) {
+            console.log(`[ApolloDomain] Exclusions applied: ${filters.excluded_functions.join(', ')}`);
+        }
 
         try {
             // Start Job
@@ -244,8 +249,38 @@ export class LeadScraperService {
 
             // Fetch Results
             const items = await getApifyResults(this.apifyApiKey, datasetId);
-            console.log(`[ApolloDomain] Batch ${batchId} completed. Found ${items.length} items.`);
-            return items;
+            console.log(`[ApolloDomain] Batch ${batchId} raw items: ${items.length}`);
+
+            // --- STRICT FILTERING LAYER ---
+            // Deprioritize or Remove Excluded Functions
+            const validItems = items.filter(item => {
+                const title = (item.title || item.personTitle || "").toLowerCase();
+                if (!title) return false;
+
+                // Check Exclusions
+                if (filters.excluded_functions && Array.isArray(filters.excluded_functions)) {
+                    for (const exclusion of filters.excluded_functions) {
+                        // "HR / People" -> ["hr", "people"]
+                        const keywords = exclusion.toLowerCase().split('/').map(s => s.trim());
+                        // If title matches any keyword, exclude
+                        // Use word boundary check for better accuracy e.g. "hr" vs "chris"
+                        for (const kw of keywords) {
+                            if (kw.length < 3) {
+                                // Strict word check for short acronyms
+                                const regex = new RegExp(`\\b${kw}\\b`, 'i');
+                                if (regex.test(title)) return false;
+                            } else {
+                                if (title.includes(kw)) return false;
+                            }
+                        }
+                    }
+                }
+                return true;
+            });
+
+            console.log(`[ApolloDomain] Batch ${batchId} valid items after exclusions: ${validItems.length} (Dropped ${items.length - validItems.length})`);
+
+            return validItems;
 
         } catch (error) {
             console.error(`[ApolloDomain] Batch ${batchId} failed:`, error.message);
@@ -353,7 +388,7 @@ export class LeadScraperService {
      * Normalize Apollo Domain Scraper results to Standard Lead format
      * Output format: firstName, lastName, email, position, linkedinUrl, organizationName, organizationWebsite
      */
-    _normalizeApolloDomainResults(rawItems, qualifiedCompanies) {
+    _normalizeApolloDomainResults(rawItems, qualifiedCompanies, filters = {}) {
         return rawItems.map(item => {
             const scrapedCompany = item.organizationName;
             const companyDomain = item.organizationWebsite
@@ -365,6 +400,31 @@ export class LeadScraperService {
                 (c.domain && companyDomain && companyDomain.includes(c.domain)) ||
                 (scrapedCompany && c.company_name && c.company_name.toLowerCase().includes(scrapedCompany.toLowerCase()))
             ) || {};
+
+            // --- TIERING LOGIC ---
+            let tier = 3; // Default: Valid Company Match
+            const hasEmail = !!item.email;
+            const title = (item.position || "").toLowerCase();
+
+            // Check Title Match (High Value)
+            // If filters.job_titles is provided, checking against it increases score
+            let titleMatch = false;
+            if (filters.job_titles && filters.job_titles.length > 0) {
+                titleMatch = filters.job_titles.some(t => title.includes(t.toLowerCase()));
+            } else {
+                // Heuristic: C-Level or VP or Partner is good
+                titleMatch = /ceo|founder|partner|president|director|vp|vice president|chief/.test(title);
+            }
+
+            if (hasEmail && titleMatch) {
+                tier = 1; // Perfect: Email + Good Title
+            } else if (titleMatch) {
+                tier = 2; // Good: Good Title but no Email (or Email but weak title? No, title drives relevance)
+            } else if (hasEmail) {
+                tier = 2; // Good: Has Email (actionable) but title might be generic or non-exec
+            }
+
+            // Tier 3 is remaining (No Email + Weak Title)
 
             return {
                 first_name: item.firstName || '',
@@ -383,6 +443,7 @@ export class LeadScraperService {
                 seniority: item.seniority || '',
                 industry: item.organizationIndustry || '',
                 company_size: item.organizationSize || '',
+                tier: tier, // NEW
                 raw_data: item
             };
         });

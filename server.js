@@ -9,6 +9,10 @@ import { generateToken } from './src/backend/session-utils.js'
 import { requireAuth, optionalAuth } from './src/backend/auth-middleware.js'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { OptimizationService } from './src/backend/optimizer.js'
+import { enrichLeadWithPhone } from './src/backend/workflow.js'
+import multer from 'multer'
+import { parse } from 'csv-parse/sync'
 
 dotenv.config()
 
@@ -890,11 +894,166 @@ app.get('/api/integrations/apify/status/:runId', async (req, res) => {
     }
 });
 
+// --- ICP MANAGEMENT ENDPOINTS ---
+
+// Get all ICPs for logged-in user
+app.get('/api/icps', requireAuth, async (req, res) => {
+    try {
+        const { rows } = await query(
+            'SELECT * FROM icps WHERE user_id = $1 ORDER BY created_at DESC',
+            [req.userId]
+        )
+        res.json({ icps: rows })
+    } catch (err) {
+        console.error('Failed to fetch ICPs:', err)
+        res.status(500).json({ error: 'Failed to fetch ICPs' })
+    }
+})
+
+// Create new ICP
+app.post('/api/icps', requireAuth, async (req, res) => {
+    const { name, config, agent_config } = req.body
+
+    // Check limit
+    try {
+        const countRes = await query('SELECT COUNT(*) FROM icps WHERE user_id = $1', [req.userId])
+        if (parseInt(countRes.rows[0].count) >= 3) {
+            return res.status(403).json({ error: 'ICP limit reached (Max 3).' })
+        }
+
+        const { rows } = await query(
+            `INSERT INTO icps (user_id, name, config, agent_config)
+             VALUES ($1, $2, $3, $4)
+             RETURNING *`,
+            [req.userId, name, config || {}, agent_config || {}]
+        )
+        res.json({ success: true, icp: rows[0] })
+    } catch (err) {
+        console.error('Failed to create ICP:', err)
+        res.status(500).json({ error: 'Failed to create ICP' })
+    }
+})
+
+// Update ICP
+app.put('/api/icps/:id', requireAuth, async (req, res) => {
+    const { id } = req.params
+    const { name, config, agent_config } = req.body
+
+    try {
+        // Verify ownership
+        const verify = await query('SELECT id FROM icps WHERE id = $1 AND user_id = $2', [id, req.userId])
+        if (verify.rows.length === 0) return res.status(404).json({ error: 'ICP not found' })
+
+        // Build dynamic update
+        // Simplify: just update provided fields
+        const updates = []
+        const values = []
+        let idx = 1
+
+        if (name) { updates.push(`name = $${idx++}`); values.push(name) }
+        if (config) { updates.push(`config = $${idx++}`); values.push(config) }
+        if (agent_config) { updates.push(`agent_config = $${idx++}`); values.push(agent_config) }
+
+        if (updates.length > 0) {
+            values.push(id) // ID is last param
+            await query(
+                `UPDATE icps SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $${idx}`,
+                values
+            )
+        }
+
+        res.json({ success: true })
+    } catch (err) {
+        console.error('Failed to update ICP:', err)
+        res.status(500).json({ error: 'Failed to update ICP' })
+    }
+})
+
+// --- FEEDBACK ENDPOINTS ---
+
+app.post('/api/runs/:runId/feedback', requireAuth, async (req, res) => {
+    const { runId } = req.params
+    const { icpId, feedbacks } = req.body // feedbacks is array of { entity_type, entity_identifier, grade, notes }
+
+    // Validate ownership of run?
+    // For MVP, just insert.
+
+    if (!feedbacks || !Array.isArray(feedbacks)) return res.status(400).json({ error: 'Invalid feedback format' });
+
+    try {
+        await query('BEGIN')
+        for (const fb of feedbacks) {
+            await query(
+                `INSERT INTO run_feedback (run_id, icp_id, entity_type, entity_identifier, grade, notes)
+                  VALUES ($1, $2, $3, $4, $5, $6)`,
+                [runId, icpId, fb.entity_type, fb.entity_identifier, fb.grade, fb.notes]
+            )
+        }
+        await query('COMMIT')
+        res.json({ success: true })
+    } catch (err) {
+        await query('ROLLBACK')
+        console.error('Failed to save feedback:', err)
+        res.status(500).json({ error: 'Failed to save feedback' })
+    }
+})
+
+
+// Trigger Optimization Loop
+app.post('/api/icps/:id/optimize', requireAuth, async (req, res) => {
+    const { id } = req.params;
+    try {
+        const optimizer = new OptimizationService(req.userId, id);
+        const result = await optimizer.optimize();
+        res.json(result);
+    } catch (err) {
+        console.error('Optimization failed:', err);
+        res.status(500).json({ error: 'Optimization failed', details: err.message });
+    }
+});
+
 // Trigger Analysis Run (SSE Streaming)
 app.post('/api/agents/run', requireAuth, async (req, res) => {
-    const { prompt, vectorStoreId, agentConfigs, mode, filters, idempotencyKey } = req.body
+    let { prompt, vectorStoreId, agentConfigs, mode, filters, idempotencyKey, icpId } = req.body
     console.log(`Starting live workflow (Mode: ${mode || 'default'}) with prompt:`, prompt)
     if (idempotencyKey) console.log(`🔑 Idempotency Key received: ${idempotencyKey}`)
+    if (icpId) console.log(`📋 Running for ICP ID: ${icpId}`)
+
+    // NEW: If icpId is provided, fetch latest optimized config from DB
+    if (icpId) {
+        try {
+            const { rows } = await query('SELECT agent_config FROM icps WHERE id = $1', [icpId]);
+            if (rows.length > 0) {
+                const storedConfig = rows[0].agent_config || {};
+                // Merge stored config if it has optimizations
+                // Priority: Stored Config (Optimized) > Frontend Config (User Input) > Defaults
+                if (storedConfig.optimized_instructions) {
+                    // We need to decide where to inject this. 
+                    // workflow.js uses agentConfigs['company_finder'] etc.
+                    // Let's assume we overwrite the 'company_finder' instructions or pass a global override.
+
+                    // For now, let's inject it into a specific key if defined, or just log it.
+                    // workflow.js looks for agentPrompts from DB.
+                    // Let's pass it as a special override in agentConfigs.
+                    if (!agentConfigs) agentConfigs = {};
+                    agentConfigs['company_finder'] = {
+                        ...agentConfigs['company_finder'],
+                        instructions: storedConfig.optimized_instructions
+                    };
+                    // Apply exclusions too
+                    if (storedConfig.exclusions && Array.isArray(storedConfig.exclusions)) {
+                        // We might need to pass this to filters?
+                        // filters = { ...filters, exclusions: storedConfig.exclusions };
+                        // Or append to prompt?
+                        prompt += `\n\n[OPTIMIZATION EXCLUSIONS]:\n${storedConfig.exclusions.join(', ')}`;
+                    }
+                    console.log("✅ Applied optimized instructions and exclusions from DB.");
+                }
+            }
+        } catch (e) {
+            console.warn("Failed to load ICP config", e);
+        }
+    }
 
     // 1. Setup SSE Headers
     res.writeHead(200, {
@@ -907,8 +1066,9 @@ app.post('/api/agents/run', requireAuth, async (req, res) => {
     let runId = null
     try {
         const { rows } = await query(
-            `INSERT INTO workflow_runs (agent_id, status, started_at, metadata, user_id) VALUES ('main_workflow', 'RUNNING', NOW(), $1, $2) RETURNING id`,
-            [JSON.stringify({ prompt, vectorStoreId, mode: mode || 'default', idempotencyKey }), req.userId]
+            `INSERT INTO workflow_runs (agent_id, status, started_at, metadata, user_id, icp_id) 
+             VALUES ('main_workflow', 'RUNNING', NOW(), $1, $2, $3) RETURNING id`,
+            [JSON.stringify({ prompt, vectorStoreId, mode: mode || 'default', idempotencyKey }), req.userId, icpId]
         )
         runId = rows[0].id
         // Send initial connection confirmation
@@ -924,6 +1084,7 @@ app.post('/api/agents/run', requireAuth, async (req, res) => {
         const result = await runAgentWorkflow({ input_as_text: prompt }, {
             vectorStoreId: vectorStoreId, // Pass VS ID from request
             userId: req.userId, // NEW: Pass authenticated user ID for company tracking
+            icpId: icpId, // NEW: Pass ICP ID for lead tracking
             targetLeads: req.body.targetLeads || 50, // NEW: Total leads target
             maxLeadsPerCompany: req.body.maxLeadsPerCompany || 3, // NEW: Max per company
             agentConfigs: agentConfigs || {},
@@ -1007,17 +1168,39 @@ const initDB = async () => {
             );
         `)
 
-        // CRM Columns
+
+
+        // Multi-ICP Tables
         await query(`
-            CREATE TABLE IF NOT EXISTS crm_columns (
-                id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-                column_name VARCHAR(100) NOT NULL,
-                column_type VARCHAR(50) NOT NULL,
-                is_required BOOLEAN DEFAULT FALSE,
-                description TEXT,
-                created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-            );
-        `)
+            CREATE TABLE IF NOT EXISTS icps(
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES users(id),
+    name VARCHAR(100) NOT NULL,
+    config JSONB DEFAULT '{}':: jsonb,
+    agent_config JSONB DEFAULT '{}':: jsonb,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+`)
+
+        await query(`
+            CREATE TABLE IF NOT EXISTS run_feedback(
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    run_id UUID REFERENCES workflow_runs(id),
+    icp_id UUID REFERENCES icps(id),
+    entity_type VARCHAR(50) NOT NULL,
+    entity_identifier VARCHAR(255),
+    grade VARCHAR(20),
+    notes TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+`)
+
+        // Add columns to existing tables if needed
+        await query(`ALTER TABLE workflow_runs ADD COLUMN IF NOT EXISTS icp_id UUID REFERENCES icps(id); `)
+        await query(`ALTER TABLE workflow_runs ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id); `)
+        await query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id); `)
+        await query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS icp_id UUID REFERENCES icps(id); `)
 
         // Migration: Add phone_numbers if not exists
         await query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS phone_numbers JSONB DEFAULT '[]'::jsonb;`)
@@ -1029,8 +1212,6 @@ const initDB = async () => {
 }
 
 // Enrich Lead (Phone)
-import { enrichLeadWithPhone } from './src/backend/workflow.js'
-
 app.post('/api/leads/:id/enrich-phone', requireAuth, async (req, res) => {
     const { id } = req.params
     try {
@@ -1067,10 +1248,6 @@ app.post('/api/leads/:id/enrich-phone', requireAuth, async (req, res) => {
     }
 })
 
-// CSV Import Dependencies
-import multer from 'multer'
-import { parse } from 'csv-parse/sync'
-
 const upload = multer({ storage: multer.memoryStorage() })
 
 app.post('/api/leads/import', requireAuth, upload.single('file'), async (req, res) => {
@@ -1087,7 +1264,6 @@ app.post('/api/leads/import', requireAuth, upload.single('file'), async (req, re
         if (records.length === 0) return res.json({ success: true, count: 0 })
 
         // Map CSV fields to DB fields
-        // Apollo exports usually have: "First Name", "Last Name", "Title", "Company", "Email", "LinkedIn Url", "Website"
         const leads = records.map(r => ({
             company_name: r['Company'] || r['Company Name for Emails'] || r['Organization'] || '',
             person_name: `${r['First Name'] || ''} ${r['Last Name'] || ''}`.trim(),
@@ -1100,14 +1276,14 @@ app.post('/api/leads/import', requireAuth, upload.single('file'), async (req, re
                 source_file: req.file.originalname
             },
             source: 'Import'
-        })).filter(l => l.email || l.linkedin_url) // Only keep valid leads
+        })).filter(l => l.email || l.linkedin_url)
 
         await query('BEGIN')
         for (const lead of leads) {
             await query(
-                `INSERT INTO leads (company_name, person_name, email, job_title, linkedin_url, status, custom_data, source, user_id)
-                 VALUES ($1, $2, $3, $4, $5, 'NEW', $6, $7, $8)
-                 ON CONFLICT (email) DO NOTHING`, // Avoid duplicates by email if unique constraint exists (or just insert)
+                `INSERT INTO leads(company_name, person_name, email, job_title, linkedin_url, status, custom_data, source, user_id)
+                     VALUES($1, $2, $3, $4, $5, 'NEW', $6, $7, $8)
+                     ON CONFLICT(email) DO NOTHING`,
                 [
                     lead.company_name,
                     lead.person_name,
@@ -1136,4 +1312,5 @@ initDB().then(() => {
         console.log(`Server running on port ${port}`)
     })
 })
+
 

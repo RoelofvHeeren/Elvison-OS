@@ -1,15 +1,17 @@
 import PropTypes from 'prop-types'
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, ListChecks, Plug, Sparkles, Table, Wand2, BookOpen, Bot, PlayCircle } from 'lucide-react'
+import { LayoutDashboard, ListChecks, Plug, Sparkles, Table, Wand2, BookOpen, Bot, PlayCircle, Target, Zap } from 'lucide-react'
 
 const navItems = [
+  { to: '/profile', label: 'Strategies', icon: Target }, // New
+  { to: '/runner', label: 'Run Workflow', icon: PlayCircle },
+  { to: '/optimize', label: 'Optimize', icon: Zap }, // New
   { to: '/crm', label: 'CRM', icon: LayoutDashboard },
   { to: '/agents', label: 'Agents', icon: Bot },
-  { to: '/runner', label: 'Run Workflow', icon: PlayCircle },
   { to: '/connections', label: 'Connections', icon: Plug },
   { to: '/knowledge', label: 'Knowledge Base', icon: BookOpen },
   { to: '/logbook', label: 'Logbook', icon: BookOpen },
-  { to: '/onboarding', label: 'Onboarding', icon: Sparkles },
+  // { to: '/onboarding', label: 'Onboarding', icon: Sparkles }, // Hide generic onboarding? Or keep for reference? Keeping it is fine.
 ]
 
 const Sidebar = ({ collapsed, onToggle }) => (

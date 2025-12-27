@@ -9,7 +9,7 @@ import {
     getCompanyStats
 } from "./company-tracker.js";
 import { LeadScraperService } from "./services/lead-scraper-service.js";
-import { WORKFLOW_CONFIG, getEffectiveMaxLeads } from "../config/workflow.js";
+import { WORKFLOW_CONFIG, getEffectiveMaxLeads, AGENT_MODELS } from "../config/workflow.js";
 import { finderBackup, profilerBackup, apolloBackup } from "./workflow_prompts_backup.js";
 
 // --- Schema Definitions ---
@@ -286,7 +286,7 @@ export const runAgentWorkflow = async (input, config) => {
     const companyFinder = new Agent({
         name: "Company Finder",
         instructions: finderInst, // Using hardcoded prompt to ensure quality compliance
-        model: "gpt-4o",
+        model: AGENT_MODELS.company_finder,
         tools: getToolsForAgent('company_finder'),
         outputType: CompanyFinderSchema,
     });
@@ -296,7 +296,7 @@ export const runAgentWorkflow = async (input, config) => {
     const companyProfiler = new Agent({
         name: "Company Profiler",
         instructions: profilerInst,
-        model: "gpt-4o",
+        model: AGENT_MODELS.company_profiler,
         tools: getToolsForAgent('company_profiler'),
         outputType: CompanyProfilerSchema,
     });
@@ -307,14 +307,11 @@ export const runAgentWorkflow = async (input, config) => {
         name: "Apollo Lead Finder",
         instructions: `You are the Apollo Headhunter Agent for Fifth Avenue Properties.
     Goal: Find decision-makers (Partner, Principal, Director of Acquisitions) at real estate investment firms.
-
-    CRITICAL RULES:
-    1. ROLES: "Partner", "Principal", "Managing Director", "Head of Acquisitions", "VP Development".
-    2. EXCLUDE: "Loan Originator", "Lender", "Underwriter", "Analyst", "Associate", "Mortgage", "Debt".
-    3. ACTION: You MUST use 'people_enrichment' or 'get_person_email' to REVEAL the email.
-    4. Do NOT return "email_not_unlocked".
-    5. Return valid JSON.`,
-        model: "gpt-4o",
+    CRITICAL:
+    1. ROLES: Partner, Principal, Managing Director, Head of Acquisitions, VP Development.
+    2. EXCLUDE: Debt, Lending, Mortgage, Brokerage, Analyst, Associate.
+    3. ACTION: Use 'people_enrichment' or 'get_person_email' to REVEAL emails. DO NOT return "email_not_unlocked".`,
+        model: AGENT_MODELS.apollo_lead_finder,
         tools: getToolsForAgent('apollo_lead_finder'),
         outputType: ApolloLeadFinderSchema,
     });
@@ -324,7 +321,7 @@ export const runAgentWorkflow = async (input, config) => {
     const outreachCreator = new Agent({
         name: "Outreach Creator",
         instructions: outreachInst,
-        model: "gpt-4o",
+        model: AGENT_MODELS.outreach_creator,
         tools: getToolsForAgent('outreach_creator'),
         outputType: OutreachCreatorSchema,
     });
@@ -423,21 +420,19 @@ export const runAgentWorkflow = async (input, config) => {
                 // Let's run all for maximum recall.
 
                 const searchPrompt = `
-[SYSTEM DIRECTIVE]: You are a Company Discovery Agent tasked with finding real estate investment firms.
-SEARCH EXECUTION PROTOCOL:
-1. Execute ALL 4 searches below using your 'web_search' tool.
-2. Request multiple result pages.
-3. AVOID companies already researched: ${[...excludedNames, ...qualifiedCompanies.map(c => c.company_name), ...accumulatedCandidates.map(c => c.company_name)].slice(0, 50).join(', ')}
+[SYSTEM]: Find Real Estate Investment Firms (Equity/JV/LPs).
+PROTOCOL:
+1. Run ALL 4 searches below.
+2. AVOID: ${[...excludedNames, ...qualifiedCompanies.map(c => c.company_name), ...accumulatedCandidates.map(c => c.company_name)].slice(0, 50).join(', ')}
 
-SEARCH QUERIES:
+QUERIES:
 ${searchStrategies.join('\n')}
 
-QUALIFICATION CRITERIA:
-✅ INCLUDE: Equity investors, LPs, Co-GPs, Family Offices, Real Estate Funds
-❌ EXCLUDE: Debt lenders, mortgage brokers, REITs, property managers
+CRITERIA:
+✅ INCLUDE: Equity investors, LPs, Co-GPs, Family Offices, Funds.
+❌ EXCLUDE: Debt/Lenders, Mortgage Brokers, Property Managers.
 
-TARGET: Return 20+ candidates to ensure we hit the net target of ${companiesNeeded} after filtering.
-OUTPUT: JSON list with company_name, website, capital_role, description
+OUTPUT: JSON list (company_name, website, capital_role, description). Target 20+ candidates.
 `;
 
                 const finderInput = [{ role: "user", content: searchPrompt }];
@@ -629,32 +624,11 @@ OUTPUT: JSON list with company_name, website, capital_role, description
         // 5. Save to CRM (Database)
         logStep('CRM Sync', 'Saving leads to database...');
         try {
-            await query('BEGIN');
-            for (const lead of outreachOutput.leads) {
-                await query(
-                    `INSERT INTO leads (user_id, company_name, person_name, email, job_title, linkedin_url, status, custom_data, source)
-                     VALUES ($1, $2, $3, $4, $5, $6, 'NEW', $7, 'Automation')`,
-                    [
-                        userId, // Inject userId
-                        lead.company_name,
-                        `${lead.first_name || ''} ${lead.last_name || ''}`.trim(),
-                        lead.email,
-                        lead.title,
-                        lead.linkedin_url,
-                        JSON.stringify({
-                            company_website: lead.company_website,
-                            company_profile: lead.company_profile,
-                            connection_request: lead.connection_request,
-                            email_message: lead.email_message,
-                            verification_date: new Date().toISOString()
-                        })
-                    ]
-                );
+            if (outreachOutput.leads && outreachOutput.leads.length > 0) {
+                await saveLeadsToDB(outreachOutput.leads, userId, icpId, logStep);
             }
-            await query('COMMIT');
-            logStep('CRM Sync', `Successfully saved ${outreachOutput.leads.length} leads to CRM.`);
+            logStep('CRM Sync', `Successfully saved ${outreachOutput.leads ? outreachOutput.leads.length : 0} leads to CRM.`);
         } catch (dbErr) {
-            await query('ROLLBACK');
             logStep('CRM Sync', `Failed to save leads to DB: ${dbErr.message}`);
             // Don't fail the whole workflow check if DB fails, but log it.
         }

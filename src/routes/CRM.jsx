@@ -1,17 +1,20 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { CalendarDays, Building2, RefreshCw, Trash2, Upload } from 'lucide-react'
+import { CalendarDays, Building2, RefreshCw, Trash2, Upload, Filter, Target } from 'lucide-react'
 import SheetTable from '../components/SheetTable'
 import ImportModal from '../components/ImportModal'
 import { fetchHealth, fetchLeads, deleteLead, clearLeads } from '../utils/api'
+import { useIcp } from '../context/IcpContext'
 
 const CRM = () => {
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [filters, setFilters] = useState({ date: '', company: '' })
+  const [filters, setFilters] = useState({ date: '', company: '', icpId: '' })
   const [health, setHealth] = useState({ sheet: 'pending', agent: 'pending' })
   const [isImportOpen, setIsImportOpen] = useState(false)
+
+  const { icps, fetchIcps } = useIcp()
 
   const fetchRows = async () => {
     try {
@@ -32,8 +35,8 @@ const CRM = () => {
         let dateStr = new Date(lead.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
         return {
-          originalIndex: idx, // Not useful for deletion by index anymore, but needed for key
-          id: lead.id, // Use DB ID
+          originalIndex: idx,
+          id: lead.id,
           date: dateStr,
           name: lead.person_name || '',
           title: lead.job_title || '',
@@ -45,6 +48,7 @@ const CRM = () => {
           emailMessage: details.email_message || '',
           companyProfile: details.company_profile || '',
           phoneNumbers: lead.phone_numbers || [],
+          icpId: lead.icp_id || '', // NEW: ICP ID
         };
       })
       setRows(normalized)
@@ -109,7 +113,7 @@ const CRM = () => {
   }
 
   const refreshAll = async () => {
-    await Promise.allSettled([fetchRows(), fetchStatus()])
+    await Promise.allSettled([fetchRows(), fetchStatus(), fetchIcps()])
   }
 
   useEffect(() => {
@@ -123,7 +127,8 @@ const CRM = () => {
       const matchesCompany = filters.company
         ? row.company?.toLowerCase().includes(filters.company.toLowerCase())
         : true
-      return matchesDate && matchesCompany
+      const matchesIcp = filters.icpId ? row.icpId === filters.icpId : true
+      return matchesDate && matchesCompany && matchesIcp
     })
   }, [rows, filters])
 
@@ -136,6 +141,7 @@ const CRM = () => {
           <p className="text-sm text-muted">Live sync from your AI Lead Sheet.</p>
         </div>
         <div className="flex items-center gap-2">
+          {/* Status Chips */}
           <div className="flex items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs font-bold text-primary">
             <span
               className={`h-2.5 w-2.5 rounded-full ${health.sheet === 'ok' ? 'bg-black shadow-sm shadow-black/30' : 'bg-amber-400'
@@ -167,7 +173,7 @@ const CRM = () => {
             Refresh
           </button>
           <Link
-            to="/new-job"
+            to="/runner"
             className="inline-flex items-center gap-2 rounded-2xl bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-brand transition-all duration-200 hover:-translate-y-[1px] hover:bg-primaryDark"
           >
             Start New Job
@@ -203,7 +209,7 @@ const CRM = () => {
         </div>
       </div>
 
-      <div className="glass-panel grid gap-3 px-5 py-5 md:grid-cols-2">
+      <div className="glass-panel grid gap-3 px-5 py-5 md:grid-cols-3">
         <div className="flex flex-1 flex-col gap-1">
           <label
             htmlFor="date"
@@ -235,9 +241,27 @@ const CRM = () => {
             className="w-full rounded-2xl border border-outline/80 bg-white/80 px-3 py-2.5 text-sm text-ink outline-none transition-all duration-200 focus:border-primary focus:ring-2 focus:ring-primary/10"
           />
         </div>
+        {/* NEW ICP FILTER */}
+        <div className="flex flex-1 flex-col gap-1">
+          <label
+            htmlFor="icp"
+            className="text-[11px] font-semibold uppercase tracking-[0.25em] text-muted flex items-center gap-2"
+          >
+            <Target className="w-3 h-3" /> Filter by Strategy
+          </label>
+          <select
+            id="icp"
+            value={filters.icpId}
+            onChange={(e) => setFilters((prev) => ({ ...prev, icpId: e.target.value }))}
+            className="w-full rounded-2xl border border-outline/80 bg-white/80 px-3 py-2.5 text-sm text-ink outline-none transition-all duration-200 focus:border-primary focus:ring-2 focus:ring-primary/10"
+          >
+            <option value="">All Strategies</option>
+            {icps.map(icp => (
+              <option key={icp.id} value={icp.id}>{icp.name}</option>
+            ))}
+          </select>
+        </div>
       </div>
-
-
 
       <SheetTable
         rows={filteredRows}
@@ -252,8 +276,6 @@ const CRM = () => {
         onClose={() => setIsImportOpen(false)}
         onImportSuccess={() => {
           refreshAll()
-          // Optionally keep it open or close it. Logic handles "Done" click.
-          // setIsImportOpen(false) 
         }}
       />
     </div >
