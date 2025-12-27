@@ -88,7 +88,7 @@ const AgentRunner = () => {
         try {
             // Build Prompt Context
             // Use ICP config prompts if available, else legacy
-            let promptToSend = agentPrompts.company_finder?.system_prompt || "Find SaaS companies"
+            let promptToSend = "Find SaaS companies"
             // Use the user's input prompt as the main objective if it's set
             if (prompt.trim()) {
                 promptToSend = prompt;
@@ -207,7 +207,7 @@ const AgentRunner = () => {
     }
 
     return (
-        <div className="flex h-[calc(100vh-8rem)] gap-6">
+        <div className="flex h-[calc(100vh-2rem)] gap-6 p-6 lg:p-8 max-w-[1600px] mx-auto animate-fade-in">
             {/* Left Panel: Input & Status */}
             <div className="w-1/3 flex flex-col gap-6">
                 <div className="rounded-xl border border-white/10 bg-white/5 p-6 backdrop-blur-sm">
