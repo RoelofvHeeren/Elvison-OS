@@ -22,7 +22,7 @@ export const WORKFLOW_CONFIG = {
 export const AGENT_MODELS = {
     company_finder: "gpt-4o", // Upgraded for better tool usage & reasoning
     company_profiler: "gpt-4o", // Upgraded for deeper analysis
-    apollo_lead_finder: "gpt-4o-mini", // Sufficient for strict API tasks
+    apollo_lead_finder: "gpt-4o", // Upgraded for higher rate limits & reasoning
     outreach_creator: "gpt-4o-mini", // Sufficient for drafting
     default: "gpt-4o-mini"
 };
