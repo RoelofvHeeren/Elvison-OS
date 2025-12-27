@@ -104,7 +104,7 @@ const IcpSettings = () => {
     if (!icpData) return <div className="p-12 text-center text-gray-500">Strategy not found.</div>
 
     return (
-        <div className="min-h-screen bg-transparent p-8 max-w-5xl mx-auto pb-32">
+        <div className="min-h-screen bg-transparent p-6 lg:p-8 max-w-5xl mx-auto pb-32 animate-fade-in">
 
             {/* Header */}
             <div className="flex items-center gap-4 mb-8">

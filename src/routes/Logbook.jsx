@@ -163,7 +163,7 @@ const Logbook = () => {
     }
 
     return (
-        <div className="space-y-6 animate-fade-in">
+        <div className="space-y-6 p-6 lg:p-8 max-w-[1600px] mx-auto animate-fade-in">
             <header className="flex items-center justify-between">
                 <div>
                     <h1 className="font-serif text-3xl font-medium text-primary flex items-center gap-3">

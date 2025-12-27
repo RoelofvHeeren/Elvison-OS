@@ -131,7 +131,7 @@ const AgentConfig = () => {
     if (loading) return <div className="p-10 text-center text-muted">Loading agent configurations...</div>
 
     return (
-        <div className="flex h-[calc(100vh-8rem)] gap-6">
+        <div className="flex h-[calc(100vh-2rem)] gap-6 p-6 lg:p-8 max-w-[1600px] mx-auto animate-fade-in">
             {/* Sidebar List */}
             <div className="w-72 flex-shrink-0 flex flex-col gap-2 border-r border-[#139187]/20 pr-4 overflow-y-auto">
                 <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-gray-400 px-3">Available Agents</h2>

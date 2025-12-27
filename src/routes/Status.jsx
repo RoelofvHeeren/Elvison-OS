@@ -72,7 +72,7 @@ const Status = () => {
   const isComplete = steps.every((step) => step.status === 'done')
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6 p-6 lg:p-8 max-w-[1600px] mx-auto animate-fade-in">
       <div className="glass-panel px-5 py-5">
         <p className="text-xs font-bold uppercase tracking-[0.3em] text-primary">Job status</p>
         <h1 className="text-3xl font-bold text-accent">Tracking job {jobId || '—'}</h1>

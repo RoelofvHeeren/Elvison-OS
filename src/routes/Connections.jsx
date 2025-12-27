@@ -40,7 +40,7 @@ const Connections = () => {
   }
 
   return (
-    <div className="space-y-8 max-w-3xl">
+    <div className="space-y-8 p-6 lg:p-8 max-w-3xl mx-auto animate-fade-in">
       <div>
         <h1 className="text-3xl font-serif font-bold text-white mb-2">System Status</h1>
         <p className="text-gray-400">Monitor backend health and trigger manual workflows.</p>
