@@ -67,10 +67,23 @@ const AppContent = () => {
   const isAuthPage = ['/login', '/signup', '/onboarding'].includes(location.pathname)
 
   return (
-    <div className="flex h-screen bg-gray-900 text-gray-100 overflow-hidden font-sans">
+  return (
+    <div className="flex h-screen bg-transparent text-gray-100 overflow-hidden font-sans relative">
+      <div className="absolute inset-0 z-0 pointer-events-none">
+        <video
+          autoPlay
+          loop
+          muted
+          playsInline
+          className="w-full h-full object-cover opacity-60"
+          src="/bg-video.mp4"
+        />
+        <div className="absolute inset-0 bg-black/60" />
+      </div>
+
       {!isAuthPage && user && <Sidebar collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} />}
 
-      <main className={`flex-1 overflow-auto transition-all duration-300 ${!isAuthPage && user ? 'p-0' : ''}`}>
+      <main className={`relative z-10 flex-1 overflow-auto transition-all duration-300 ${!isAuthPage && user ? 'p-0' : ''}`}>
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
@@ -89,6 +102,7 @@ const AppContent = () => {
         </Routes>
       </main>
     </div>
+  )
   )
 }
 

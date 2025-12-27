@@ -1039,7 +1039,7 @@ const Onboarding = () => {
     if (!isLoaded) return null // Prevent flash of wrong state
 
     return (
-        <div className="min-h-screen bg-black text-white selection:bg-teal-500/30 font-sans overflow-hidden relative">
+        <div className="min-h-screen bg-black text-white selection:bg-teal-500/30 font-sans overflow-hidden relative flex">
             {/* Background Video */}
             <div className="absolute inset-0 z-0 pointer-events-none">
                 <video
@@ -1047,9 +1047,10 @@ const Onboarding = () => {
                     loop
                     muted
                     playsInline
-                    className="w-full h-full object-cover"
-                    src="https://cdn.pixabay.com/video/2020/04/18/36467-418731118_large.mp4"
+                    className="w-full h-full object-cover opacity-60"
+                    src="/bg-video.mp4"
                 />
+                <div className="absolute inset-0 bg-black/60" />
             </div>
 
             {step !== 'welcome' && (
