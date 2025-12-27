@@ -1039,19 +1039,8 @@ const Onboarding = () => {
     if (!isLoaded) return null // Prevent flash of wrong state
 
     return (
-        <div className="min-h-screen bg-black text-white selection:bg-teal-500/30 font-sans overflow-hidden relative flex">
-            {/* Background Video */}
-            <div className="absolute inset-0 z-0 pointer-events-none">
-                <video
-                    autoPlay
-                    loop
-                    muted
-                    playsInline
-                    className="w-full h-full object-cover opacity-60"
-                    src="/bg-video.mp4"
-                />
-                <div className="absolute inset-0 bg-black/60" />
-            </div>
+        <div className="min-h-screen bg-transparent text-white selection:bg-teal-500/30 font-sans overflow-hidden relative flex">
+            {/* Video background provided by App.jsx - no duplicate needed here */}
 
             {step !== 'welcome' && (
                 <OnboardingSidebar

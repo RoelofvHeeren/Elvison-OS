@@ -80,7 +80,8 @@ const AppContent = () => {
         <div className="absolute inset-0 bg-black/60" />
       </div>
 
-      {!isAuthPage && user && <Sidebar collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} />}
+      {/* Global sidebar - uses onToggle prop to control collapse */}
+      {!isAuthPage && user && <Sidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} />}
 
       <main className={`relative z-10 flex-1 overflow-auto transition-all duration-300 ${!isAuthPage && user ? 'p-0' : ''}`}>
         <Routes>
