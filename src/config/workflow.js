@@ -20,10 +20,10 @@ export const WORKFLOW_CONFIG = {
 };
 
 export const AGENT_MODELS = {
-    company_finder: "gpt-4o-mini",
-    company_profiler: "gpt-4o-mini", // Cost-saving trial. Revert to gpt-4o if quality suffers.
-    apollo_lead_finder: "gpt-4o-mini",
-    outreach_creator: "gpt-4o-mini",
+    company_finder: "gpt-4o", // Upgraded for better tool usage & reasoning
+    company_profiler: "gpt-4o", // Upgraded for deeper analysis
+    apollo_lead_finder: "gpt-4o-mini", // Sufficient for strict API tasks
+    outreach_creator: "gpt-4o-mini", // Sufficient for drafting
     default: "gpt-4o-mini"
 };
 
