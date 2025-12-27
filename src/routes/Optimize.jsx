@@ -104,16 +104,16 @@ const Optimize = () => {
     return (
         <div className="flex h-full gap-6 p-6 lg:p-8 max-w-[1600px] mx-auto animate-fade-in">
             {/* Run Sidebar */}
-            <div className="w-64 glass-panel p-4 flex flex-col gap-4 h-fit">
-                <h2 className="text-xs uppercase tracking-wider font-bold text-primary px-2">Run History</h2>
+            <div className="w-64 glass-panel p-4 flex flex-col gap-4 h-fit bg-white/50 backdrop-blur-xl border border-white/20 shadow-sm">
+                <h2 className="text-xs uppercase tracking-wider font-bold text-[#139187] px-2">Run History</h2>
                 <div className="space-y-1">
                     {runs.map(run => (
                         <button
                             key={run.id}
                             onClick={() => setSelectedRunId(run.id)}
                             className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${selectedRunId === run.id
-                                    ? 'bg-primary/20 text-accent border border-primary/30'
-                                    : 'text-muted hover:bg-white/5 hover:text-white'
+                                ? 'bg-[#139187]/10 text-[#139187] border border-[#139187]/30 font-bold shadow-sm'
+                                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
                                 }`}
                         >
                             <div className="font-bold">Run {run.id.slice(0, 6)}</div>
@@ -125,19 +125,25 @@ const Optimize = () => {
 
             {/* Main Content */}
             <div className="flex-1 overflow-y-auto space-y-6">
-                <div className="glass-panel p-6 flex justify-between items-center">
+                <div className="glass-panel p-6 flex justify-between items-center bg-white/50 backdrop-blur-xl border border-white/20 shadow-sm">
                     <div>
                         <div className="flex items-center gap-2 mb-1">
-                            <Zap className="w-5 h-5 text-accent" />
-                            <h1 className="font-serif text-2xl font-bold text-white">Optimize Strategy</h1>
+                            <Zap className="w-5 h-5 text-[#139187]" />
+                            <h1 className="font-serif text-2xl font-bold text-gray-900">Optimize Strategy</h1>
                         </div>
-                        <p className="text-sm text-muted">Review generated messages to train your AI agent.</p>
+                        <p className="text-sm text-gray-500">Review generated messages to train your AI agent.</p>
                     </div>
 
                     <button
-                        onClick={submitOptimization}
-                        disabled={isOptimizing || Object.keys(feedback).length === 0}
-                        className="flex items-center gap-2 rounded-2xl bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-brand transition-all duration-200 hover:-translate-y-[1px] hover:bg-primaryDark disabled:opacity-50 disabled:cursor-not-allowed"
+                        onClick={() => {
+                            if (Object.keys(feedback).length === 0) {
+                                alert("Please provide some feedback (Thumbs Up/Down) before applying.");
+                                return;
+                            }
+                            submitOptimization();
+                        }}
+                        disabled={isOptimizing}
+                        className="flex items-center gap-2 rounded-2xl bg-[#139187] px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-[#139187]/20 transition-all duration-200 hover:-translate-y-[1px] hover:bg-[#118077] disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {isOptimizing ? <RotateCw className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
                         Apply Feedback
@@ -146,12 +152,12 @@ const Optimize = () => {
 
                 <div className="space-y-4">
                     {runData.map(company => (
-                        <div key={company.id} className="glass-panel overflow-hidden">
+                        <div key={company.id} className="glass-panel overflow-hidden bg-white/50 backdrop-blur-xl border border-white/20 shadow-sm rounded-xl">
                             {/* Company Header */}
-                            <div className="px-6 py-4 border-b border-white/5 bg-white/5 flex justify-between items-center">
+                            <div className="px-6 py-4 border-b border-gray-100 bg-white/40 flex justify-between items-center">
                                 <div>
-                                    <h3 className="text-lg font-bold text-white">{company.name}</h3>
-                                    <a href={`https://${company.website}`} target="_blank" rel="noreferrer" className="text-xs text-primary hover:underline">{company.website}</a>
+                                    <h3 className="text-lg font-bold text-gray-900">{company.name}</h3>
+                                    <a href={`https://${company.website}`} target="_blank" rel="noreferrer" className="text-xs text-[#139187] hover:underline font-medium">{company.website}</a>
                                 </div>
                                 <FeedbackControl
                                     type="company"
@@ -167,12 +173,12 @@ const Optimize = () => {
                                     <div key={contact.id} className="space-y-4">
                                         <div className="flex items-start justify-between">
                                             <div className="flex items-center gap-3">
-                                                <div className="h-10 w-10 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold">
+                                                <div className="h-10 w-10 rounded-full bg-[#139187]/10 flex items-center justify-center text-[#139187] font-bold border border-[#139187]/20">
                                                     {contact.name.charAt(0)}
                                                 </div>
                                                 <div>
-                                                    <div className="font-medium text-white">{contact.name}</div>
-                                                    <div className="text-sm text-primary/80">{contact.title}</div>
+                                                    <div className="font-bold text-gray-900">{contact.name}</div>
+                                                    <div className="text-sm text-gray-500">{contact.title}</div>
                                                 </div>
                                             </div>
                                             <FeedbackControl
@@ -188,9 +194,9 @@ const Optimize = () => {
                                         {/* Messages Section */}
                                         <div className="pl-12 space-y-3">
                                             {contact.messages?.map(msg => (
-                                                <div key={msg.id} className="rounded-xl border border-white/10 bg-black/20 p-4 relative group">
-                                                    <div className="mb-2 flex items-center justify-between">
-                                                        <span className="text-xs font-bold uppercase tracking-wider text-muted flex items-center gap-2">
+                                                <div key={msg.id} className="rounded-xl border border-gray-200 bg-gray-50/80 p-5 relative group hover:border-[#139187]/30 transition-colors">
+                                                    <div className="mb-3 flex items-center justify-between">
+                                                        <span className="text-xs font-bold uppercase tracking-wider text-gray-400 flex items-center gap-2">
                                                             <MessageSquare className="w-3 h-3" /> Outreach Message
                                                         </span>
                                                         <FeedbackControl
@@ -202,8 +208,8 @@ const Optimize = () => {
                                                             onNote={(n) => handleNote('message', msg.id, n)}
                                                         />
                                                     </div>
-                                                    <div className="text-sm font-semibold text-white mb-1">{msg.subject}</div>
-                                                    <div className="text-sm text-gray-300 whitespace-pre-wrap">{msg.body}</div>
+                                                    <div className="text-sm font-bold text-gray-900 mb-2">{msg.subject}</div>
+                                                    <div className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{msg.body}</div>
                                                 </div>
                                             ))}
                                         </div>
@@ -225,28 +231,29 @@ const FeedbackControl = ({ type, id, feedback, onGrade, showNotes, onNote }) => 
             {showNotes && (grade === 'negative' || grade === 'positive') && (
                 <input
                     type="text"
-                    placeholder="Rational (optional)..."
-                    className="bg-transparent border-b border-white/20 px-2 py-1 text-xs text-white placeholder:text-gray-600 focus:border-primary outline-none min-w-[150px] transition-all animate-in fade-in slide-in-from-right-2"
+                    placeholder="Rationale (optional)..."
+                    className="bg-white border border-gray-200 rounded-md px-3 py-1.5 text-xs text-gray-900 placeholder:text-gray-400 focus:border-[#139187] focus:ring-1 focus:ring-[#139187] outline-none min-w-[200px] transition-all animate-in fade-in slide-in-from-right-2 shadow-sm"
                     onChange={(e) => onNote(e.target.value)}
+                    autoFocus
                 />
             )}
-            <div className="flex items-center gap-1 bg-black/40 rounded-lg p-1 border border-white/10">
+            <div className="flex items-center gap-1 bg-white rounded-lg p-1 border border-gray-200 shadow-sm">
                 <button
                     onClick={() => onGrade('positive')}
-                    className={`p-1.5 rounded transition-colors ${grade === 'positive' ? 'bg-emerald-500/20 text-emerald-400' : 'text-gray-500 hover:text-emerald-400'
+                    className={`p-1.5 rounded-md transition-all ${grade === 'positive' ? 'bg-emerald-50 text-emerald-600 shadow-sm ring-1 ring-emerald-500/20' : 'text-gray-400 hover:text-emerald-500 hover:bg-gray-50'
                         }`}
                     title="Good Match"
                 >
-                    <ThumbsUp className="w-3.5 h-3.5" />
+                    <ThumbsUp className="w-4 h-4" />
                 </button>
-                <div className="w-[1px] h-3 bg-white/10"></div>
+                <div className="w-[1px] h-3 bg-gray-200"></div>
                 <button
                     onClick={() => onGrade('negative')}
-                    className={`p-1.5 rounded transition-colors ${grade === 'negative' ? 'bg-rose-500/20 text-rose-400' : 'text-gray-500 hover:text-rose-400'
+                    className={`p-1.5 rounded-md transition-all ${grade === 'negative' ? 'bg-rose-50 text-rose-600 shadow-sm ring-1 ring-rose-500/20' : 'text-gray-400 hover:text-rose-500 hover:bg-gray-50'
                         }`}
                     title="Bad Match"
                 >
-                    <ThumbsDown className="w-3.5 h-3.5" />
+                    <ThumbsDown className="w-4 h-4" />
                 </button>
             </div>
         </div>
