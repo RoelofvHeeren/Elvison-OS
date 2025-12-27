@@ -443,8 +443,8 @@ export class LeadScraperService {
                 company_profile: originalCompany.company_profile || '',
                 city: item.city || '',
                 state: item.state || '',
-                country: item.country || '',
-                seniority: item.seniority || '',
+                personTitle: (filters.job_titles && filters.job_titles.length > 0) ? filters.job_titles : defaultTitles,
+                seniority: (filters.seniority && filters.seniority.length > 0) ? filters.seniority : defaultSeniorities,
                 industry: item.organizationIndustry || '',
                 company_size: item.organizationSize || '',
                 tier: tier, // NEW
