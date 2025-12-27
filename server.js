@@ -1197,7 +1197,27 @@ const initDB = async () => {
     notes TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
-`)
+`);
+
+        // Company Tracking Table (Migration 05)
+        await query(`
+            CREATE TABLE IF NOT EXISTS researched_companies (
+                id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+                company_name VARCHAR(255) NOT NULL,
+                domain VARCHAR(255),
+                status VARCHAR(50) DEFAULT 'researched', -- 'researched', 'contacted'
+                lead_count INTEGER DEFAULT 0,
+                metadata JSONB DEFAULT '{}'::jsonb,
+                researched_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                contacted_at TIMESTAMP WITH TIME ZONE,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                UNIQUE(user_id, domain)
+            );
+            CREATE INDEX IF NOT EXISTS idx_researched_companies_user_id ON researched_companies(user_id);
+            CREATE INDEX IF NOT EXISTS idx_researched_companies_domain ON researched_companies(domain);
+        `);
 
         // Add columns to existing tables if needed
         await query(`ALTER TABLE workflow_runs ADD COLUMN IF NOT EXISTS icp_id UUID REFERENCES icps(id); `)
