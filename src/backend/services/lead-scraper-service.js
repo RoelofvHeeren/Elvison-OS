@@ -266,7 +266,7 @@ export class LeadScraperService {
             // --- STRICT FILTERING LAYER ---
             // Deprioritize or Remove Excluded Functions
             const validItems = items.filter(item => {
-                const title = (item.title || item.personTitle || "").toLowerCase();
+                const title = (item.position || item.title || item.personTitle || "").toLowerCase();
                 if (!title) return false;
 
                 // Check Exclusions
