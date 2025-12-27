@@ -15,6 +15,15 @@ async function initDb() {
         try {
             await client.query('BEGIN');
             await client.query(schema);
+
+            // Run Migration 05
+            const migration05Path = path.join(__dirname, 'migrations', '05_company_tracking.sql');
+            if (fs.existsSync(migration05Path)) {
+                const migration05 = fs.readFileSync(migration05Path, 'utf8');
+                await client.query(migration05);
+                console.log('Migration 05 applied.');
+            }
+
             await client.query('COMMIT');
             console.log('Database schema applied successfully.');
         } catch (e) {
