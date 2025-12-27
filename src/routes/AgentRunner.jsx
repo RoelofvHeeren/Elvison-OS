@@ -94,7 +94,8 @@ const AgentRunner = () => {
                 promptToSend = prompt;
             }
 
-            const vectorStoreId = "vs_123_placeholder"
+            // Retrieve Vector Store ID from storage (managed in Knowledge Base)
+            const vectorStoreId = localStorage.getItem('elvison_vector_store_id') || null
 
             // Extract and Flatten Filters from ICP Config or Onboarding State
             // Prefer Selected ICP Config
