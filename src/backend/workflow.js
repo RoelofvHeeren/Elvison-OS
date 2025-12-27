@@ -703,12 +703,51 @@ OUTPUT: JSON list (company_name, website, capital_role, description). Target 20+
 
         // 4. Outreach Creator
         logStep('Outreach Creator', 'Drafting personalized messages...');
-        const outreachInput = [{ role: "user", content: JSON.stringify({ leads: globalLeads }) }];
 
-        const outreachRes = await retryWithBackoff(() => runner.run(outreachCreator, outreachInput));
-        if (!outreachRes.finalOutput) throw new Error("Outreach Creator failed");
+        let finalOutreachLeads = [];
+        const OUTREACH_BATCH_SIZE = 10; // Keep small for high-quality generation
 
-        const outreachOutput = outreachRes.finalOutput;
+        // Strip heavy fields before sending to Agent
+        const lightweightLeads = globalLeads.map(l => {
+            const { raw_data, ...rest } = l;
+            return rest;
+        });
+
+        const outreachChunks = [];
+        for (let i = 0; i < lightweightLeads.length; i += OUTREACH_BATCH_SIZE) {
+            outreachChunks.push(lightweightLeads.slice(i, i + OUTREACH_BATCH_SIZE));
+        }
+
+        logStep('Outreach Creator', `Generating content for ${globalLeads.length} leads in ${outreachChunks.length} batches...`);
+
+        for (let i = 0; i < outreachChunks.length; i++) {
+            const chunk = outreachChunks[i];
+            const outreachInput = [{
+                role: "user",
+                content: JSON.stringify({
+                    task: "Draft outreach messages for these leads.",
+                    leads: chunk
+                })
+            }];
+
+            try {
+                // logStep('Outreach Creator', `Batch ${i+1}/${outreachChunks.length} generating...`);
+                const outreachRes = await retryWithBackoff(() => runner.run(outreachCreator, outreachInput));
+
+                if (outreachRes.finalOutput && outreachRes.finalOutput.leads) {
+                    finalOutreachLeads.push(...outreachRes.finalOutput.leads);
+                } else {
+                    console.warn(`[Outreach] Batch ${i + 1} failed to return structured leads. Using input leads without messages.`);
+                    // Fallback: push original leads without messages so we don't lose them in CRM
+                    finalOutreachLeads.push(...chunk);
+                }
+            } catch (err) {
+                console.error(`[Outreach] Batch ${i + 1} crashed: ${err.message}`);
+                finalOutreachLeads.push(...chunk);
+            }
+        }
+
+        const outreachOutput = { leads: finalOutreachLeads };
         const msgCount = outreachOutput.leads ? outreachOutput.leads.length : 0;
         logStep('Outreach Creator', `Drafted messages for ${msgCount} leads.`);
 
