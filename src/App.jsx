@@ -13,6 +13,7 @@ import Signup from './routes/Signup'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { IcpProvider } from './context/IcpContext'
 import Profile from './routes/Profile'
+import Optimize from './routes/Optimize'
 
 // Protected Route wrapper
 const ProtectedRoute = ({ children }) => {
@@ -33,11 +34,7 @@ const ProtectedRoute = ({ children }) => {
 
   // If user hasn't completed onboarding, redirect to onboarding
   // UNLESS accessing /onboarding (create/edit) or /profile (manage)
-  // Logic tweak: If user has completed "account" onboarding but wants to make new ICP, they go to /onboarding?mode=create
-  // That is fine.
-
-  // The original check: 
-  if (!user.onboardingCompleted && location.pathname !== '/onboarding') {
+  if (!user.onboardingCompleted && location.pathname !== '/onboarding' && location.pathname !== '/profile') {
     return <Navigate to="/onboarding" replace />
   }
 
@@ -60,8 +57,6 @@ const AppContent = () => {
       if (!user.onboardingCompleted) {
         navigate('/onboarding')
       } else {
-        navigate('/profile') // Redirect to Profile to select/create ICP instead of runner directly? Or runner defaults?
-        // Updated to runner for now, but cleaner flow might be Profile.
         navigate('/runner')
       }
     }
@@ -87,25 +82,11 @@ const AppContent = () => {
           <Route path="/kb" element={<ProtectedRoute><KnowledgeBase /></ProtectedRoute>} />
           <Route path="/agents" element={<ProtectedRoute><AgentConfig /></ProtectedRoute>} />
           <Route path="/logbook" element={<ProtectedRoute><Logbook /></ProtectedRoute>} />
-          import Profile from './routes/Profile'
-          import Optimize from './routes/Optimize'
+          <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+          <Route path="/optimize" element={<ProtectedRoute><Optimize /></ProtectedRoute>} />
 
-// ... (existing imports)
-
-const AppContent = () => {
-  // ...
-  return (
-          // ...
-          <Routes>
-            {/* ... existing routes ... */}
-            <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-            <Route path="/optimize" element={<ProtectedRoute><Optimize /></ProtectedRoute>} />
-
-            <Route path="/" element={<div />} />
-          </Routes>
-    // ...
-          )
-}
+          <Route path="/" element={<div />} />
+        </Routes>
       </main>
     </div>
   )
