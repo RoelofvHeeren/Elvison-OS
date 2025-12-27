@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { safeUUID } from '../utils/security'
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd'
 import { Plus, X, GripVertical, Type, Hash, Calendar, Link as LinkIcon, Mail, Phone, FileText, List, Star } from 'lucide-react'
 
@@ -28,7 +29,7 @@ const VisualColumnEditor = ({ columns, onChange }) => {
     const addColumn = () => {
         onChange([
             ...columns,
-            { id: crypto.randomUUID(), name: 'New Field', type: 'text', required: false }
+            { id: safeUUID(), name: 'New Field', type: 'text', required: false }
         ])
     }
 

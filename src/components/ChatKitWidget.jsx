@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ChatKit, useChatKit } from '@openai/chatkit-react'
+import { safeUUID } from '../utils/security'
 
 const CHATKIT_SRC = 'https://cdn.platform.openai.com/deployments/chatkit/chatkit.js'
 
@@ -25,9 +26,7 @@ const getDeviceId = () => {
     const key = 'chatkit_device_id'
     const existing = localStorage.getItem(key)
     if (existing) return existing
-    const next =
-      (typeof crypto !== 'undefined' && crypto.randomUUID?.()) ||
-      `device-${Math.random().toString(36).slice(2, 10)}`
+    const next = safeUUID();
     localStorage.setItem(key, next)
     return next
   } catch {

@@ -1,6 +1,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { safeUUID } from '../utils/security'
 import { PlayCircle, Terminal, CheckCircle, AlertCircle, Loader2, Send, FileText, Bot, Users, StopCircle } from 'lucide-react'
 
 const STEPS = [
@@ -87,8 +88,7 @@ const AgentRunner = () => {
             abortControllerRef.current = new AbortController()
 
             // Generate Idempotency Key for this specific run attempt
-            const hasCrypto = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function';
-            const idempotencyKey = hasCrypto ? crypto.randomUUID() : `run_${Date.now()}_${Math.random().toString(36).substring(2)}`;
+            const idempotencyKey = safeUUID();
             console.log('Run triggered with Idempotency Key:', idempotencyKey);
 
             const response = await fetch('/api/agents/run', {
