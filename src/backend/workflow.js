@@ -131,7 +131,8 @@ export const runAgentWorkflow = async (input, config) => {
         maxDiscoveryAttempts = 5,
         mode,
         filters,
-        idempotencyKey = null // NEW: Idempotency Key
+        idempotencyKey = null, // NEW: Idempotency Key
+        icpId // NEW: passed from server.js
     } = config;
 
     // Validate userId requirement
@@ -272,6 +273,11 @@ export const runAgentWorkflow = async (input, config) => {
     const finderInst = `You are the "Hunter" Agent for Fifth Avenue Properties.
     GOAL: Find High-Net-Worth Real Estate Investment Firms (Family Offices, Private Equity, institutional investors) in Canada (Toronto, Vancouver, Montreal) and USA.
     
+    CRITICAL PROTOCOL (STRICT ENFORCEMENT):
+    1. **NO HALLUCINATIONS**: You must ONLY return companies you have verifying using the 'web_search' tool in this session. Do NOT invent names.
+    2. **MANDATORY TOOL USAGE**: You cannot "know" companies. You MUST search for them. If you don't use the tool, you fail.
+    3. **VERIFY DOMAINS**: precise website domains are required. "example.com" or placeholders are INSTANT FAIL.
+    
     CRITICAL CRITERIA:
     - MUST be "Equity" investors (Limited Partners/LPs, Co-GPs).
     - EXCLUDE purely "Debt" funds, "Lenders", "Mortgage Brokers", or "Mezzanine" providers.
@@ -283,143 +289,170 @@ export const runAgentWorkflow = async (input, config) => {
     3. If they say "We provide debt/financing", SKIP THEM.
     4. If they say "We partner with developers" or "We invest equity", KEEP THEM.`;
 
+    // MERGE INSTRUCTIONS: Hardcoded Base + User Overrides
+    let finalFinderInst = finderInst;
+    if (agentConfigs['company_finder']?.instructions) {
+        finalFinderInst += `\n\n[USER INSTRUCTIONS & FILTERS]:\n${agentConfigs['company_finder'].instructions}`;
+    } else if (agentPrompts['company_finder']) {
+        // Fallback to DB prompt if no config override, but append to base to keep validation rules
+        finalFinderInst += `\n\n[USER INSTRUCTIONS]:\n${agentPrompts['company_finder']}`;
+    }
+
     const companyFinder = new Agent({
         name: "Company Finder",
-        instructions: finderInst, // Using hardcoded prompt to ensure quality compliance
+        instructions: finalFinderInst,
         model: AGENT_MODELS.company_finder,
         tools: getToolsForAgent('company_finder'),
         outputType: CompanyFinderSchema,
     });
 
     // 2. Company Profiler
-    const profilerInst = agentPrompts['company_profiler'] || profilerBackup;
+    const profilerInst = `You are the "Evaluator" Agent.
+    GOAL: Verify if the provided companies are TRUE Equity Investors for Real Estate.
+    
+    STRICT VALIDATION RULES:
+    1. **CHECK THE WEBSITE**: You MUST visit the domain or search for the company to confirm it exists.
+    2. **NO FAKE DOMAINS**: If the domain is "example.com" or missing, REJECT IT.
+    3. **EQUITY ONLY**: If the site says "Lender" or "Debt", REJECT IT.
+    
+    Output JSON with 'company_profile' (summary) and 'domain'.`;
+
+    let finalProfilerInst = profilerInst;
+    if (agentConfigs['company_profiler']?.instructions) {
+        finalProfilerInst += `\n\n[USER INSTRUCTIONS]:\n${agentConfigs['company_profiler'].instructions}`;
+    }
+
     const companyProfiler = new Agent({
         name: "Company Profiler",
-        instructions: profilerInst,
+        instructions: finalProfilerInst,
         model: AGENT_MODELS.company_profiler,
         tools: getToolsForAgent('company_profiler'),
         outputType: CompanyProfilerSchema,
     });
 
     // 3. Lead Finder
-    const leadInst = agentPrompts['apollo_lead_finder'] || `You are the Apollo Headhunter Agent... (Default)`;
-    const apolloLeadFinder = new Agent({
-        name: "Apollo Lead Finder",
-        instructions: `You are the Apollo Headhunter Agent for Fifth Avenue Properties.
+    let leadInst = `You are the Apollo Headhunter Agent for Fifth Avenue Properties.
     Goal: Find decision-makers (Partner, Principal, Director of Acquisitions) at real estate investment firms.
     CRITICAL:
     1. ROLES: Partner, Principal, Managing Director, Head of Acquisitions, VP Development.
     2. EXCLUDE: Debt, Lending, Mortgage, Brokerage, Analyst, Associate.
-    3. ACTION: Use 'people_enrichment' or 'get_person_email' to REVEAL emails. DO NOT return "email_not_unlocked".`,
-        model: AGENT_MODELS.apollo_lead_finder,
-        tools: getToolsForAgent('apollo_lead_finder'),
-        outputType: ApolloLeadFinderSchema,
+    3. ACTION: Use 'people_enrichment' or 'get_person_email' to REVEAL emails. DO NOT return "email_not_unlocked".`;
+    leadInst += `\n\n[USER FILTERS]:\n${agentConfigs['apollo_lead_finder'].instructions}`;
+} else if (agentPrompts['apollo_lead_finder']) {
+    leadInst = agentPrompts['apollo_lead_finder']; // Allow full override from DB if present
+}
+const apolloLeadFinder = new Agent({
+    name: "Apollo Lead Finder",
+    instructions: leadInst,
+    model: AGENT_MODELS.apollo_lead_finder,
+    tools: getToolsForAgent('apollo_lead_finder'),
+    outputType: ApolloLeadFinderSchema,
+});
+
+// 4. Outreach Creator
+const outreachInst = agentPrompts['outreach_creator'] || `You are the Setup Expert... (Default)`;
+const outreachCreator = new Agent({
+    name: "Outreach Creator",
+    instructions: outreachInst,
+    model: AGENT_MODELS.outreach_creator,
+    tools: getToolsForAgent('outreach_creator'),
+    outputType: OutreachCreatorSchema,
+});
+
+// --- Runner Execution ---
+
+return await withTrace("Lead Gen OS (In-House)", async () => {
+    const runner = new Runner({
+        traceMetadata: {
+            __trace_source__: "in-house-agent",
+        }
     });
 
-    // 4. Outreach Creator
-    const outreachInst = agentPrompts['outreach_creator'] || `You are the Setup Expert... (Default)`;
-    const outreachCreator = new Agent({
-        name: "Outreach Creator",
-        instructions: outreachInst,
-        model: AGENT_MODELS.outreach_creator,
-        tools: getToolsForAgent('outreach_creator'),
-        outputType: OutreachCreatorSchema,
-    });
-
-    // --- Runner Execution ---
-
-    return await withTrace("Lead Gen OS (In-House)", async () => {
-        const runner = new Runner({
-            traceMetadata: {
-                __trace_source__: "in-house-agent",
-            }
-        });
-
-        // 0. Parse Target Parameters from Input
-        // Extract targetLeads and maxLeadsPerCompany from user prompt
-        // Examples: "Find me 100 leads", "50 leads with max 5 per company"
-        const leadsMatch = input.input_as_text.match(/(\d+)\s*leads?/i);
-        if (leadsMatch) {
-            const parsedLeads = parseInt(leadsMatch[1], 10);
-            if (parsedLeads > 0) {
-                targetLeads = parsedLeads;
-            }
+    // 0. Parse Target Parameters from Input
+    // Extract targetLeads and maxLeadsPerCompany from user prompt
+    // Examples: "Find me 100 leads", "50 leads with max 5 per company"
+    const leadsMatch = input.input_as_text.match(/(\d+)\s*leads?/i);
+    if (leadsMatch) {
+        const parsedLeads = parseInt(leadsMatch[1], 10);
+        if (parsedLeads > 0) {
+            targetLeads = parsedLeads;
         }
+    }
 
-        const maxPerCompanyMatch = input.input_as_text.match(/max(?:imum)?\s*(\d+)\s*(?:leads?\s*)?per\s*company/i);
-        if (maxPerCompanyMatch) {
-            const parsedMax = parseInt(maxPerCompanyMatch[1], 10);
-            if (parsedMax > 0) {
-                maxLeadsPerCompany = parsedMax;
-            }
+    const maxPerCompanyMatch = input.input_as_text.match(/max(?:imum)?\s*(\d+)\s*(?:leads?\s*)?per\s*company/i);
+    if (maxPerCompanyMatch) {
+        const parsedMax = parseInt(maxPerCompanyMatch[1], 10);
+        if (parsedMax > 0) {
+            maxLeadsPerCompany = parsedMax;
         }
+    }
 
-        // Enforce Hard Limits
-        // targetLeads is already clamped by configuration at start of function
-        if (maxLeadsPerCompany > 10) {
-            maxLeadsPerCompany = 10;
-            logStep('Workflow', 'Max leads per company capped at 10.');
-        }
+    // Enforce Hard Limits
+    // targetLeads is already clamped by configuration at start of function
+    if (maxLeadsPerCompany > 10) {
+        maxLeadsPerCompany = 10;
+        logStep('Workflow', 'Max leads per company capped at 10.');
+    }
 
-        logStep('Workflow', `🎯 Targeting ${targetLeads} total leads (max ${maxLeadsPerCompany} per company).`);
+    logStep('Workflow', `🎯 Targeting ${targetLeads} total leads (max ${maxLeadsPerCompany} per company).`);
 
-        // Get company exclusion list from database
-        const excludedDomains = await getExcludedDomains(userId);
-        const excludedNames = await getExcludedCompanyNames(userId);
-        logStep('Workflow', `📊 Excluded ${excludedDomains.length} previously researched companies.`);
+    // Get company exclusion list from database
+    const excludedDomains = await getExcludedDomains(userId);
+    const excludedNames = await getExcludedCompanyNames(userId);
+    logStep('Workflow', `📊 Excluded ${excludedDomains.length} previously researched companies.`);
 
-        let qualifiedCompanies = [];
-        let globalLeads = [];
-        let scrapedNamesSet = new Set();
-        console.log("DEBUG: Initialized globalLeads and scrapedNamesSet"); // Explicit debug log
-        let totalLeadsCollected = 0; // NEW: Track total leads instead of companies
-        let leadsPerCompany = {}; // NEW: Track leads collected per company
-        let attempts = 0;
-        const MAX_ATTEMPTS = 1; // RESTRICTION: Single Pass Only (Prevent Cost Runaway)
-        const originalPrompt = input.input_as_text;
+    let qualifiedCompanies = [];
+    let globalLeads = [];
+    let scrapedNamesSet = new Set();
+    console.log("DEBUG: Initialized globalLeads and scrapedNamesSet"); // Explicit debug log
+    let totalLeadsCollected = 0; // NEW: Track total leads instead of companies
+    let leadsPerCompany = {}; // NEW: Track leads collected per company
+    let attempts = 0;
+    const MAX_ATTEMPTS = 1; // RESTRICTION: Single Pass Only (Prevent Cost Runaway)
+    const originalPrompt = input.input_as_text;
 
-        let lastRoundFound = 0;
-        const debugLog = { discovery: [], qualification: [], apollo: [], leadDistribution: {} };
+    let lastRoundFound = 0;
+    const debugLog = { discovery: [], qualification: [], apollo: [], leadDistribution: {} };
 
-        // --- LOOP: Discovery & Profiling ---
-        // NEW: Loop continues until we have enough LEADS (not companies)
-        const leadScraper = new LeadScraperService();
+    // --- LOOP: Discovery & Profiling ---
+    // NEW: Loop continues until we have enough LEADS (not companies)
+    const leadScraper = new LeadScraperService();
 
-        while (totalLeadsCollected < targetLeads && attempts < MAX_ATTEMPTS) {
-            attempts++;
-            // Calculate how many more LEADS we need
-            const leadsNeeded = targetLeads - totalLeadsCollected;
+    while (totalLeadsCollected < targetLeads && attempts < MAX_ATTEMPTS) {
+        attempts++;
+        // Calculate how many more LEADS we need
+        const leadsNeeded = targetLeads - totalLeadsCollected;
 
-            // Estimate companies needed (assuming each gives ~maxLeadsPerCompany)
-            // If we have history of low yield, we could increase this multiplier.
-            // For now, simple math: leads / max_per_company
-            let companiesNeeded = Math.ceil(leadsNeeded / maxLeadsPerCompany);
+        // Estimate companies needed (assuming each gives ~maxLeadsPerCompany)
+        // If we have history of low yield, we could increase this multiplier.
+        // For now, simple math: leads / max_per_company
+        let companiesNeeded = Math.ceil(leadsNeeded / maxLeadsPerCompany);
 
-            // Minimum batch size to avoid tiny runs
-            if (companiesNeeded < minBatchSize) companiesNeeded = minBatchSize;
+        // Minimum batch size to avoid tiny runs
+        if (companiesNeeded < minBatchSize) companiesNeeded = minBatchSize;
 
-            logStep('Workflow', `Round ${attempts}: Need ${leadsNeeded} leads. Target: Accumulate ${companiesNeeded} new qualified companies.`);
+        logStep('Workflow', `Round ${attempts}: Need ${leadsNeeded} leads. Target: Accumulate ${companiesNeeded} new qualified companies.`);
 
-            // --- STEP 1: ACCUMULATION PHASE ---
-            let accumulatedCandidates = []; // Companies found in this round
-            let discoveryAttempts = 0;
+        // --- STEP 1: ACCUMULATION PHASE ---
+        let accumulatedCandidates = []; // Companies found in this round
+        let discoveryAttempts = 0;
 
-            while (accumulatedCandidates.length < companiesNeeded && discoveryAttempts < maxDiscoveryAttempts) {
-                discoveryAttempts++;
-                logStep('Company Finder', `🔎 Discovery Sub-Round ${discoveryAttempts}/${maxDiscoveryAttempts}: Seeking ${companiesNeeded - accumulatedCandidates.length} more companies...`);
+        while (accumulatedCandidates.length < companiesNeeded && discoveryAttempts < maxDiscoveryAttempts) {
+            discoveryAttempts++;
+            logStep('Company Finder', `🔎 Discovery Sub-Round ${discoveryAttempts}/${maxDiscoveryAttempts}: Seeking ${companiesNeeded - accumulatedCandidates.length} more companies...`);
 
-                // ENHANCED: Use 4 distinct keyword searches for comprehensive coverage
-                const searchStrategies = [
-                    `"real estate investment firm" ${input.input_as_text} equity Canada -debt -lender`,
-                    `"family office" real estate ${input.input_as_text} Canada equity investment`,
-                    `"private equity" real estate ${input.input_as_text} Canada acquisitions development`,
-                    `"real estate capital" OR "real estate fund" ${input.input_as_text} Canada equity partner`
-                ];
+            // ENHANCED: Use 4 distinct keyword searches for comprehensive coverage
+            const searchStrategies = [
+                `"real estate investment firm" ${input.input_as_text} equity Canada -debt -lender`,
+                `"family office" real estate ${input.input_as_text} Canada equity investment`,
+                `"private equity" real estate ${input.input_as_text} Canada acquisitions development`,
+                `"real estate capital" OR "real estate fund" ${input.input_as_text} Canada equity partner`
+            ];
 
-                // Rotate strategies or run all? Running all is fine but might be expensive if done repeatedly.
-                // Let's run all for maximum recall.
+            // Rotate strategies or run all? Running all is fine but might be expensive if done repeatedly.
+            // Let's run all for maximum recall.
 
-                const searchPrompt = `
+            const searchPrompt = `
 [SYSTEM]: Find Real Estate Investment Firms (Equity/JV/LPs).
 PROTOCOL:
 1. Run ALL 4 searches below.
@@ -435,211 +468,244 @@ CRITERIA:
 OUTPUT: JSON list (company_name, website, capital_role, description). Target 20+ candidates.
 `;
 
-                const finderInput = [{ role: "user", content: searchPrompt }];
-                const AGENT_TIMEOUT_MS = 120000;
+            const finderInput = [{ role: "user", content: searchPrompt }];
+            const AGENT_TIMEOUT_MS = 120000;
 
-                let finderResults = [];
-                try {
-                    const finderRes = await logTiming('Company Finder Agent', logStep)(async () => {
-                        return await retryWithBackoff(() =>
-                            runWithTimeout(
-                                () => runner.run(companyFinder, finderInput),
-                                AGENT_TIMEOUT_MS,
-                                'Company Finder Agent'
-                            )
-                        );
-                    });
-
-                    if (finderRes.finalOutput && finderRes.finalOutput.results) {
-                        finderResults = finderRes.finalOutput.results;
-                    }
-                } catch (e) {
-                    logStep('Company Finder', `⚠️ Agent failed: ${e.message}`);
-                }
-
-                if (finderResults.length === 0) {
-                    logStep('Company Finder', 'No candidates found in this sub-round.');
-                } else {
-                    // Filter Duplicates (Global and Local)
-                    const newInThisBatch = finderResults.filter(c => {
-                        const name = c.company_name;
-                        const isResearched = excludedNames.includes(name) ||
-                            qualifiedCompanies.some(q => q.company_name === name) ||
-                            accumulatedCandidates.some(a => a.company_name === name) ||
-                            scrapedNamesSet.has(name);
-                        return !isResearched;
-                    });
-
-                    logStep('Company Finder', `Found ${finderResults.length} raw. ${newInThisBatch.length} are new unique candidates.`);
-                    accumulatedCandidates = [...accumulatedCandidates, ...newInThisBatch];
-                }
-
-                if (accumulatedCandidates.length >= companiesNeeded) {
-                    logStep('Company Finder', `✅ Target met: ${accumulatedCandidates.length}/${companiesNeeded} companies accumulated.`);
-                    break;
-                }
-            }
-
-            if (accumulatedCandidates.length === 0) {
-                logStep('Workflow', '⚠️ Could not find any new companies after max attempts. Stopping workflow.');
-                break;
-            }
-
-            // --- STEP 2: PROFILING PHASE ---
-            logStep('Company Profiler', `Analyzing ${accumulatedCandidates.length} companies...`);
-
-            // We might need to chunk this if it is too huge, but Agent usually handles ~20 okay.
-            const profilerInput = [{ role: "user", content: JSON.stringify({ results: accumulatedCandidates }) }];
-            const PROFILER_TIMEOUT_MS = 120000;
-
-            let qualifiedInBatch = [];
+            let finderResults = [];
             try {
-                const profilerRes = await logTiming('Company Profiler Agent', logStep)(async () => {
+                const finderRes = await logTiming('Company Finder Agent', logStep)(async () => {
                     return await retryWithBackoff(() =>
                         runWithTimeout(
-                            () => runner.run(companyProfiler, profilerInput),
-                            PROFILER_TIMEOUT_MS,
-                            'Company Profiler Agent'
+                            () => runner.run(companyFinder, finderInput),
+                            AGENT_TIMEOUT_MS,
+                            'Company Finder Agent'
                         )
                     );
                 });
 
-                if (profilerRes.finalOutput && profilerRes.finalOutput.results) {
-                    const profilerResults = profilerRes.finalOutput.results;
-                    for (const company of profilerResults) {
-                        const original = accumulatedCandidates.find(f =>
-                            f.company_name.toLowerCase().trim() === company.company_name.toLowerCase().trim()
-                        ) || {};
-                        const merged = { ...original, ...company };
-
-                        if (merged.company_profile && merged.company_name) {
-                            qualifiedInBatch.push(merged);
-                            logStep('Company Profiler', `✅ Qualified: ${merged.company_name}`);
-                        } else {
-                            logStep('Company Profiler', `❌ Rejected: ${merged.company_name}`);
-                        }
-                    }
+                if (finderRes.finalOutput && finderRes.finalOutput.results) {
+                    finderResults = finderRes.finalOutput.results;
                 }
             } catch (e) {
-                logStep('Company Profiler', `⚠️ Profiling failed: ${e.message}`);
-                // Fallback: Skip profiling or accept all? 
-                // Let's safe fail and continue with un-profiled accumulation if needed, but better to skip this batch to avoid bad data.
-                continue;
+                logStep('Company Finder', `⚠️ Agent failed: ${e.message}`);
             }
 
-            if (qualifiedInBatch.length === 0) {
-                logStep('Workflow', 'No companies passed profiling. Retrying discovery...');
-                continue;
+            if (finderResults.length === 0) {
+                logStep('Company Finder', 'No candidates found in this sub-round.');
+            } else {
+                // Filter Duplicates (Global and Local)
+                const newInThisBatch = finderResults.filter(c => {
+                    const name = c.company_name;
+                    const isResearched = excludedNames.includes(name) ||
+                        qualifiedCompanies.some(q => q.company_name === name) ||
+                        accumulatedCandidates.some(a => a.company_name === name) ||
+                        scrapedNamesSet.has(name);
+                    return !isResearched;
+                });
+
+                logStep('Company Finder', `Found ${finderResults.length} raw. ${newInThisBatch.length} are new unique candidates.`);
+                accumulatedCandidates = [...accumulatedCandidates, ...newInThisBatch];
             }
 
-            qualifiedCompanies = [...qualifiedCompanies, ...qualifiedInBatch];
-
-            // --- STEP 3: LEAD FINDING PHASE ---
-            logStep('Lead Finder', `Enriching leads from ${qualifiedInBatch.length} qualified companies...`);
-
-            const activeFilters = config.filters || {};
-            // DO NOT set default job_titles here; let apify.js handle defaults to ensure comprehensive coverage.
-
-            try {
-                const leads = await leadScraper.fetchLeads(qualifiedInBatch, activeFilters);
-                logStep('Lead Finder', `Scrape complete. Retrieved ${leads.length} raw leads.`);
-
-                // Filter for Emails (or keep all based on requirements?)
-                // Requirement: "attempts to meet target lead count... contains as many emails as reasonably obtainable"
-                // We should prioritize emails but keep LinkedIn-only if that's all we have?
-                // The prompt says "Emails are currently the weakest point... LinkedIn profiles and emails are both desired".
-
-                // Let's count emails stats
-                const withEmail = leads.filter(l => l.email);
-                const withoutEmail = leads.filter(l => !l.email);
-
-                logStep('Lead Finder', `📧 Email Yield: ${withEmail.length}/${leads.length} (${((withEmail.length / leads.length) * 100).toFixed(0)}%)`);
-
-                // If email yield is low, we might want to trigger the "Unstrict" search immediately or flag it.
-                // The current scraper logic usually does internal retries if implemented in `fetchLeads`, but `LeadScraperService` implementation 
-                // maps standard Apify behavior. 
-
-                // Group by company to enforce limits
-                const leadsByCompany = {};
-                for (const lead of leads) {
-                    const domain = lead.company_domain || lead.company_name;
-                    if (!leadsByCompany[domain]) leadsByCompany[domain] = [];
-                    leadsByCompany[domain].push(lead);
-                }
-
-                for (const [domain, companyLeads] of Object.entries(leadsByCompany)) {
-                    // Sorting: Put emails first
-                    companyLeads.sort((a, b) => (b.email ? 1 : 0) - (a.email ? 1 : 0));
-
-                    const limited = companyLeads.slice(0, maxLeadsPerCompany);
-                    globalLeads.push(...limited);
-
-                    const companyName = companyLeads[0].company_name;
-                    // Track in DB
-                    try {
-                        await markCompaniesAsResearched(userId, [{
-                            name: companyName,
-                            domain: domain,
-                            leadCount: limited.length,
-                            metadata: { total_found: companyLeads.length }
-                        }]);
-                    } catch (err) { /* ignore */ }
-
-                    scrapedNamesSet.add(companyName);
-                }
-
-                totalLeadsCollected = globalLeads.length;
-                logStep('Lead Finder', `Stats: Found ${leads.length} new leads. Total Pipeline: ${totalLeadsCollected}/${targetLeads}`);
-
-            } catch (err) {
-                logStep('Lead Finder', `❌ Enrichment failed: ${err.message}`);
-            }
-
-            if (totalLeadsCollected >= targetLeads) {
-                logStep('Workflow', `✅ Target reached: ${totalLeadsCollected}/${targetLeads} leads`);
+            if (accumulatedCandidates.length >= companiesNeeded) {
+                logStep('Company Finder', `✅ Target met: ${accumulatedCandidates.length}/${companiesNeeded} companies accumulated.`);
                 break;
             }
-
-            const leadsStillNeeded = targetLeads - totalLeadsCollected;
-            logStep('Workflow', `🔄 Need ${leadsStillNeeded} more leads. Starting next discovery round...`);
-
-        } // END OF MAIN DISCOVERY LOOP
-
-        // --- Post-Loop Logic ---
-        if (globalLeads.length === 0) {
-            throw new Error("Workflow failed: No leads collected.");
         }
 
-        // 4. Outreach Creator
-        logStep('Outreach Creator', 'Drafting personalized messages...');
-        const outreachInput = [{ role: "user", content: JSON.stringify({ leads: globalLeads }) }];
+        if (accumulatedCandidates.length === 0) {
+            logStep('Workflow', '⚠️ Could not find any new companies after max attempts. Stopping workflow.');
+            break;
+        }
 
-        const outreachRes = await retryWithBackoff(() => runner.run(outreachCreator, outreachInput));
-        if (!outreachRes.finalOutput) throw new Error("Outreach Creator failed");
+        // --- STEP 2: PROFILING PHASE ---
+        logStep('Company Profiler', `Analyzing ${accumulatedCandidates.length} companies...`);
 
-        const outreachOutput = outreachRes.finalOutput;
-        const msgCount = outreachOutput.leads ? outreachOutput.leads.length : 0;
-        logStep('Outreach Creator', `Drafted messages for ${msgCount} leads.`);
+        // We might need to chunk this if it is too huge, but Agent usually handles ~20 okay.
+        const profilerInput = [{ role: "user", content: JSON.stringify({ results: accumulatedCandidates }) }];
+        const PROFILER_TIMEOUT_MS = 120000;
 
-        // 5. Save to CRM (Database)
-        logStep('CRM Sync', 'Saving leads to database...');
+        let qualifiedInBatch = [];
         try {
-            if (outreachOutput.leads && outreachOutput.leads.length > 0) {
-                await saveLeadsToDB(outreachOutput.leads, userId, icpId, logStep);
+            const profilerRes = await logTiming('Company Profiler Agent', logStep)(async () => {
+                return await retryWithBackoff(() =>
+                    runWithTimeout(
+                        () => runner.run(companyProfiler, profilerInput),
+                        PROFILER_TIMEOUT_MS,
+                        'Company Profiler Agent'
+                    )
+                );
+            });
+
+            if (profilerRes.finalOutput && profilerRes.finalOutput.results) {
+                const profilerResults = profilerRes.finalOutput.results;
+                for (const company of profilerResults) {
+                    const original = accumulatedCandidates.find(f =>
+                        f.company_name.toLowerCase().trim() === company.company_name.toLowerCase().trim()
+                    ) || {};
+                    const merged = { ...original, ...company };
+
+                    if (merged.company_profile && merged.company_name && merged.domain && merged.domain.includes('.')) {
+                        qualifiedInBatch.push(merged);
+                        logStep('Company Profiler', `✅ Qualified: ${merged.company_name} (${merged.domain})`);
+                    } else {
+                        logStep('Company Profiler', `❌ Rejected (No Domain): ${merged.company_name}`);
+                    }
+                }
             }
-            logStep('CRM Sync', `Successfully saved ${outreachOutput.leads ? outreachOutput.leads.length : 0} leads to CRM.`);
-        } catch (dbErr) {
-            logStep('CRM Sync', `Failed to save leads to DB: ${dbErr.message}`);
-            // Don't fail the whole workflow check if DB fails, but log it.
+        } catch (e) {
+            logStep('Company Profiler', `⚠️ Profiling failed: ${e.message}`);
+            // Fallback: Skip profiling or accept all? 
+            // Let's safe fail and continue with un-profiled accumulation if needed, but better to skip this batch to avoid bad data.
+            continue;
         }
 
-        return {
-            status: "success",
-            leads: outreachOutput.leads,
-            debug: debugLog
-        };
-    });
+        if (qualifiedInBatch.length === 0) {
+            logStep('Workflow', 'No companies passed profiling. Retrying discovery...');
+            continue;
+        }
+
+        qualifiedCompanies = [...qualifiedCompanies, ...qualifiedInBatch];
+
+        // --- STEP 3: LEAD FINDING PHASE ---
+        logStep('Lead Finder', `Enriching leads from ${qualifiedInBatch.length} qualified companies...`);
+
+        const activeFilters = config.filters || {};
+
+        // DO NOT set default job_titles here; let apify.js handle defaults to ensure comprehensive coverage.
+
+        try {
+            // logStep('Lead Finder', `DEBUG: Sending domains: ${qualifiedInBatch.map(c => c.domain).join(', ')}`);
+            let leads = await leadScraper.fetchLeads(qualifiedInBatch, activeFilters, logStep);
+            logStep('Lead Finder', `Scrape complete. Retrieved ${leads.length} raw leads.`);
+
+            // --- AGENT FILTERING STEP ---
+            // If we have custom instructions for the lead finder, we use the Agent to valid/filter the raw scraper results.
+            // This ensures that "Agent Instructions" (like "Must be a visible minority" or "Focus on Texas") are respected.
+            if (agentConfigs['apollo_lead_finder']?.instructions || agentPrompts['apollo_lead_finder']) {
+                logStep('Lead Finder', 'Refining leads with AI Agent based on your instructions...');
+                try {
+                    const filterInput = [{
+                        role: "user",
+                        content: JSON.stringify({
+                            task: "Review these leads. Keep only those that match your instructions. Drop any irrelevant ones.",
+                            leads: leads
+                        })
+                    }];
+
+                    // We reuse the apolloLeadFinder agent which now has the injected instructions
+                    // Note: We might need to adjust outputType if we want strict subset, but ApolloLeadFinderSchema is compatible.
+                    const filterRes = await retryWithBackoff(() => runner.run(apolloLeadFinder, filterInput));
+
+                    if (filterRes.finalOutput && filterRes.finalOutput.leads) {
+                        const originalCount = leads.length;
+                        leads = filterRes.finalOutput.leads;
+                        logStep('Lead Finder', `Agent filtered leads: ${leads.length} remaining (dropped ${originalCount - leads.length}).`);
+                    }
+                } catch (filterErr) {
+                    logStep('Lead Finder', `⚠️ Agent filtering failed: ${filterErr.message}. Utilizing raw scraper results.`);
+                }
+            }
+
+            // Filter for Emails (or keep all based on requirements?)
+            // Requirement: "attempts to meet target lead count... contains as many emails as reasonably obtainable"
+            // We should prioritize emails but keep LinkedIn-only if that's all we have?
+            // The prompt says "Emails are currently the weakest point... LinkedIn profiles and emails are both desired".
+
+            // Let's count emails stats
+            const withEmail = leads.filter(l => l.email);
+            const withoutEmail = leads.filter(l => !l.email);
+
+            logStep('Lead Finder', `📧 Email Yield: ${withEmail.length}/${leads.length} (${((withEmail.length / leads.length) * 100).toFixed(0)}%)`);
+
+            // If email yield is low, we might want to trigger the "Unstrict" search immediately or flag it.
+            // The current scraper logic usually does internal retries if implemented in `fetchLeads`, but `LeadScraperService` implementation 
+            // maps standard Apify behavior. 
+
+            // Group by company to enforce limits
+            const leadsByCompany = {};
+            for (const lead of leads) {
+                const domain = lead.company_domain || lead.company_name;
+                if (!leadsByCompany[domain]) leadsByCompany[domain] = [];
+                leadsByCompany[domain].push(lead);
+            }
+
+            for (const [domain, companyLeads] of Object.entries(leadsByCompany)) {
+                // Sorting: Put emails first
+                companyLeads.sort((a, b) => (b.email ? 1 : 0) - (a.email ? 1 : 0));
+
+                const limited = companyLeads.slice(0, maxLeadsPerCompany);
+                globalLeads.push(...limited);
+
+                const companyName = companyLeads[0].company_name;
+                // Track in DB
+                try {
+                    await markCompaniesAsResearched(userId, [{
+                        name: companyName,
+                        domain: domain,
+                        leadCount: limited.length,
+                        metadata: { total_found: companyLeads.length }
+                    }]);
+                } catch (err) { /* ignore */ }
+
+                scrapedNamesSet.add(companyName);
+            }
+
+            totalLeadsCollected = globalLeads.length;
+            logStep('Lead Finder', `Stats: Found ${leads.length} new leads. Total Pipeline: ${totalLeadsCollected}/${targetLeads}`);
+
+        } catch (err) {
+            logStep('Lead Finder', `❌ Enrichment failed: ${err.message}`);
+        }
+
+        if (totalLeadsCollected >= targetLeads) {
+            logStep('Workflow', `✅ Target reached: ${totalLeadsCollected}/${targetLeads} leads`);
+            break;
+        }
+
+        const leadsStillNeeded = targetLeads - totalLeadsCollected;
+        logStep('Workflow', `🔄 Need ${leadsStillNeeded} more leads. Starting next discovery round...`);
+
+    } // END OF MAIN DISCOVERY LOOP
+
+
+    // --- Post-Loop Logic ---
+    if (globalLeads.length === 0) {
+        throw new Error("Workflow failed: No leads collected.");
+    }
+
+    // 4. Outreach Creator
+    logStep('Outreach Creator', 'Drafting personalized messages...');
+    const outreachInput = [{ role: "user", content: JSON.stringify({ leads: globalLeads }) }];
+
+    const outreachRes = await retryWithBackoff(() => runner.run(outreachCreator, outreachInput));
+    if (!outreachRes.finalOutput) throw new Error("Outreach Creator failed");
+
+    const outreachOutput = outreachRes.finalOutput;
+    const msgCount = outreachOutput.leads ? outreachOutput.leads.length : 0;
+    logStep('Outreach Creator', `Drafted messages for ${msgCount} leads.`);
+
+    // 5. Save to CRM (Database)
+    logStep('CRM Sync', 'Saving leads to database...');
+    try {
+        if (outreachOutput.leads && outreachOutput.leads.length > 0) {
+            // Now calling the external function
+            await saveLeadsToDB(outreachOutput.leads, userId, icpId, logStep);
+        }
+        logStep('CRM Sync', `Successfully saved ${outreachOutput.leads ? outreachOutput.leads.length : 0} leads to CRM.`);
+    } catch (dbErr) {
+        logStep('CRM Sync', `Failed to save leads to DB: ${dbErr.message}`);
+    }
+
+    return {
+        status: "success",
+        leads: outreachOutput.leads,
+        debug: debugLog
+    };
+});
 };
+
+// --- Runner Execution ---
 
 /**
  * Enriches a specific lead with phone numbers using Apollo MCP.
@@ -687,4 +753,58 @@ export const enrichLeadWithPhone = async (lead) => {
     ]);
 
     return result.finalOutput?.phone_numbers || [];
+};
+
+/**
+ * Save leads to the database
+ * @param {Array} leads - List of leads
+ * @param {string} userId - User ID
+ * @param {string} icpId - ICP ID (optional context)
+ * @param {Function} logStep - Logger
+ */
+const saveLeadsToDB = async (leads, userId, icpId, logStep) => {
+    if (!leads || leads.length === 0) return;
+
+    let savedCount = 0;
+    let errorCount = 0;
+
+    for (const lead of leads) {
+        try {
+            // Check if exists by email
+            const { rows } = await query(
+                "SELECT id FROM leads WHERE email = $1 AND user_id = $2",
+                [lead.email, userId]
+            );
+
+            if (rows.length > 0) {
+                continue;
+            }
+
+            // Insert
+            await query(
+                `INSERT INTO leads (
+                company_name, person_name, email, job_title, linkedin_url, 
+                status, source, user_id, custom_data, phone_numbers
+            ) VALUES ($1, $2, $3, $4, $5, 'NEW', 'Outbound Agent', $6, $7, $8)`,
+                [
+                    lead.company_name,
+                    `${lead.first_name} ${lead.last_name}`.trim(),
+                    lead.email,
+                    lead.title,
+                    lead.linkedin_url,
+                    userId,
+                    { icp_id: icpId, ...lead }, // Store ICP ID in custom_data
+                    JSON.stringify(lead.phone_numbers || [])
+                ]
+            );
+            savedCount++;
+        } catch (err) {
+            console.error("Insert failed for lead:", lead.email, err);
+            errorCount++;
+        }
+    }
+
+    if (logStep) {
+        logStep('CRM Sync', `Finalized DB Sync: ${savedCount} saved, ${errorCount} errors, ${leads.length - savedCount - errorCount} duplicates skipped.`);
+    }
 };

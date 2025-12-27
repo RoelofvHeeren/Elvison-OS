@@ -44,18 +44,20 @@ export class LeadScraperService {
      * Fetch leads for a list of companies
      * @param {Array<Object>} companies - List of company objects { company_name, domain }
      * @param {Object} filters - Search filters { job_titles, seniority, ... }
+     * @param {Function} logStep - Optional logger function
      * @returns {Promise<Array<StandardLead>>}
      */
-    async fetchLeads(companies, filters = {}) {
+    async fetchLeads(companies, filters = {}, logStep = console.log) {
         if (!companies || companies.length === 0) return [];
 
-        console.log(`[LeadScraper] Fetching leads for ${companies.length} companies using ${this.provider}...`);
+        logStep('Lead Finder', `Fetching leads for ${companies.length} companies using ${this.provider}...`);
 
         switch (this.provider) {
             case 'apify_pipelinelabs':
                 return this._fetchFromApify(companies, filters);
             case 'apify_apollo_domain':
-                return this._fetchFromApolloDomain(companies, filters);
+                // Check if filters.idempotencyKey exists if argument is missing
+                return this._fetchFromApolloDomain(companies, filters, filters.idempotencyKey, logStep);
             case 'scrapercity_apollo':
                 return this._fetchFromScraperCity(companies, filters);
             default:
@@ -110,12 +112,18 @@ export class LeadScraperService {
      * This uses DOMAINS instead of company names for better accuracy.
      * Cost: ~$0.0026 per lead
      */
-    async _fetchFromApolloDomain(companies, filters, idempotencyKey = null) {
+    async _fetchFromApolloDomain(companies, filters, idempotencyKey = null, logStep = console.log) {
+        // Handle arguments shifting if idempotencyKey is function (logStep)
+        if (typeof idempotencyKey === 'function') {
+            logStep = idempotencyKey;
+            idempotencyKey = null;
+        }
+
         // Note: idempotencyKey is also available in filters from fetchLeads but passing explicit arg is clearer
         if (idempotencyKey) filters.idempotencyKey = idempotencyKey;
 
         // 1. Extract domains from companies
-        console.log(`[ApolloDomain] Received ${companies.length} companies for lead enrichment.`);
+        logStep('Lead Finder', `[Apollo] Processing ${companies.length} companies...`);
 
         // Helper: Check if a string looks like a valid domain (has dot, no spaces)
         const looksLikeDomain = (str) => {
@@ -168,7 +176,7 @@ export class LeadScraperService {
         console.log(`[ApolloDomain] Clean domains (deduplicated): ${JSON.stringify(cleanDomains)}`);
 
         if (cleanDomains.length === 0) {
-            console.warn('[ApolloDomain] ❌ No valid domains provided! Check if Company Profiler is returning "domain" field.');
+            logStep('Lead Finder', '❌ No valid domains provided! Check if Company Profiler is returning "domain" field.');
             return [];
         }
 
