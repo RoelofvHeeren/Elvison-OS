@@ -223,6 +223,22 @@ export const buildApolloDomainPayload = (domains, filters = {}) => {
         }).filter(Boolean)
     )];
 
+    // MAPPING: Convert user-friendly labels to valid Apify/Apollo values
+    let mappedSeniority = filters.seniority;
+    if (filters.seniority && filters.seniority.length > 0) {
+        mappedSeniority = filters.seniority.flatMap(s => {
+            if (s === "Partner / Principal") return ["Partner", "Principal", "Owner"];
+            if (s === "C-Level (CEO, CIO, COO)") return ["C-Suite", "CEO", "CXO", "President", "Founder"];
+            if (s === "Managing Director") return ["Director", "Head"]; // MD is often Director level
+            if (s === "VP / Director") return ["Vice President", "Director"];
+            if (s === "Head of X") return ["Head"];
+            if (s === "Manager / Associate") return ["Manager", "Senior"];
+            return s; // Pass through if it matches nothing (or is already valid)
+        });
+        // Deduplicate
+        mappedSeniority = [...new Set(mappedSeniority)];
+    }
+
     return {
         companyDomain: cleanDomains,
         companyCountry: filters.countries || ["Canada", "United States"],
@@ -232,8 +248,8 @@ export const buildApolloDomainPayload = (domains, filters = {}) => {
         ],
         contactEmailStatus: "verified",
         includeEmails: true,
-        personTitle: filters.job_titles || defaultTitles,
-        seniority: filters.seniority || defaultSeniorities,
+        personTitle: (filters.job_titles && filters.job_titles.length > 0) ? filters.job_titles : defaultTitles,
+        seniority: (mappedSeniority && mappedSeniority.length > 0) ? mappedSeniority : defaultSeniorities,
         totalResults: filters.maxResults || 1000,
         maxCost: 1 // Cost Cap ($1)
     };
