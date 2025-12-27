@@ -585,26 +585,52 @@ OUTPUT: JSON list (company_name, website, capital_role, description). Target 20+
                 // This ensures that "Agent Instructions" (like "Must be a visible minority" or "Focus on Texas") are respected.
                 if (agentConfigs['apollo_lead_finder']?.instructions || agentPrompts['apollo_lead_finder']) {
                     logStep('Lead Finder', 'Refining leads with AI Agent based on your instructions...');
+                    const instructionsUsed = agentConfigs['apollo_lead_finder']?.instructions || agentPrompts['apollo_lead_finder'];
+
                     try {
-                        const filterInput = [{
-                            role: "user",
-                            content: JSON.stringify({
-                                task: "Review these leads. Keep only those that match your instructions. Drop any irrelevant ones.",
-                                leads: leads
-                            })
-                        }];
-
-                        // We reuse the apolloLeadFinder agent which now has the injected instructions
-                        // Note: We might need to adjust outputType if we want strict subset, but ApolloLeadFinderSchema is compatible.
-                        const filterRes = await retryWithBackoff(() => runner.run(apolloLeadFinder, filterInput));
-
-                        if (filterRes.finalOutput && filterRes.finalOutput.leads) {
-                            const originalCount = leads.length;
-                            leads = filterRes.finalOutput.leads;
-                            logStep('Lead Finder', `Agent filtered leads: ${leads.length} remaining (dropped ${originalCount - leads.length}).`);
+                        const BATCH_SIZE = 15;
+                        const chunks = [];
+                        for (let i = 0; i < leads.length; i += BATCH_SIZE) {
+                            chunks.push(leads.slice(i, i + BATCH_SIZE));
                         }
+
+                        logStep('Lead Finder', `Processing ${leads.length} leads in ${chunks.length} batches to avoid rate limits...`);
+
+                        let filteredLeads = [];
+
+                        for (let i = 0; i < chunks.length; i++) {
+                            const chunk = chunks[i];
+                            const filterInput = [{
+                                role: "user",
+                                content: JSON.stringify({
+                                    task: "FILTERING TASK: Return matching leads from the provided list.",
+                                    context: `User Instructions: ${instructionsUsed}`,
+                                    instruction: "Review key params (Title, Company). Keep leads that match the user's criteria. If criteria are broad, KEEP THEM ALL. Return the full JSON objects.",
+                                    leads: chunk
+                                })
+                            }];
+
+                            try {
+                                const filterRes = await retryWithBackoff(() => runner.run(apolloLeadFinder, filterInput));
+
+                                if (filterRes.finalOutput && filterRes.finalOutput.leads) {
+                                    filteredLeads.push(...filterRes.finalOutput.leads);
+                                } else {
+                                    console.warn(`[LeadFilter] Batch ${i + 1} returned invalid structure. Keeping all.`);
+                                    filteredLeads.push(...chunk);
+                                }
+                            } catch (batchErr) {
+                                console.error(`[LeadFilter] Batch ${i + 1} failed: ${batchErr.message}. Keeping all.`);
+                                filteredLeads.push(...chunk);
+                            }
+                        }
+
+                        const originalCount = leads.length;
+                        leads = filteredLeads;
+                        logStep('Lead Finder', `Agent filtered leads: ${leads.length} remaining (dropped ${originalCount - leads.length}).`);
+
                     } catch (filterErr) {
-                        logStep('Lead Finder', `⚠️ Agent filtering failed: ${filterErr.message}. Utilizing raw scraper results.`);
+                        logStep('Lead Finder', `⚠️ Agent filtering setup failed: ${filterErr.message}. Utilizing raw scraper results.`);
                     }
                 }
 
