@@ -573,39 +573,7 @@ const StepCostEstimator = ({ onNext, onBack, targetCompanies = 50, maxLeads = 3 
 }
 
 
-                <div className="bg-white/5 border border-white/10 rounded-xl p-6 backdrop-blur-sm">
-                    <div className="text-gray-400 text-xs font-bold uppercase tracking-wider mb-2">Target Volume</div>
-                    <div className="text-3xl font-bold text-white">{targetCompanies} <span className="text-lg font-normal text-gray-500">companies</span></div>
-                    <div className="text-sm text-gray-400 mt-1">x {maxLeads} leads/co</div>
-                </div>
-                <div className="bg-white/5 border border-white/10 rounded-xl p-6 backdrop-blur-sm">
-                    <div className="text-gray-400 text-xs font-bold uppercase tracking-wider mb-2">Est. Max Leads</div>
-                    <div className="text-3xl font-bold text-teal-400">~{totalLeads}</div>
-                    <div className="text-sm text-gray-400 mt-1">Tier 1 Qualified</div>
-                </div>
-            </div >
 
-            <div className="w-full bg-black/40 border border-yellow-500/30 rounded-xl p-4 mb-8 flex items-start gap-4 text-left">
-                <AlertCircle className="w-6 h-6 text-yellow-500 shrink-0 mt-0.5" />
-                <div>
-                    <h4 className="text-yellow-400 font-bold text-sm uppercase">Noise Risk: {noiseRisk}</h4>
-                    <p className="text-gray-300 text-sm mt-1">
-                        {noiseRisk === "High"
-                            ? "You are targeting a large volume. We recommend doing a smaller test run (10 companies) first to verify strict filtering."
-                            : "Your targeting volume is safe for a test run. Strict filters will be applied."}
-                    </p>
-                </div>
-            </div>
-
-            <div className="flex gap-4">
-                <button onClick={onBack} className={PREMIUM_BUTTON_SECONDARY}>Adjust Filters</button>
-                <button onClick={onNext} className={PREMIUM_BUTTON_PRIMARY}>
-                    Accept & Initialize <ChevronRight className="w-4 h-4" />
-                </button>
-            </div>
-        </div >
-    )
-}
 
 const StepVerifyPrompt = ({ agent, prompt, setPrompt, onConfirm, onBack, isOptimizing }) => {
     if (isOptimizing) {
