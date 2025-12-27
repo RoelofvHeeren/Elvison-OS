@@ -224,17 +224,27 @@ export const buildApolloDomainPayload = (domains, filters = {}) => {
     )];
 
     // MAPPING: Convert user-friendly labels to valid Apify/Apollo values
+    // ALLOWED VALUES: "Founder", "Chairman", "President", "CEO", "CXO", "Vice President", "Director", "Head", "Manager", "Senior", "Junior", "Entry Level", "Executive"
     let mappedSeniority = filters.seniority;
     if (filters.seniority && filters.seniority.length > 0) {
         mappedSeniority = filters.seniority.flatMap(s => {
-            if (s === "Partner / Principal") return ["Partner", "Principal", "Owner"];
-            if (s === "C-Level (CEO, CIO, COO)") return ["C-Suite", "CEO", "CXO", "President", "Founder"];
-            if (s === "Managing Director") return ["Director", "Head"]; // MD is often Director level
+            if (s === "Partner / Principal") return ["Executive", "Director"]; // 'Partner'/'Principal' not in enum, mapping to 'Executive'
+            if (s === "C-Level (CEO, CIO, COO)") return ["CXO", "CEO", "President", "Founder"];
+            if (s === "Managing Director") return ["Director", "Head"];
             if (s === "VP / Director") return ["Vice President", "Director"];
             if (s === "Head of X") return ["Head"];
             if (s === "Manager / Associate") return ["Manager", "Senior"];
-            return s; // Pass through if it matches nothing (or is already valid)
+
+            // If the filter is literally "Partner" or "Principal" (from manual entry), map it too
+            if (s === "Partner" || s === "Principal" || s === "Owner") return ["Executive", "Founder"];
+
+            return s;
         });
+
+        // Final Filter: Ensure only allowed values pass
+        const ALLOWED_VALUES = ["Founder", "Chairman", "President", "CEO", "CXO", "Vice President", "Director", "Head", "Manager", "Senior", "Junior", "Entry Level", "Executive"];
+        mappedSeniority = mappedSeniority.filter(s => ALLOWED_VALUES.includes(s));
+
         // Deduplicate
         mappedSeniority = [...new Set(mappedSeniority)];
     }
