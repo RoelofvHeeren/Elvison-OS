@@ -71,14 +71,13 @@ const AgentRunner = () => {
     }
 
     const handleRun = async () => {
-        if (status === 'running') return
-        setStatus('running')
+        if (isRunning) return
+        setIsRunning(true)
         setLogs([])
-        setProgress(0)
+        // setProgress(0) // Unused variable?
 
         if (!selectedIcp && !localStorage.getItem('onboarding_state')) {
             console.warn("No Strategy selected and no Onboarding State found. Running with empty defaults.");
-            // Optional: You could show a UI alert here, but user wants it to just 'work' for diagnosis usually.
         }
 
         // Generate Idempotency Key
@@ -89,15 +88,11 @@ const AgentRunner = () => {
         try {
             // Build Prompt Context
             // Use ICP config prompts if available, else legacy
-            let prompt = agentPrompts.company_finder?.system_prompt || "Find SaaS companies"
-            // If using ICP, maybe we want to send the ICP ID to the backend so it can load the *latest* optimized config?
-            // Yes, passing icpId is better than passing raw prompts if backend supports loading it.
-            // But currently verify backend:
-            // Backend endpoint uses `req.body.agentConfigs` if passed, OR loads from DB?
-            // Actually `workflow.js` loads from `agent_prompts` table by default.
-            // We should pass `icpId` and let backend handle it?
-            // The plan said: "Update POST /api/agents/run to accept and log icpId"
-            // And "backend must load the agent_config from the DB for that icpId"
+            let promptToSend = agentPrompts.company_finder?.system_prompt || "Find SaaS companies"
+            // Use the user's input prompt as the main objective if it's set
+            if (prompt.trim()) {
+                promptToSend = prompt;
+            }
 
             const vectorStoreId = "vs_123_placeholder"
 
@@ -133,9 +128,9 @@ const AgentRunner = () => {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    prompt,
+                    prompt: promptToSend,
                     vectorStoreId,
-                    mode,
+                    mode: 'default', // Always default now
                     filters,
                     targetLeads: 50,
                     maxLeadsPerCompany: filters.max_contacts,
@@ -144,6 +139,10 @@ const AgentRunner = () => {
                 }),
                 signal: abortControllerRef.current.signal
             })
+
+            if (!response.ok) {
+                throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+            }
 
             const reader = response.body.getReader()
             const decoder = new TextDecoder()
@@ -256,25 +255,7 @@ const AgentRunner = () => {
                             />
                         </div>
 
-                        <div className="flex items-center gap-3 bg-white/5 p-3 rounded-lg border border-white/5">
-                            <div className="relative inline-block w-10 h-5 align-middle select-none transition duration-200 ease-in">
-                                <input
-                                    type="checkbox"
-                                    name="mode"
-                                    id="mode-toggle"
-                                    className="toggle-checkbox absolute block w-5 h-5 rounded-full bg-white border-4 appearance-none cursor-pointer checked:right-0 right-5 checked:border-[#139187]"
-                                    checked={mode === 'list_builder'}
-                                    onChange={(e) => setMode(e.target.checked ? 'list_builder' : 'default')}
-                                />
-                                <label htmlFor="mode-toggle" className={`toggle-label block overflow-hidden h-5 rounded-full cursor-pointer ${mode === 'list_builder' ? 'bg-[#139187]' : 'bg-gray-700'}`}></label>
-                            </div>
-                            <label htmlFor="mode-toggle" className="text-xs font-bold text-gray-300 cursor-pointer select-none">
-                                List Builder Only (No Emails)
-                            </label>
-                            <span className="text-[10px] text-gray-500 ml-auto">Faster • Low Cost</span>
-                        </div>
-
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 pt-2">
                             <button
                                 onClick={handleRun}
                                 disabled={isRunning || !prompt.trim()}
@@ -307,9 +288,9 @@ const AgentRunner = () => {
                 </div>
 
                 {/* Progress Indicators */}
-                <div className="flex-1 rounded-xl border border-white/10 bg-white/5 p-6 backdrop-blur-sm overflow-hidden flex flex-col">
-                    <h3 className="mb-4 text-xs font-bold uppercase tracking-wider text-gray-400">Current Progress</h3>
-                    <div className="space-y-4 overflow-y-auto pr-2">
+                <div className="flex-1 rounded-xl border border-white/10 bg-white/5 p-5 backdrop-blur-sm overflow-hidden flex flex-col justify-center">
+                    <h3 className="mb-4 text-xs font-bold uppercase tracking-wider text-gray-400 text-center">Current Progress</h3>
+                    <div className="space-y-4 overflow-y-auto pr-2 px-2">
                         {STEPS.map((step, idx) => {
                             const isCompleted = STEPS.findIndex(s => s.id === currentStep) > idx || currentStep === 'Complete'
                             const isActive = currentStep === step.id && isRunning
