@@ -170,56 +170,84 @@ const Optimize = () => {
                             {/* Contacts */}
                             <div className="p-6 space-y-6">
                                 {company.contacts.map(contact => (
-                                    <div key={contact.id} className="space-y-4">
-                                        <div className="flex items-start justify-between">
-                                            <div className="flex items-center gap-3">
-                                                <div className="h-10 w-10 rounded-full bg-[#139187]/10 flex items-center justify-center text-[#139187] font-bold border border-[#139187]/20">
-                                                    {contact.name.charAt(0)}
-                                                </div>
-                                                <div>
-                                                    <div className="font-bold text-white">{contact.name}</div>
-                                                    <div className="text-sm text-gray-400">{contact.title}</div>
-                                                </div>
-                                            </div>
-                                            <FeedbackControl
-                                                type="contact"
-                                                id={contact.id}
-                                                feedback={feedback[contact.id]}
-                                                onGrade={(g) => handleFeedback('contact', contact.id, g)}
-                                                showNotes
-                                                onNote={(n) => handleNote('contact', contact.id, n)}
-                                            />
-                                        </div>
-
-                                        {/* Messages Section */}
-                                        <div className="pl-12 space-y-3">
-                                            {contact.messages?.map(msg => (
-                                                <div key={msg.id} className="rounded-xl border border-white/10 bg-black/20 p-5 relative group hover:border-[#139187]/30 transition-colors">
-                                                    <div className="mb-3 flex items-center justify-between">
-                                                        <span className="text-xs font-bold uppercase tracking-wider text-gray-500 flex items-center gap-2">
-                                                            <MessageSquare className="w-3 h-3" /> Outreach Message
-                                                        </span>
-                                                        <FeedbackControl
-                                                            type="message"
-                                                            id={msg.id}
-                                                            feedback={feedback[msg.id]}
-                                                            onGrade={(g) => handleFeedback('message', msg.id, g)}
-                                                            showNotes
-                                                            onNote={(n) => handleNote('message', msg.id, n)}
-                                                        />
-                                                    </div>
-                                                    <div className="text-sm font-bold text-white mb-2">{msg.subject}</div>
-                                                    <div className="text-sm text-gray-300 whitespace-pre-wrap leading-relaxed">{msg.body}</div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
+                                    <ContactRow
+                                        key={contact.id}
+                                        contact={contact}
+                                        feedbackMap={feedback}
+                                        onFeedback={handleFeedback}
+                                        onNote={handleNote}
+                                    />
                                 ))}
                             </div>
                         </div>
                     ))}
                 </div>
             </div>
+        </div>
+    );
+};
+
+const ContactRow = ({ contact, feedbackMap, onFeedback, onNote }) => {
+    const [isExpanded, setIsExpanded] = useState(false);
+
+    return (
+        <div className="space-y-4">
+            <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-full bg-[#139187]/10 flex items-center justify-center text-[#139187] font-bold border border-[#139187]/20">
+                        {contact.name.charAt(0)}
+                    </div>
+                    <div>
+                        <div className="font-bold text-white">{contact.name}</div>
+                        <div className="text-sm text-gray-400">{contact.title}</div>
+                    </div>
+                </div>
+                <div className="flex items-center gap-4">
+                    <button
+                        onClick={() => setIsExpanded(!isExpanded)}
+                        className="text-xs font-bold uppercase tracking-wider text-[#139187] hover:text-[#139187]/80 transition-colors flex items-center gap-1"
+                    >
+                        {isExpanded ? (
+                            <>Hide Message <ChevronDown className="w-3 h-3" /></>
+                        ) : (
+                            <>View Message <ChevronRight className="w-3 h-3" /></>
+                        )}
+                    </button>
+                    <FeedbackControl
+                        type="contact"
+                        id={contact.id}
+                        feedback={feedbackMap[contact.id]}
+                        onGrade={(g) => onFeedback('contact', contact.id, g)}
+                        showNotes
+                        onNote={(n) => onNote('contact', contact.id, n)}
+                    />
+                </div>
+            </div>
+
+            {/* Messages Section */}
+            {isExpanded && (
+                <div className="pl-12 space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
+                    {contact.messages?.map(msg => (
+                        <div key={msg.id} className="rounded-xl border border-white/10 bg-black/20 p-5 relative group hover:border-[#139187]/30 transition-colors">
+                            <div className="mb-3 flex items-center justify-between">
+                                <span className="text-xs font-bold uppercase tracking-wider text-gray-500 flex items-center gap-2">
+                                    <MessageSquare className="w-3 h-3" /> Outreach Message
+                                </span>
+                                <FeedbackControl
+                                    type="message"
+                                    id={msg.id}
+                                    feedback={feedbackMap[msg.id]}
+                                    onGrade={(g) => onFeedback('message', msg.id, g)}
+                                    showNotes
+                                    onNote={(n) => onNote('message', msg.id, n)}
+                                />
+                            </div>
+                            <div className="text-sm font-bold text-white mb-2">{msg.subject}</div>
+                            <div className="text-sm text-gray-300 whitespace-pre-wrap leading-relaxed">{msg.body}</div>
+                        </div>
+                    ))}
+                </div>
+            )}
         </div>
     );
 };
