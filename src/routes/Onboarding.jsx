@@ -572,32 +572,7 @@ const StepCostEstimator = ({ onNext, onBack, targetCompanies = 50, maxLeads = 3 
     )
 }
 
-const StepCostEstimator = ({ onNext, onBack, targetCompanies = 50, maxLeads = 3 }) => {
-    // Basic heuristics for Apify / General Cost
-    // Assume ~0.5 mins per company search + ~0.2 mins per lead enrich ?
-    // Or just "Credits".
-    // Let's stick to "Credits" or "Estimated Runs".
-    // 1 Company Scrape + 1 Enrichment Run per company.
 
-    const totalLeads = targetCompanies * maxLeads
-    const estimatedApifyRuns = targetCompanies // Rough 1-1 mapping for deep profile runs or domains
-    const estimatedCost = (estimatedApifyRuns * 0.05) + (totalLeads * 0.02) // Fake currency logic
-
-    // Strictness factor (visual only for now)
-    const noiseRisk = targetCompanies > 100 ? "High" : "Low"
-
-    return (
-        <div className="flex flex-col items-center justify-center h-full max-w-2xl mx-auto text-center">
-            <div className="mb-6 rounded-full bg-teal-500/10 p-4 border border-teal-500/30 shadow-[0_0_20px_rgba(20,184,166,0.2)]">
-                <Users className="w-10 h-10 text-teal-400" />
-            </div>
-
-            <h2 className="text-3xl font-serif font-bold mb-4 text-white drop-shadow-md">Run Estimation & Safeguards</h2>
-            <p className="text-gray-300 mb-8 max-w-lg mx-auto">
-                Based on your strict ICP settings, here is the estimated scope of your first run.
-            </p>
-
-            <div className="grid grid-cols-2 gap-4 w-full mb-8">
                 <div className="bg-white/5 border border-white/10 rounded-xl p-6 backdrop-blur-sm">
                     <div className="text-gray-400 text-xs font-bold uppercase tracking-wider mb-2">Target Volume</div>
                     <div className="text-3xl font-bold text-white">{targetCompanies} <span className="text-lg font-normal text-gray-500">companies</span></div>
@@ -608,7 +583,7 @@ const StepCostEstimator = ({ onNext, onBack, targetCompanies = 50, maxLeads = 3 
                     <div className="text-3xl font-bold text-teal-400">~{totalLeads}</div>
                     <div className="text-sm text-gray-400 mt-1">Tier 1 Qualified</div>
                 </div>
-            </div>
+            </div >
 
             <div className="w-full bg-black/40 border border-yellow-500/30 rounded-xl p-4 mb-8 flex items-start gap-4 text-left">
                 <AlertCircle className="w-6 h-6 text-yellow-500 shrink-0 mt-0.5" />
@@ -628,7 +603,7 @@ const StepCostEstimator = ({ onNext, onBack, targetCompanies = 50, maxLeads = 3 
                     Accept & Initialize <ChevronRight className="w-4 h-4" />
                 </button>
             </div>
-        </div>
+        </div >
     )
 }
 
