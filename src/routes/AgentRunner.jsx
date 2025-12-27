@@ -76,6 +76,11 @@ const AgentRunner = () => {
         setLogs([])
         setProgress(0)
 
+        if (!selectedIcp && !localStorage.getItem('onboarding_state')) {
+            console.warn("No Strategy selected and no Onboarding State found. Running with empty defaults.");
+            // Optional: You could show a UI alert here, but user wants it to just 'work' for diagnosis usually.
+        }
+
         // Generate Idempotency Key
         const idempotencyKey = safeUUID();
 
@@ -272,8 +277,8 @@ const AgentRunner = () => {
                         <div className="flex gap-2">
                             <button
                                 onClick={handleRun}
-                                disabled={isRunning || !prompt.trim() || (!selectedIcp && !localStorage.getItem('onboarding_state'))}
-                                title={(!selectedIcp && !localStorage.getItem('onboarding_state')) ? "Please select a Strategy or complete Setup" : "Run Workflow"}
+                                disabled={isRunning || !prompt.trim()}
+                                title={isRunning ? "Running..." : "Start Workflow"}
                                 className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-[#139187] py-3 text-sm font-bold text-white shadow-[0_0_20px_rgba(19,145,135,0.3)] transition-all hover:bg-[#139187]/90 disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-[0_0_30px_rgba(19,145,135,0.5)]"
                             >
                                 {isRunning ? (
