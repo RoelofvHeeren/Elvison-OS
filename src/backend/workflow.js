@@ -700,6 +700,32 @@ OUTPUT: JSON list (company_name, website, capital_role, description). Target 20+
                 // The current scraper logic usually does internal retries if implemented in `fetchLeads`, but `LeadScraperService` implementation 
                 // maps standard Apify behavior. 
 
+                // --- Track lead counts per company for debugging ---
+                for (const company of qualifiedInBatch) {
+                    const leadsFromCompany = globalLeads.filter(l => l.company_name === company.company_name).length;
+                    leadsPerCompany[company.company_name] = leadsFromCompany;
+                }
+
+                totalLeadsCollected = globalLeads.length;
+
+                // --- END OF DISCOVERY & SCRAPING FOR THIS ROUND ---
+                logStep('Workflow', `Round ${attempts} complete: ${globalLeads.length} total leads collected so far.`);
+
+                // OPTIMIZATION: Diminishing returns check
+                const companiesFoundThisRound = qualifiedCompanies.length - companiesBeforeThisRound;
+                const diminishingReturnsThreshold = Math.max(2, Math.ceil(companiesNeeded * 0.2)); // At least 2 or 20% of target
+
+                if (attempts > 1 && companiesFoundThisRound < diminishingReturnsThreshold) {
+                    logStep('Optimization', `⚠️ Diminishing returns detected: Only ${companiesFoundThisRound} new companies found (threshold: ${diminishingReturnsThreshold}). Stopping early to save API costs.`);
+                    break;
+                }
+
+                // OPTIMIZATION: Early exit if target met mid-loop
+                if (totalLeadsCollected >= targetLeads) {
+                    logStep('Optimization', `✅ Target reached! ${totalLeadsCollected}/${targetLeads} leads collected after ${attempts} attempts. Skipping remaining attempts to save costs.`);
+                    break;
+                }
+
                 // Group by company to enforce limits
                 const leadsByCompany = {};
                 for (const lead of leads) {
