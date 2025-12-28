@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { CalendarDays, Building2, RefreshCw, Trash2, Upload, Filter, Target, Loader, Check, Search, ChevronLeft, ChevronRight } from 'lucide-react'
+import { CalendarDays, Building2, RefreshCw, Trash2, Upload, Filter, Target, Loader, Check, Search, ChevronLeft, ChevronRight, Download } from 'lucide-react'
 import SheetTable from '../components/SheetTable'
 import ImportModal from '../components/ImportModal'
 import { fetchLeads, deleteLead, approveLead } from '../utils/api'
@@ -147,6 +147,54 @@ function CRM() {
     await Promise.allSettled([fetchRows(), fetchStatus(), fetchIcps()])
   }
 
+  // CSV Export Function
+  const exportToCSV = () => {
+    // Use filtered rows to respect current filters
+    const timestamp = new Date().toISOString().split('T')[0];
+    const filename = `leads_export_${timestamp}.csv`;
+
+    // Define CSV headers
+    const headers = ['Name', 'Email', 'Title', 'Company', 'LinkedIn', 'Phone Numbers', 'Connection Request', 'Date Added'];
+
+    // Convert rows to CSV format
+    const csvRows = filteredRows.map(row => [
+      row.name,
+      row.email,
+      row.title,
+      row.company,
+      row.linkedin,
+      Array.isArray(row.phoneNumbers) ? row.phoneNumbers.join('; ') : '',
+      row.connectionRequest,
+      row.date
+    ]);
+
+    // Escape and quote CSV fields
+    const escapeCsvField = (field) => {
+      const str = String(field || '');
+      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+
+    // Build CSV content
+    const csvContent = [
+      headers.map(escapeCsvField).join(','),
+      ...csvRows.map(row => row.map(escapeCsvField).join(','))
+    ].join('\n');
+
+    // Trigger download
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', filename);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
   useEffect(() => {
     refreshAll()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -194,6 +242,14 @@ function CRM() {
           >
             <Trash2 className="h-4 w-4" />
             Clear All
+          </button>
+          <button
+            type="button"
+            onClick={exportToCSV}
+            className="chip text-sm font-semibold text-teal-600 hover:text-teal-700 hover:bg-teal-50 border-teal-200"
+          >
+            <Download className="h-4 w-4" />
+            Export CSV
           </button>
           <button
             type="button"
