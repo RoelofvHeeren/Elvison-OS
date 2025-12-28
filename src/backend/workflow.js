@@ -614,7 +614,22 @@ OUTPUT: JSON list (company_name, website, capital_role, description). Target 20+
                                 const filterRes = await retryWithBackoff(() => runner.run(apolloLeadFinder, filterInput));
 
                                 if (filterRes.finalOutput && filterRes.finalOutput.leads) {
-                                    filteredLeads.push(...filterRes.finalOutput.leads);
+                                    const kept = filterRes.finalOutput.leads;
+                                    filteredLeads.push(...kept);
+
+                                    // Identify dropped leads
+                                    const keptEmails = new Set(kept.map(k => k.email).filter(Boolean));
+                                    const droppedInBatch = chunk.filter(l => !keptEmails.has(l.email));
+
+                                    // Save dropped leads immediately with DISQUALIFIED status
+                                    if (droppedInBatch.length > 0) {
+                                        // Modify leads to have DISQUALIFIED status before saving
+                                        const disqualifiedLeads = droppedInBatch.map(l => ({ ...l, status: 'DISQUALIFIED', source_notes: 'Dropped by AI Filter' }));
+                                        logStep('Lead Finder', `ℹ️ Saving ${droppedInBatch.length} disqualified leads for review...`);
+                                        // Use a non-blocking save to not slow down the main loop
+                                        saveLeadsToDB(disqualifiedLeads, userId, icpId, () => { }).catch(e => console.error("Failed to save dropped leads", e));
+                                    }
+
                                 } else {
                                     console.warn(`[LeadFilter] Batch ${i + 1} returned invalid structure. Keeping all.`);
                                     filteredLeads.push(...chunk);
