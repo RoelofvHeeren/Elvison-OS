@@ -1212,10 +1212,17 @@ app.post('/api/agents/run', requireAuth, async (req, res) => {
         res.write(`event: done\ndata: {}\n\n`)
     } catch (error) {
         console.error('Workflow failed:', error)
+
+        // Extract partial stats if available (from target validation failure)
+        const partialStats = error.partialStats || {
+            error_message: error.message,
+            partial_results: true
+        };
+
         try {
             await query(
-                `UPDATE workflow_runs SET status = 'FAILED', completed_at = NOW(), error_log = $2 WHERE id = $1`,
-                [runId, error.message || String(error)]
+                `UPDATE workflow_runs SET status = 'FAILED', completed_at = NOW(), error_log = $2, stats = $3 WHERE id = $1`,
+                [runId, error.message || String(error), JSON.stringify(partialStats)]
             )
         } catch (dbErr) { console.error("DB update failed during error handling", dbErr) }
 

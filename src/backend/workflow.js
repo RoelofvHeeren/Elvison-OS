@@ -429,7 +429,7 @@ export const runAgentWorkflow = async (input, config) => {
         let totalLeadsCollected = 0; // NEW: Track total leads instead of companies
         let leadsPerCompany = {}; // NEW: Track leads collected per company
         let attempts = 0;
-        const MAX_ATTEMPTS = 1; // RESTRICTION: Single Pass Only (Prevent Cost Runaway)
+        const MAX_ATTEMPTS = 5; // Allow multiple discovery rounds to meet target
         const originalPrompt = input.input_as_text;
 
         let lastRoundFound = 0;
@@ -805,6 +805,36 @@ OUTPUT: JSON list (company_name, website, capital_role, description). Target 20+
             return Math.round((withEmail / leads.length) * 100);
         };
 
+        // CRITICAL: Validate target lead count was met
+        if (globalLeads.length < targetLeads) {
+            const shortfall = targetLeads - globalLeads.length;
+            const errorMsg = `Could not meet target: Found ${globalLeads.length}/${targetLeads} leads after ${attempts} discovery rounds. ` +
+                `Qualified ${qualifiedCompanies.length} companies but insufficient decision-makers available with current filters.`;
+
+            // Prepare partial stats before throwing error
+            const partialStats = {
+                companies_discovered: qualifiedCompanies.length,
+                leads_returned: globalLeads.length,
+                target_leads: targetLeads,
+                filtering_breakdown: {
+                    companies_found_raw: qualifiedCompanies.length + (debugLog.discovery?.length || 0),
+                    companies_qualified: qualifiedCompanies.length,
+                    leads_scraped: globalLeads.length,
+                    leads_after_filtering: outreachOutput.leads ? outreachOutput.leads.length : 0,
+                    leads_disqualified: globalLeads.length - (outreachOutput.leads ? outreachOutput.leads.length : 0)
+                },
+                discovery_rounds: attempts,
+                email_yield_percentage: calculateEmailYield(globalLeads || []),
+                error_message: errorMsg,
+                partial_results: true
+            };
+
+            // Attach stats to error for error handler to save
+            const error = new Error(errorMsg);
+            error.partialStats = partialStats;
+            throw error;
+        }
+
         return {
             status: "success",
             leads: outreachOutput.leads,
@@ -812,6 +842,7 @@ OUTPUT: JSON list (company_name, website, capital_role, description). Target 20+
             stats: {
                 companies_discovered: qualifiedCompanies.length,
                 leads_returned: outreachOutput.leads ? outreachOutput.leads.length : 0,
+                target_leads: targetLeads,
                 filtering_breakdown: {
                     companies_found_raw: qualifiedCompanies.length + (debugLog.discovery?.length || 0),
                     companies_qualified: qualifiedCompanies.length,

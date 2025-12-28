@@ -108,20 +108,20 @@ const Logbook = () => {
     return (
         <div className="p-8 max-w-7xl mx-auto animate-fade-in">
             <header className="mb-8">
-                <h1 className="text-3xl font-bold font-display text-gray-900 mb-2 flex items-center gap-3">
-                    <Book className="h-8 w-8 text-[#139187]" />
+                <h1 className="text-3xl font-bold font-display text-white mb-2 flex items-center gap-3">
+                    <Book className="h-8 w-8 text-teal-400" />
                     Logbook
                 </h1>
-                <p className="text-gray-500">Review disqualified leads and manage data imports.</p>
+                <p className="text-gray-300">Review workflow results and disqualified leads.</p>
             </header>
 
             {/* TABS - Job History first, Disqualified Leads second */}
-            <div className="flex space-x-6 border-b border-gray-200 mb-6">
+            <div className="flex space-x-6 border-b border-gray-700 mb-6">
                 <button
                     onClick={() => setActiveTab('import')}
                     className={`pb-3 px-1 text-sm font-medium border-b-2 transition-colors ${activeTab === 'import'
-                        ? 'border-indigo-600 text-indigo-600'
-                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                        ? 'border-teal-500 text-teal-400'
+                        : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-600'
                         }`}
                 >
                     <div className="flex items-center gap-2">
@@ -132,8 +132,8 @@ const Logbook = () => {
                 <button
                     onClick={() => setActiveTab('review')}
                     className={`pb-3 px-1 text-sm font-medium border-b-2 transition-colors ${activeTab === 'review'
-                        ? 'border-indigo-600 text-indigo-600'
-                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                        ? 'border-teal-500 text-teal-400'
+                        : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-600'
                         }`}
                 >
                     <div className="flex items-center gap-2">
@@ -222,68 +222,86 @@ const Logbook = () => {
                             <p className="text-sm text-gray-400">Run your first workflow to see results here.</p>
                         </div>
                     ) : (
-                        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                        <div className="bg-gray-800 rounded-xl shadow-lg border border-gray-700 overflow-hidden">
                             <table className="w-full text-left border-collapse">
                                 <thead>
-                                    <tr className="bg-gray-50 border-b border-gray-100">
-                                        <th className="py-3 px-4 text-xs font-semibold text-gray-700 uppercase">Run Name</th>
-                                        <th className="py-3 px-4 text-xs font-semibold text-gray-700 uppercase">Date/Time</th>
-                                        <th className="py-3 px-4 text-xs font-semibold text-gray-700 uppercase">Status</th>
-                                        <th className="py-3 px-4 text-xs font-semibold text-gray-700 uppercase text-center">Companies</th>
-                                        <th className="py-3 px-4 text-xs font-semibold text-gray-700 uppercase text-center">Leads</th>
-                                        <th className="py-3 px-4 text-xs font-semibold text-gray-700 uppercase text-center">Yield</th>
-                                        <th className="py-3 px-4 text-xs font-semibold text-gray-700 uppercase text-right">Details</th>
+                                    <tr className="bg-gray-900/50 border-b border-gray-700">
+                                        <th className="py-3 px-4 text-xs font-semibold text-gray-300 uppercase">Run Name</th>
+                                        <th className="py-3 px-4 text-xs font-semibold text-gray-300 uppercase">Date/Time</th>
+                                        <th className="py-3 px-4 text-xs font-semibold text-gray-300 uppercase">Status</th>
+                                        <th className="py-3 px-4 text-xs font-semibold text-gray-300 uppercase text-center">Companies</th>
+                                        <th className="py-3 px-4 text-xs font-semibold text-gray-300 uppercase text-center">Leads</th>
+                                        <th className="py-3 px-4 text-xs font-semibold text-gray-300 uppercase text-center">Yield</th>
+                                        <th className="py-3 px-4 text-xs font-semibold text-gray-300 uppercase text-right">Details</th>
                                     </tr>
                                 </thead>
-                                <tbody className="divide-y divide-gray-100">
+                                <tbody className="divide-y divide-gray-700">
                                     {jobs.map(job => {
                                         const stats = job.stats || {};
-                                        const companiesDiscovered = stats.companies_discovered || 0;
-                                        const leadsReturned = stats.leads_returned || 0;
-                                        const emailYield = stats.email_yield_percentage || 0;
+                                        const companiesDiscovered = stats.companies_discovered ?? 0;
+                                        const leadsReturned = stats.leads_returned ?? 0;
+                                        const targetLeads = stats.target_leads ?? null;
+                                        const emailYield = stats.email_yield_percentage ?? 0;
+                                        const hasStats = stats.companies_discovered !== undefined;
+                                        const isPartial = targetLeads && leadsReturned < targetLeads;
                                         const isExpanded = expandedJobId === job.id;
 
                                         return (
                                             <React.Fragment key={job.id}>
-                                                <tr className="hover:bg-gray-50 transition-colors">
+                                                <tr className="hover:bg-gray-700/50 transition-colors">
                                                     <td className="py-3 px-4">
-                                                        <div className="font-medium text-gray-900">
+                                                        <div className="font-medium text-gray-100">
                                                             {job.prompt || job.agent_id || 'Workflow Run'}
                                                         </div>
                                                     </td>
-                                                    <td className="py-3 px-4 text-sm text-gray-600">
+                                                    <td className="py-3 px-4 text-sm text-gray-300">
                                                         {new Date(job.timestamp).toLocaleString()}
                                                     </td>
                                                     <td className="py-3 px-4">
                                                         <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${job.status === 'success' || job.status === 'COMPLETED'
-                                                            ? 'bg-green-100 text-green-700'
-                                                            : job.status === 'RUNNING'
-                                                                ? 'bg-blue-100 text-blue-700'
-                                                                : 'bg-red-100 text-red-700'
+                                                                ? isPartial
+                                                                    ? 'bg-orange-900/50 text-orange-300'
+                                                                    : 'bg-green-900/50 text-green-300'
+                                                                : job.status === 'RUNNING'
+                                                                    ? 'bg-blue-900/50 text-blue-300'
+                                                                    : 'bg-red-900/50 text-red-300'
                                                             }`}>
-                                                            {job.status === 'success' ? 'Completed' : job.status}
+                                                            {job.status === 'FAILED' && isPartial
+                                                                ? `Partial (${leadsReturned}/${targetLeads})`
+                                                                : job.status === 'success' || job.status === 'COMPLETED'
+                                                                    ? 'Completed'
+                                                                    : job.status}
                                                         </span>
                                                     </td>
                                                     <td className="py-3 px-4 text-center">
-                                                        <div className="text-sm font-semibold text-gray-900">
-                                                            {companiesDiscovered > 0 ? companiesDiscovered : 'N/A'}
+                                                        <div className="text-sm font-semibold text-gray-100">
+                                                            {companiesDiscovered}
+                                                            {!hasStats && (
+                                                                <span className="text-xs text-gray-500 ml-1">(legacy)</span>
+                                                            )}
                                                         </div>
                                                     </td>
                                                     <td className="py-3 px-4 text-center">
-                                                        <div className="text-sm font-semibold text-gray-900">
-                                                            {leadsReturned > 0 ? leadsReturned : stats.leads_returned === 0 ? '0' : 'N/A'}
+                                                        <div className="text-sm font-semibold text-gray-100">
+                                                            {leadsReturned}
+                                                            {isPartial && (
+                                                                <span className="text-xs text-orange-400 ml-1">/ {targetLeads}</span>
+                                                            )}
+                                                            {!hasStats && (
+                                                                <span className="text-xs text-gray-500 ml-1">(legacy)</span>
+                                                            )}
                                                         </div>
                                                     </td>
                                                     <td className="py-3 px-4 text-center">
-                                                        <div className="text-sm text-gray-600">
-                                                            {emailYield > 0 ? `${emailYield}%` : 'N/A'}
+                                                        <div className="text-sm text-gray-300">
+                                                            {emailYield > 0 ? `${emailYield}%` : !hasStats ? '-' : '0%'}
                                                         </div>
                                                     </td>
                                                     <td className="py-3 px-4 text-right">
                                                         {stats.filtering_breakdown && (
                                                             <button
                                                                 onClick={() => setExpandedJobId(isExpanded ? null : job.id)}
-                                                                className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-800 text-xs font-medium"
+                                                                className="inline-flex items-center gap-1 text-teal-400 hover:text-teal-300 text-xs font-medium"
                                                             >
                                                                 {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                                                                 {isExpanded ? 'Hide' : 'Show'}
@@ -293,7 +311,13 @@ const Logbook = () => {
                                                 </tr>
                                                 {isExpanded && stats.filtering_breakdown && (
                                                     <tr>
-                                                        <td colSpan="7" className="bg-gray-50 p-4">
+                                                        <td colSpan="7" className="bg-gray-900/30 p-4">
+                                                            {stats.error_message && (
+                                                                <div className="mb-4 p-3 bg-orange-900/30 border border-orange-700/50 rounded-lg">
+                                                                    <div className="text-xs font-semibold text-orange-400 mb-1">Why Target Not Met</div>
+                                                                    <div className="text-sm text-orange-300">{stats.error_message}</div>
+                                                                </div>
+                                                            )}
                                                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                                                 <div className="bg-white p-3 rounded-lg border border-gray-200">
                                                                     <div className="text-xs text-gray-500 mb-1">Companies Found (Raw)</div>
