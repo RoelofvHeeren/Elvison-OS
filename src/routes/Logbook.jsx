@@ -129,28 +129,28 @@ const Logbook = () => {
             </div>
 
             {/* Tabs */}
-            <div className="border-b border-gray-700">
-                <nav className="-mb-px flex space-x-8" aria-label="Tabs">
+            <div className="bg-gray-800/50 backdrop-blur-md border border-gray-700/50 rounded-2xl overflow-hidden">
+                <nav className="flex" aria-label="Tabs">
                     <button
                         onClick={() => setActiveTab('import')}
-                        className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors ${activeTab === 'import'
-                            ? 'border-teal-500 text-teal-400'
-                            : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-600'
+                        className={`flex-1 py-4 px-6 font-medium text-sm transition-colors ${activeTab === 'import'
+                            ? 'bg-teal-500/20 text-teal-400 border-b-2 border-teal-400'
+                            : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700/30'
                             }`}
                     >
-                        <span className="flex items-center gap-2">
+                        <span className="flex items-center justify-center gap-2">
                             <FileText className="w-4 h-4" />
                             Job History & Imports
                         </span>
                     </button>
                     <button
                         onClick={() => setActiveTab('review')}
-                        className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors ${activeTab === 'review'
-                            ? 'border-teal-500 text-teal-400'
-                            : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-600'
+                        className={`flex-1 py-4 px-6 font-medium text-sm transition-colors ${activeTab === 'review'
+                            ? 'bg-teal-500/20 text-teal-400 border-b-2 border-teal-400'
+                            : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700/30'
                             }`}
                     >
-                        <span className="flex items-center gap-2">
+                        <span className="flex items-center justify-center gap-2">
                             <Trash2 className="w-4 h-4" />
                             Disqualified Leads
                         </span>
@@ -161,14 +161,14 @@ const Logbook = () => {
             {/* TAB CONTENT: REVIEW */}
             {activeTab === 'review' && (
                 <div className="space-y-4">
-                    <div className="flex justify-between items-center bg-yellow-50 p-4 rounded-lg border border-yellow-100">
+                    <div className="flex justify-between items-center bg-yellow-500/10 backdrop-blur-md border border-yellow-500/30 p-4 rounded-xl">
                         <div className="flex items-center gap-3">
-                            <AlertCircle className="text-yellow-600 w-5 h-5" />
-                            <p className="text-sm text-yellow-800">
+                            <AlertCircle className="text-yellow-400 w-5 h-5" />
+                            <p className="text-sm text-yellow-200">
                                 These leads were filtered out by the AI Agent. Review and approve them to restore to CRM.
                             </p>
                         </div>
-                        <button onClick={loadDroppedLeads} className="p-2 hover:bg-yellow-100 rounded-full text-yellow-700 transition-colors">
+                        <button onClick={loadDroppedLeads} className="p-2 hover:bg-yellow-500/20 rounded-lg text-yellow-400 transition-colors">
                             <RefreshCw className={`w-4 h-4 ${loadingLeads ? 'animate-spin' : ''}`} />
                         </button>
                     </div>
