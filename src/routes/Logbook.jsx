@@ -336,153 +336,154 @@ const Logbook = () => {
                                                     </div>
 
                                                     {run.error_log && (
-                                                        <p className="text-sm text-red-300 font-mono">{run.error_log}</p>
+                                                        <div className="mt-4 bg-red-500/10 border border-red-500/30 rounded-lg p-4">
+                                                            <h4 className="text-sm font-semibold text-red-400 mb-2">Error Details:</h4>
+                                                            <p className="text-sm text-red-300 font-mono">{run.error_log}</p>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             )}
                                         </div>
                                     )
-                                }
-                                        </div>
-                        )
-                        })}
-                    </div>
-                )}
-            </div>
-                )}
-
-            {/* TAB CONTENT: DISQUALIFIED LEADS */}
-            {activeTab === 'disqualified' && (
-                <div className="space-y-4">
-                    <div className="flex justify-between items-center bg-gray-800/50 backdrop-blur-md border border-gray-700/50 p-4 rounded-xl">
-                        <div className="flex items-center gap-3">
-                            <AlertCircle className="text-teal-400 w-5 h-5" />
-                            <p className="text-sm text-gray-300">
-                                These leads were filtered out by the AI. Review and reinstate to restore to CRM.
-                            </p>
-                        </div>
-                        <div className="flex gap-2">
-                            {selectedLeads.size > 0 && (
-                                <button
-                                    onClick={reinstateSelected}
-                                    className="px-4 py-2 bg-teal-500/20 hover:bg-teal-500/30 text-teal-400 rounded-lg transition-colors flex items-center gap-2"
-                                >
-                                    <Check className="w-4 h-4" />
-                                    Reinstate Selected ({selectedLeads.size})
-                                </button>
-                            )}
-                            <button
-                                onClick={loadDroppedLeads}
-                                className="p-2 hover:bg-gray-700/50 rounded-lg text-gray-400 transition-colors"
-                            >
-                                <RefreshCw className={`w-4 h-4 ${loadingLeads ? 'animate-spin' : ''}`} />
-                            </button>
-                        </div>
-
-                        {loadingLeads ? (
-                            <div className="text-center py-12 text-gray-400">Loading disqualified leads...</div>
-                        ) : droppedLeads.length === 0 ? (
-                            <div className="bg-gray-800/50 backdrop-blur-md border border-gray-700/50 rounded-2xl p-12 text-center">
-                                <CheckCircle className="w-12 h-12 text-green-400 mx-auto mb-3" />
-                                <p className="text-white font-medium">No disqualified leads!</p>
-                                <p className="text-sm text-gray-400 mt-1">All leads passed AI validation</p>
-                            </div>
-                        ) : (
-                            <div className="bg-gray-800/50 backdrop-blur-md border border-gray-700/50 rounded-2xl overflow-hidden">
-                                <div className="overflow-x-auto">
-                                    <table className="w-full text-sm">
-                                        <thead className="bg-gray-900/50 text-xs font-semibold uppercase tracking-wider text-gray-400">
-                                            <tr>
-                                                <th className="px-4 py-3 text-left">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={selectAll}
-                                                        onChange={toggleSelectAll}
-                                                        className="rounded border-gray-600 text-teal-500 focus:ring-teal-500 focus:ring-offset-gray-900"
-                                                    />
-                                                </th>
-                                                <th className="px-4 py-3 text-left">Person</th>
-                                                <th className="px-4 py-3 text-left">Email</th>
-                                                <th className="px-4 py-3 text-left">Title</th>
-                                                <th className="px-4 py-3 text-left">Company</th>
-                                                <th className="px-4 py-3 text-left">Disqualified Because</th>
-                                                <th className="px-4 py-3"></th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-gray-700/50">
-                                            {droppedLeads.map((lead) => {
-                                                const reason = (lead.source_notes || 'AI Filtered').replace(/archived|no connection request sent|zombie/gi, '').trim() || 'Did not match ICP criteria'
-                                                return (
-                                                    <tr key={lead.id} className="hover:bg-gray-700/30 transition-colors">
-                                                        <td className="px-4 py-3">
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={selectedLeads.has(lead.id)}
-                                                                onChange={() => toggleLeadSelection(lead.id)}
-                                                                className="rounded border-gray-600 text-teal-500 focus:ring-teal-500 focus:ring-offset-gray-900"
-                                                            />
-                                                        </td>
-                                                        <td className="px-4 py-3 text-white font-medium">{lead.person_name || '—'}</td>
-                                                        <td className="px-4 py-3 text-gray-300">{lead.email || '—'}</td>
-                                                        <td className="px-4 py-3 text-gray-400">{lead.job_title || '—'}</td>
-                                                        <td className="px-4 py-3 text-gray-300">{lead.company_name || '—'}</td>
-                                                        <td className="px-4 py-3 text-gray-400 text-xs">{reason}</td>
-                                                        <td className="px-4 py-3 text-right">
-                                                            <button
-                                                                onClick={() => openApprovalModal(lead.id)}
-                                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-500/20 hover:bg-teal-500/30 text-teal-400 text-xs font-medium rounded-lg transition-colors"
-                                                            >
-                                                                <ThumbsUp className="w-3 h-3" />
-                                                                Reinstate
-                                                            </button>
-                                                        </td>
-                                                    </tr>
-                                                )
-                                            })}
-                                        </tbody>
-                                    </table>
-                                </div>
+                                })}
                             </div>
                         )}
                     </div>
                 )}
-                </div>
+
+                {/* TAB CONTENT: DISQUALIFIED LEADS */}
+                {activeTab === 'disqualified' && (
+                    <div className="space-y-4">
+                        <div className="flex justify-between items-center bg-gray-800/50 backdrop-blur-md border border-gray-700/50 p-4 rounded-xl">
+                            <div className="flex items-center gap-3">
+                                <AlertCircle className="text-teal-400 w-5 h-5" />
+                                <p className="text-sm text-gray-300">
+                                    These leads were filtered out by the AI. Review and reinstate to restore to CRM.
+                                </p>
+                            </div>
+                            <div className="flex gap-2">
+                                {selectedLeads.size > 0 && (
+                                    <button
+                                        onClick={reinstateSelected}
+                                        className="px-4 py-2 bg-teal-500/20 hover:bg-teal-500/30 text-teal-400 rounded-lg transition-colors flex items-center gap-2"
+                                    >
+                                        <Check className="w-4 h-4" />
+                                        Reinstate Selected ({selectedLeads.size})
+                                    </button>
+                                )}
+                                <button
+                                    onClick={loadDroppedLeads}
+                                    className="p-2 hover:bg-gray-700/50 rounded-lg text-gray-400 transition-colors"
+                                >
+                                    <RefreshCw className={`w-4 h-4 ${loadingLeads ? 'animate-spin' : ''}`} />
+                                </button>
+                            </div>
+
+                            {loadingLeads ? (
+                                <div className="text-center py-12 text-gray-400">Loading disqualified leads...</div>
+                            ) : droppedLeads.length === 0 ? (
+                                <div className="bg-gray-800/50 backdrop-blur-md border border-gray-700/50 rounded-2xl p-12 text-center">
+                                    <CheckCircle className="w-12 h-12 text-green-400 mx-auto mb-3" />
+                                    <p className="text-white font-medium">No disqualified leads!</p>
+                                    <p className="text-sm text-gray-400 mt-1">All leads passed AI validation</p>
+                                </div>
+                            ) : (
+                                <div className="bg-gray-800/50 backdrop-blur-md border border-gray-700/50 rounded-2xl overflow-hidden">
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-sm">
+                                            <thead className="bg-gray-900/50 text-xs font-semibold uppercase tracking-wider text-gray-400">
+                                                <tr>
+                                                    <th className="px-4 py-3 text-left">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={selectAll}
+                                                            onChange={toggleSelectAll}
+                                                            className="rounded border-gray-600 text-teal-500 focus:ring-teal-500 focus:ring-offset-gray-900"
+                                                        />
+                                                    </th>
+                                                    <th className="px-4 py-3 text-left">Person</th>
+                                                    <th className="px-4 py-3 text-left">Email</th>
+                                                    <th className="px-4 py-3 text-left">Title</th>
+                                                    <th className="px-4 py-3 text-left">Company</th>
+                                                    <th className="px-4 py-3 text-left">Disqualified Because</th>
+                                                    <th className="px-4 py-3"></th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-gray-700/50">
+                                                {droppedLeads.map((lead) => {
+                                                    const reason = (lead.source_notes || 'AI Filtered').replace(/archived|no connection request sent|zombie/gi, '').trim() || 'Did not match ICP criteria'
+                                                    return (
+                                                        <tr key={lead.id} className="hover:bg-gray-700/30 transition-colors">
+                                                            <td className="px-4 py-3">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={selectedLeads.has(lead.id)}
+                                                                    onChange={() => toggleLeadSelection(lead.id)}
+                                                                    className="rounded border-gray-600 text-teal-500 focus:ring-teal-500 focus:ring-offset-gray-900"
+                                                                />
+                                                            </td>
+                                                            <td className="px-4 py-3 text-white font-medium">{lead.person_name || '—'}</td>
+                                                            <td className="px-4 py-3 text-gray-300">{lead.email || '—'}</td>
+                                                            <td className="px-4 py-3 text-gray-400">{lead.job_title || '—'}</td>
+                                                            <td className="px-4 py-3 text-gray-300">{lead.company_name || '—'}</td>
+                                                            <td className="px-4 py-3 text-gray-400 text-xs">{reason}</td>
+                                                            <td className="px-4 py-3 text-right">
+                                                                <button
+                                                                    onClick={() => openApprovalModal(lead.id)}
+                                                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-500/20 hover:bg-teal-500/30 text-teal-400 text-xs font-medium rounded-lg transition-colors"
+                                                                >
+                                                                    <ThumbsUp className="w-3 h-3" />
+                                                                    Reinstate
+                                                                </button>
+                                                            </td>
+                                                        </tr>
+                                                    )
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                )}
+                    </div>
 
             {/* Approval Modal */}
-            {approvalModalOpen && (
-                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-                    <div className="bg-gray-800 border border-gray-700 rounded-2xl p-6 max-w-md w-full">
-                        <h3 className="text-xl font-bold text-white mb-4">Reinstate Lead</h3>
-                        <p className="text-sm text-gray-400 mb-4">
-                            Why should this lead be reinstated? This feedback helps train the AI.
-                        </p>
-                        <textarea
-                            value={approvalReason}
-                            onChange={(e) => setApprovalReason(e.target.value)}
-                            className="w-full bg-gray-900/50 border border-gray-600 rounded-lg px-4 py-3 text-white text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-400/20 transition-all resize-none"
-                            rows={4}
-                            placeholder="e.g., This lead matches our ICP criteria because..."
-                        />
-                        <div className="flex gap-3 mt-6">
-                            <button
-                                onClick={() => setApprovalModalOpen(false)}
-                                className="flex-1 px-4 py-2.5 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
-                                disabled={submittingApproval}
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                onClick={confirmApproval}
-                                className="flex-1 px-4 py-2.5 bg-teal-500 hover:bg-teal-600 text-white rounded-lg transition-colors font-medium disabled:opacity-50"
-                                disabled={submittingApproval}
-                            >
-                                {submittingApproval ? 'Reinstating...' : 'Reinstate & Train'}
-                            </button>
+                {approvalModalOpen && (
+                    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                        <div className="bg-gray-800 border border-gray-700 rounded-2xl p-6 max-w-md w-full">
+                            <h3 className="text-xl font-bold text-white mb-4">Reinstate Lead</h3>
+                            <p className="text-sm text-gray-400 mb-4">
+                                Why should this lead be reinstated? This feedback helps train the AI.
+                            </p>
+                            <textarea
+                                value={approvalReason}
+                                onChange={(e) => setApprovalReason(e.target.value)}
+                                className="w-full bg-gray-900/50 border border-gray-600 rounded-lg px-4 py-3 text-white text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-400/20 transition-all resize-none"
+                                rows={4}
+                                placeholder="e.g., This lead matches our ICP criteria because..."
+                            />
+                            <div className="flex gap-3 mt-6">
+                                <button
+                                    onClick={() => setApprovalModalOpen(false)}
+                                    className="flex-1 px-4 py-2.5 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
+                                    disabled={submittingApproval}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={confirmApproval}
+                                    className="flex-1 px-4 py-2.5 bg-teal-500 hover:bg-teal-600 text-white rounded-lg transition-colors font-medium disabled:opacity-50"
+                                    disabled={submittingApproval}
+                                >
+                                    {submittingApproval ? 'Reinstating...' : 'Reinstate & Train'}
+                                </button>
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
-        </div>
-    )
+                )}
+            </div>
+            )
 }
 
-export default Logbook
+            export default Logbook
