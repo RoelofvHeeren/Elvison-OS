@@ -1,29 +1,57 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { CalendarDays, Building2, RefreshCw, Trash2, Upload, Filter, Target } from 'lucide-react'
+import { CalendarDays, Building2, RefreshCw, Trash2, Upload, Filter, Target, Loader, Check, Search, ChevronLeft, ChevronRight } from 'lucide-react'
 import SheetTable from '../components/SheetTable'
 import ImportModal from '../components/ImportModal'
-import { fetchHealth, fetchLeads, deleteLead, clearLeads } from '../utils/api'
+import { fetchLeads, deleteLead, approveLead } from '../utils/api'
 import { useIcp } from '../context/IcpContext'
 
-const CRM = () => {
-  const [rows, setRows] = useState([])
+function CRM() {
+  const [leads, setLeads] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [searchTerm, setSearchTerm] = useState('')
+  const [filterStatus, setFilterStatus] = useState('')
   const [filters, setFilters] = useState({ date: '', company: '', icpId: '' })
   const [health, setHealth] = useState({ sheet: 'pending', agent: 'pending' })
   const [isImportOpen, setIsImportOpen] = useState(false)
 
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize] = useState(100) // Fixed page size for now
+  const [pagination, setPagination] = useState({
+    total: 0,
+    totalPages: 0,
+    hasNext: false,
+    hasPrevious: false
+  })
+
   const { icps, fetchIcps } = useIcp()
 
-  const fetchRows = async () => {
+  const fetchRows = async (page = currentPage) => {
     try {
       setLoading(true)
       setError('')
-      const data = await fetchLeads()
+
+      // Call paginated API
+      const response = await fetchLeads({ page, pageSize })
+
+      // Handle both old (array) and new (paginated) response formats
+      let leadsData = [];
+      let paginationData = { total: 0, totalPages: 0, hasNext: false, hasPrevious: false };
+
+      if (Array.isArray(response)) {
+        // Old format (backward compatibility)
+        leadsData = response;
+      } else if (response.data) {
+        // New paginated format
+        leadsData = response.data;
+        paginationData = response.pagination;
+      }
+
       // Data is an array of objects: { person_name, company_name, job_title, email, linkedin_url, custom_data, ... }
 
-      const normalized = (data || []).map((lead, idx) => {
+      const normalized = (leadsData || []).map((lead, idx) => {
         // Parse complex custom_data if it exists
         let details = {}
         if (typeof lead.custom_data === 'string') {
@@ -51,7 +79,10 @@ const CRM = () => {
           icpId: lead.icp_id || '', // NEW: ICP ID
         };
       })
+
       setRows(normalized)
+      setPagination(paginationData)
+      setCurrentPage(page)
     } catch (err) {
       console.error(err)
       setError('Unable to fetch sheet rows. Check the MCP connection and try again.')
@@ -270,6 +301,38 @@ const CRM = () => {
         onDeleteRow={handleDeleteRow}
         onEnrichRow={handleEnrichRow}
       />
+
+      {/* Pagination Controls */}
+      {pagination.totalPages > 1 && (
+        <div className="glass-panel flex items-center justify-between px-6 py-4">
+          <div className="text-sm text-muted">
+            Showing page <span className="font-semibold text-accent">{currentPage}</span> of{' '}
+            <span className="font-semibold text-accent">{pagination.totalPages}</span>
+            {' '}({pagination.total} total leads)
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => fetchRows(currentPage - 1)}
+              disabled={!pagination.hasPrevious || loading}
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-2xl border transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:bg-primary/5 border-primary/20 text-primary"
+            >
+              <ChevronLeft className="w-4 h-4" />
+              Previous
+            </button>
+            <span className="px-4 py-2 text-sm font-semibold text-accent">
+              Page {currentPage}
+            </span>
+            <button
+              onClick={() => fetchRows(currentPage + 1)}
+              disabled={!pagination.hasNext || loading}
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-2xl border transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:bg-primary/5 border-primary/20 text-primary"
+            >
+              Next
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       <ImportModal
         isOpen={isImportOpen}
