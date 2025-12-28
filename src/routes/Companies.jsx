@@ -133,99 +133,99 @@ function Companies() {
     }
 
     return (
-        <div className="space-y-6 p-6 lg:p-8 max-w-[1600px] mx-auto animate-fade-in">
-            {/* Header */}
-            <div className="glass-panel p-6 bg-white/5 border border-white/10 backdrop-blur-md">
-                <div className="flex items-center gap-3 mb-2">
-                    <Building2 className="h-8 w-8 text-teal-400" />
-                    <h1 className="font-serif text-3xl font-bold text-white">Companies</h1>
-                </div>
-                <p className="text-sm text-gray-400">
-                    Review all companies with leads, view company profiles, and clean up bad data.
-                </p>
-            </div>
-
-            {/* Stats */}
-            <div className="grid gap-4 lg:grid-cols-3">
-                <div className="glass-panel flex items-center gap-4 px-5 py-4">
-                    <Building2 className="h-11 w-11 rounded-xl bg-primary/10 p-2.5 text-primary border border-primary/20" />
-                    <div>
-                        <p className="text-xs uppercase tracking-[0.25em] font-bold text-primary">Total Companies</p>
-                        <p className="font-serif text-2xl font-bold text-accent">{companies.length}</p>
+        <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-900 p-6 lg:p-8">
+            <div className="max-w-[1400px] mx-auto space-y-6">
+                {/* Header */}
+                <div className="bg-gray-800/50 backdrop-blur-md border border-gray-700/50 rounded-2xl p-6">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <h1 className="font-serif text-3xl font-bold text-white flex items-center gap-3">
+                                <Building2 className="h-8 w-8 text-teal-400" />
+                                Companies
+                            </h1>
+                            <p className="text-sm text-gray-400 mt-1">
+                                Review all companies with leads, view company profiles, and clean up bad data.
+                            </p>
+                        </div>
                     </div>
                 </div>
-                <div className="glass-panel flex items-center gap-4 px-5 py-4">
-                    <Users className="h-11 w-11 rounded-xl bg-primary/10 p-2.5 text-primary border border-primary/20" />
-                    <div>
-                        <p className="text-xs uppercase tracking-[0.25em] font-bold text-primary">Total Leads</p>
-                        <p className="font-serif text-2xl font-bold text-accent">
+
+                {/* Stats */}
+                <div className="grid gap-4 lg:grid-cols-3">
+                    <div className="bg-gray-800/50 backdrop-blur-md border border-gray-700/50 rounded-2xl px-6 py-4">
+                        <p className="text-xs uppercase tracking-wider font-semibold text-gray-400 mb-1">Total Companies</p>
+                        <p className="text-3xl font-bold text-white">{companies.length}</p>
+                    </div>
+                    <div className="bg-gray-800/50 backdrop-blur-md border border-gray-700/50 rounded-2xl px-6 py-4">
+                        <p className="text-xs uppercase tracking-wider font-semibold text-gray-400 mb-1">Total Leads</p>
+                        <p className="text-3xl font-bold text-white">
                             {companies.reduce((sum, c) => sum + c.leadCount, 0)}
                         </p>
                     </div>
-                </div>
-                <div className="glass-panel flex items-center gap-4 px-5 py-4">
-                    <Building2 className="h-11 w-11 rounded-xl bg-primary/10 p-2.5 text-primary border border-primary/20" />
-                    <div>
-                        <p className="text-xs uppercase tracking-[0.25em] font-bold text-primary">Avg Leads/Company</p>
-                        <p className="font-serif text-2xl font-bold text-accent">
+                    <div className="bg-gray-800/50 backdrop-blur-md border border-gray-700/50 rounded-2xl px-6 py-4">
+                        <p className="text-xs uppercase tracking-wider font-semibold text-gray-400 mb-1">Avg Leads/Company</p>
+                        <p className="text-3xl font-bold text-white">
                             {companies.length > 0
                                 ? (companies.reduce((sum, c) => sum + c.leadCount, 0) / companies.length).toFixed(1)
                                 : '0'}
                         </p>
                     </div>
                 </div>
-            </div>
 
-            {/* ICP Filter */}
-            <div className="glass-panel px-5 py-5">
-                <div className="flex flex-col gap-1 max-w-md">
-                    <label htmlFor="icp" className="text-[11px] font-semibold uppercase tracking-[0.25em] text-muted flex items-center gap-2">
-                        Filter by Strategy
-                    </label>
-                    <select
-                        id="icp"
-                        value={filters.icpId}
-                        onChange={(e) => setFilters({ icpId: e.target.value })}
-                        className="w-full rounded-2xl border border-outline/80 bg-white/80 px-3 py-2.5 text-sm text-ink outline-none transition-all duration-200 focus:border-primary focus:ring-2 focus:ring-primary/10"
-                    >
-                        <option value="">All Strategies</option>
-                        {icps.map(icp => (
-                            <option key={icp.id} value={icp.id}>{icp.name}</option>
-                        ))}
-                    </select>
-                </div>
-            </div>
+                {/* ICP Filter */}
+                {icps.length > 0 && (
+                    <div className="bg-gray-800/50 backdrop-blur-md border border-gray-700/50 rounded-2xl px-6 py-4">
+                        <label className="text-xs uppercase tracking-wider font-semibold text-gray-400 mb-2 block">
+                            Filter by Strategy
+                        </label>
+                        <select
+                            value={filters.icpId}
+                            onChange={(e) => setFilters({ icpId: e.target.value })}
+                            className="bg-gray-700/50 border border-gray-600 rounded-lg px-4 py-2.5 text-white text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-400/20 transition-all max-w-xs"
+                        >
+                            <option value="">All Strategies</option>
+                            {icps.map(icp => (
+                                <option key={icp.id} value={icp.id}>{icp.name}</option>
+                            ))}
+                        </select>
+                    </div>
+                )}
 
-            {/* Companies List */}
-            <div className="glass-panel overflow-hidden">
+                {/* Companies List */}
                 {loading ? (
-                    <div className="px-6 py-12 text-center text-muted">Loading companies...</div>
+                    <div className="bg-gray-800/50 backdrop-blur-md border border-gray-700/50 rounded-2xl px-6 py-12 text-center">
+                        <p className="text-gray-400">Loading companies...</p>
+                    </div>
                 ) : companies.length === 0 ? (
-                    <div className="px-6 py-12 text-center">
-                        <Building2 className="h-12 w-12 text-muted/50 mx-auto mb-3" />
-                        <p className="text-muted font-medium">No companies found</p>
-                        <p className="text-sm text-muted/70 mt-1">Start generating leads to see companies here.</p>
+                    <div className="bg-gray-800/50 backdrop-blur-md border border-gray-700/50 rounded-2xl px-6 py-12 text-center">
+                        <Building2 className="h-12 w-12 text-gray-600 mx-auto mb-3" />
+                        <p className="text-white font-medium">No companies found</p>
+                        <p className="text-sm text-gray-400 mt-1">Start generating leads to see companies here.</p>
                     </div>
                 ) : (
-                    <div className="divide-y divide-glass-border">
+                    <div className="space-y-4">
                         {companies.map((company) => (
-                            <div key={company.name} className="bg-white">
+                            <div key={company.name} className="bg-gray-800/50 backdrop-blur-md border border-gray-700/50 rounded-2xl overflow-hidden">
                                 {/* Company Header */}
                                 <div
-                                    className="px-6 py-4 hover:bg-surface/30 transition-colors cursor-pointer flex items-center justify-between"
+                                    className="px-6 py-4 cursor-pointer hover:bg-gray-700/30 transition-colors flex items-center justify-between"
                                     onClick={() => toggleCompanyExpand(company.name)}
                                 >
                                     <div className="flex items-center gap-4 flex-1">
-                                        <Building2 className="h-5 w-5 text-primary" />
-                                        <div>
-                                            <h3 className="font-semibold text-accent">{company.name}</h3>
+                                        <div className="flex-shrink-0">
+                                            <div className="w-12 h-12 rounded-full bg-teal-500/20 border border-teal-400/30 flex items-center justify-center">
+                                                <Building2 className="h-6 w-6 text-teal-400" />
+                                            </div>
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <h3 className="font-semibold text-white text-lg">{company.name}</h3>
                                             {company.website && (
                                                 <a
                                                     href={company.website.startsWith('http') ? company.website : `https://${company.website}`}
                                                     target="_blank"
                                                     rel="noreferrer"
                                                     onClick={(e) => e.stopPropagation()}
-                                                    className="text-xs text-primary hover:underline"
+                                                    className="text-sm text-teal-400 hover:underline"
                                                 >
                                                     {company.website}
                                                 </a>
@@ -234,82 +234,80 @@ function Companies() {
                                     </div>
 
                                     <div className="flex items-center gap-4">
-                                        <div className="text-sm text-muted">
-                                            <span className="font-semibold text-accent">{company.leadCount}</span> leads
-                                        </div>
+                                        <span className="text-gray-400 text-sm">
+                                            <span className="text-white font-semibold">{company.leadCount}</span> leads
+                                        </span>
                                         <button
                                             onClick={(e) => {
                                                 e.stopPropagation()
                                                 handleDeleteCompany(company.name)
                                             }}
-                                            className="text-muted/50 hover:text-rose-500 transition-colors p-2"
+                                            className="p-2 text-gray-400 hover:text-red-400 transition-colors rounded-lg hover:bg-red-500/10"
                                             title="Delete all leads from this company"
                                         >
-                                            <Trash2 className="h-4 w-4" />
+                                            <Trash2 className="h-5 w-5" />
                                         </button>
                                         {expandedCompany === company.name ? (
-                                            <ChevronUp className="h-5 w-5 text-muted" />
+                                            <ChevronUp className="h-5 w-5 text-gray-400" />
                                         ) : (
-                                            <ChevronDown className="h-5 w-5 text-muted" />
+                                            <ChevronDown className="h-5 w-5 text-gray-400" />
                                         )}
                                     </div>
                                 </div>
 
                                 {/* Expanded Content */}
                                 {expandedCompany === company.name && (
-                                    <div className="px-6 pb-6 bg-surface/10">
+                                    <div className="px-6 pb-6 border-t border-gray-700/50">
                                         {/* Company Profile */}
                                         {company.profile && (
-                                            <div className="mb-4 p-4 bg-white rounded-lg border border-glass-border">
-                                                <h4 className="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-2">
+                                            <div className="mt-4 mb-6 p-4 bg-gray-700/30 rounded-lg border border-gray-600/50">
+                                                <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">
                                                     Company Profile
                                                 </h4>
-                                                <p className="text-sm text-muted leading-relaxed">{company.profile}</p>
+                                                <p className="text-sm text-gray-300 leading-relaxed">{company.profile}</p>
                                             </div>
                                         )}
 
-                                        {/* Leads Table */}
-                                        <div className="bg-white rounded-lg border border-glass-border overflow-hidden">
-                                            <table className="w-full text-sm">
-                                                <thead className="bg-surface/20 text-xs font-bold uppercase tracking-[0.15em] text-muted">
-                                                    <tr>
-                                                        <th className="px-4 py-3 text-left">Name</th>
-                                                        <th className="px-4 py-3 text-left">Title</th>
-                                                        <th className="px-4 py-3 text-left">Email</th>
-                                                        <th className="px-4 py-3 text-left">LinkedIn</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-glass-border">
-                                                    {company.leads.map((lead) => (
-                                                        <tr key={lead.id} className="hover:bg-surface/20 transition-colors">
-                                                            <td className="px-4 py-3 font-medium text-accent">{lead.personName}</td>
-                                                            <td className="px-4 py-3 text-muted">{lead.jobTitle || '—'}</td>
-                                                            <td className="px-4 py-3">
-                                                                {lead.email ? (
+                                        {/* Leads */}
+                                        <div className="space-y-3">
+                                            {company.leads.map((lead) => {
+                                                const initials = lead.personName?.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || '?'
+                                                return (
+                                                    <div key={lead.id} className="bg-gray-700/30 rounded-lg p-4 border border-gray-600/50 hover:border-gray-500/50 transition-colors">
+                                                        <div className="flex items-center gap-4">
+                                                            <div className="flex-shrink-0">
+                                                                <div className="w-10 h-10 rounded-full bg-teal-500/20 border border-teal-400/30 flex items-center justify-center">
+                                                                    <span className="text-teal-400 font-semibold text-sm">{initials}</span>
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex-1 min-w-0">
+                                                                <h4 className="font-semibold text-white">{lead.personName}</h4>
+                                                                <p className="text-sm text-gray-400">{lead.jobTitle || 'No title'}</p>
+                                                            </div>
+                                                            <div className="flex items-center gap-3">
+                                                                {lead.email && (
                                                                     <a
                                                                         href={`mailto:${lead.email}`}
-                                                                        className="text-primary hover:underline"
+                                                                        className="text-teal-400 hover:text-teal-300 text-sm font-medium"
                                                                     >
-                                                                        {lead.email}
+                                                                        Email
                                                                     </a>
-                                                                ) : '—'}
-                                                            </td>
-                                                            <td className="px-4 py-3">
-                                                                {lead.linkedinUrl ? (
+                                                                )}
+                                                                {lead.linkedinUrl && (
                                                                     <a
                                                                         href={lead.linkedinUrl}
                                                                         target="_blank"
                                                                         rel="noreferrer"
-                                                                        className="text-primary hover:underline"
+                                                                        className="text-teal-400 hover:text-teal-300 text-sm font-medium"
                                                                     >
-                                                                        View
+                                                                        LinkedIn
                                                                     </a>
-                                                                ) : '—'}
-                                                            </td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )
+                                            })}
                                         </div>
                                     </div>
                                 )}
