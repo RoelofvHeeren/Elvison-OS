@@ -16,6 +16,10 @@ function CRM() {
   const [health, setHealth] = useState({ sheet: 'pending', agent: 'pending' })
   const [isImportOpen, setIsImportOpen] = useState(false)
 
+  // Selection state
+  const [selectedLeads, setSelectedLeads] = useState(new Set())
+  const [selectAll, setSelectAll] = useState(false)
+
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize] = useState(100) // Fixed page size for now
@@ -147,9 +151,39 @@ function CRM() {
     await Promise.allSettled([fetchRows(), fetchStatus(), fetchIcps()])
   }
 
-  // CSV Export Function
+  // Selection handlers
+  const toggleLeadSelection = (leadId) => {
+    const newSelection = new Set(selectedLeads)
+    if (newSelection.has(leadId)) {
+      newSelection.delete(leadId)
+    } else {
+      newSelection.add(leadId)
+    }
+    setSelectedLeads(newSelection)
+    setSelectAll(newSelection.size === filteredRows.length && filteredRows.length > 0)
+  }
+
+  const toggleSelectAll = () => {
+    if (selectAll) {
+      setSelectedLeads(new Set())
+      setSelectAll(false)
+    } else {
+      const allIds = new Set(filteredRows.map(row => row.id))
+      setSelectedLeads(allIds)
+      setSelectAll(true)
+    }
+  }
+
+  // CSV Export Function - Updated to export only selected leads
   const exportToCSV = () => {
-    // Use filtered rows to respect current filters
+    if (selectedLeads.size === 0) {
+      alert('Please select at least one lead to export.')
+      return
+    }
+
+    // Filter to only selected leads
+    const leadsToExport = filteredRows.filter(row => selectedLeads.has(row.id))
+
     const timestamp = new Date().toISOString().split('T')[0];
     const filename = `leads_export_${timestamp}.csv`;
 
@@ -157,7 +191,7 @@ function CRM() {
     const headers = ['Name', 'Email', 'Title', 'Company', 'LinkedIn', 'Phone Numbers', 'Connection Request', 'Date Added'];
 
     // Convert rows to CSV format
-    const csvRows = filteredRows.map(row => [
+    const csvRows = leadsToExport.map(row => [
       row.name,
       row.email,
       row.title,
@@ -193,6 +227,10 @@ function CRM() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+
+    // Clear selection after export
+    setSelectedLeads(new Set())
+    setSelectAll(false)
   }
 
   useEffect(() => {
@@ -356,6 +394,10 @@ function CRM() {
         error={error}
         onDeleteRow={handleDeleteRow}
         onEnrichRow={handleEnrichRow}
+        selectedLeads={selectedLeads}
+        onToggleSelection={toggleLeadSelection}
+        onToggleSelectAll={toggleSelectAll}
+        selectAll={selectAll}
       />
 
       {/* Pagination Controls */}

@@ -3,6 +3,7 @@ import PropTypes from 'prop-types'
 import { Trash2 } from 'lucide-react'
 
 const columns = [
+  { key: 'select', label: '', width: 'w-12' },
   { key: 'index', label: '#', width: 'w-12' },
   { key: 'date', label: 'Date Added', width: 'w-28' },
   { key: 'name', label: 'Name', width: 'w-40' },
@@ -19,7 +20,7 @@ const columns = [
   { key: 'actions', label: '', width: 'w-10' },
 ]
 
-const SheetTable = ({ rows, loading, error, onDeleteRow }) => {
+const SheetTable = ({ rows, loading, error, onDeleteRow, selectedLeads, onToggleSelection, onToggleSelectAll, selectAll }) => {
   const [editingCell, setEditingCell] = useState(null)
   const [editValue, setEditValue] = useState('')
 
@@ -57,7 +58,16 @@ const SheetTable = ({ rows, loading, error, onDeleteRow }) => {
             <tr>
               {columns.map((col) => (
                 <th key={col.key} className={`px-4 py-3 ${col.width}`}>
-                  {col.label}
+                  {col.key === 'select' ? (
+                    <input
+                      type="checkbox"
+                      checked={selectAll}
+                      onChange={onToggleSelectAll}
+                      className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
+                    />
+                  ) : (
+                    col.label
+                  )}
                 </th>
               ))}
             </tr>
@@ -81,6 +91,14 @@ const SheetTable = ({ rows, loading, error, onDeleteRow }) => {
                   key={`${row.email}-${idx}`}
                   className="transition-all duration-200 hover:bg-surface/30 group"
                 >
+                  <td className="px-4 py-3.5">
+                    <input
+                      type="checkbox"
+                      checked={selectedLeads?.has(row.id) || false}
+                      onChange={() => onToggleSelection(row.id)}
+                      className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
+                    />
+                  </td>
                   <td className="px-4 py-3.5 text-xs text-muted/50 font-mono">{row.originalIndex || (idx + 1)}</td>
                   <td className="px-4 py-3.5 text-xs font-medium text-muted">{row.date || '—'}</td>
                   <td
