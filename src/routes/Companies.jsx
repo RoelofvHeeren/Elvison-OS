@@ -133,14 +133,14 @@ function Companies() {
     }
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-900 p-6 lg:p-8">
+        <div className="min-h-screen p-6 lg:p-8">
             <div className="max-w-[1400px] mx-auto space-y-6">
                 {/* Header */}
-                <div className="bg-gray-800/50 backdrop-blur-md border border-gray-700/50 rounded-2xl p-6">
+                <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-6">
                     <div className="flex items-center justify-between">
                         <div>
                             <h1 className="font-serif text-3xl font-bold text-white flex items-center gap-3">
-                                <Building2 className="h-8 w-8 text-teal-400" />
+                                <Building2 className="w-8 h-8 text-[#139187]" />
                                 Companies
                             </h1>
                             <p className="text-sm text-gray-400 mt-1">
@@ -150,9 +150,9 @@ function Companies() {
                     </div>
                 </div>
 
-                {/* Stats */}
-                <div className="grid gap-4 lg:grid-cols-3">
-                    <div className="bg-gray-800/50 backdrop-blur-md border border-gray-700/50 rounded-2xl px-6 py-4">
+                {/* Stats Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-xl p-6">
                         <p className="text-xs uppercase tracking-wider font-semibold text-gray-400 mb-1">Total Companies</p>
                         <p className="text-3xl font-bold text-white">{companies.length}</p>
                     </div>
@@ -181,7 +181,7 @@ function Companies() {
                         <select
                             value={filters.icpId}
                             onChange={(e) => setFilters({ icpId: e.target.value })}
-                            className="bg-gray-700/50 border border-gray-600 rounded-lg px-4 py-2.5 text-white text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-400/20 transition-all max-w-xs"
+                            className="w-full md:w-64 bg-black/20 border border-white/10 rounded-lg px-4 py-2 text-white text-sm focus:outline-none focus:border-[#139187] focus:ring-2 focus:ring-[#139187]/20 transition-all"
                         >
                             <option value="">All Strategies</option>
                             {icps.map(icp => (
@@ -205,16 +205,16 @@ function Companies() {
                 ) : (
                     <div className="space-y-4">
                         {companies.map((company) => (
-                            <div key={company.name} className="bg-gray-800/50 backdrop-blur-md border border-gray-700/50 rounded-2xl overflow-hidden">
+                            <div key={company.name} className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl overflow-hidden">
                                 {/* Company Header */}
                                 <div
-                                    className="px-6 py-4 cursor-pointer hover:bg-gray-700/30 transition-colors flex items-center justify-between"
+                                    className="p-6 cursor-pointer hover:bg-white/5 transition-colors flex items-center justify-between"
                                     onClick={() => toggleCompanyExpand(company.name)}
                                 >
                                     <div className="flex items-center gap-4 flex-1">
                                         <div className="flex-shrink-0">
-                                            <div className="w-12 h-12 rounded-full bg-teal-500/20 border border-teal-400/30 flex items-center justify-center">
-                                                <Building2 className="h-6 w-6 text-teal-400" />
+                                            <div className="w-14 h-14 rounded-full bg-[#139187]/10 border border-[#139187]/20 flex items-center justify-center">
+                                                <Building2 className="w-7 h-7 text-[#139187]" />
                                             </div>
                                         </div>
                                         <div className="flex-1 min-w-0">
@@ -242,7 +242,7 @@ function Companies() {
                                                 e.stopPropagation()
                                                 handleDeleteCompany(company.name)
                                             }}
-                                            className="p-2 text-gray-400 hover:text-red-400 transition-colors rounded-lg hover:bg-red-500/10"
+                                            className="px-4 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-lg transition-colors text-sm border border-rose-500/20"
                                             title="Delete all leads from this company"
                                         >
                                             <Trash2 className="h-5 w-5" />
@@ -257,7 +257,7 @@ function Companies() {
 
                                 {/* Expanded Content */}
                                 {expandedCompany === company.name && (
-                                    <div className="px-6 pb-6 border-t border-gray-700/50">
+                                    <div className="border-t border-white/5 p-6 bg-black/20">
                                         {/* Company Profile */}
                                         {company.profile && (
                                             <div className="mt-4 mb-6 p-4 bg-gray-700/30 rounded-lg border border-gray-600/50">
@@ -273,16 +273,16 @@ function Companies() {
                                             {company.leads.map((lead) => {
                                                 const initials = lead.personName?.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || '?'
                                                 return (
-                                                    <div key={lead.id} className="bg-gray-700/30 rounded-lg p-4 border border-gray-600/50 hover:border-gray-500/50 transition-colors">
+                                                    <div key={lead.id} className="flex items-center gap-4 p-4 bg-black/20 border border-white/10 rounded-xl hover:border-[#139187]/30 transition-colors">
                                                         <div className="flex items-center gap-4">
                                                             <div className="flex-shrink-0">
-                                                                <div className="w-10 h-10 rounded-full bg-teal-500/20 border border-teal-400/30 flex items-center justify-center">
+                                                                <div className="w-10 h-10 rounded-full bg-[#139187]/10 border border-[#139187]/20 flex items-center justify-center flex-shrink-0">
                                                                     <span className="text-teal-400 font-semibold text-sm">{initials}</span>
                                                                 </div>
                                                             </div>
                                                             <div className="flex-1 min-w-0">
                                                                 <h4 className="font-semibold text-white">{lead.personName}</h4>
-                                                                <p className="text-sm text-gray-400">{lead.jobTitle || 'No title'}</p>
+                                                                <span className="text-sm font-bold text-[#139187]">{lead.jobTitle || 'No title'}</span>
                                                             </div>
                                                             <div className="flex items-center gap-3">
                                                                 {lead.email && (

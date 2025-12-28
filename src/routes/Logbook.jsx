@@ -112,12 +112,12 @@ const Logbook = () => {
     }
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-900 p-6 lg:p-8">
+        <div className="min-h-screen p-6 lg:p-8">
             <div className="max-w-[1400px] mx-auto space-y-6">
                 {/* Header */}
-                <div className="bg-gray-800/50 backdrop-blur-md border border-gray-700/50 rounded-2xl p-6">
+                <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-6">
                     <h1 className="font-serif text-3xl font-bold text-white flex items-center gap-3">
-                        <Book className="w-8 h-8 text-teal-400" />
+                        <Book className="w-8 h-8 text-[#139187]" />
                         Workflow Logbook
                     </h1>
                     <p className="text-sm text-gray-400 mt-1">
@@ -126,7 +126,7 @@ const Logbook = () => {
                 </div>
 
                 {/* Tabs */}
-                <div className="bg-gray-800/50 backdrop-blur-md border border-gray-700/50 rounded-2xl overflow-hidden">
+                <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl overflow-hidden">
                     <nav className="flex" aria-label="Tabs">
                         <button
                             onClick={() => setActiveTab('history')}
@@ -161,7 +161,7 @@ const Logbook = () => {
                         <div className="flex justify-end">
                             <button
                                 onClick={loadRuns}
-                                className="flex items-center gap-2 px-4 py-2 bg-gray-700/50 hover:bg-gray-700 text-gray-300 rounded-lg transition-colors"
+                                className="flex items-center gap-2 px-4 py-2 bg-black/20 hover:bg-white/5 text-gray-300 rounded-lg transition-colors border border-white/10"
                             >
                                 <RefreshCw className={`w-4 h-4 ${loadingRuns ? 'animate-spin' : ''}`} />
                                 Refresh
@@ -187,16 +187,16 @@ const Logbook = () => {
                                                 : 'text-gray-400'
 
                                     return (
-                                        <div key={run.id} className="bg-gray-800/50 backdrop-blur-md border border-gray-700/50 rounded-2xl overflow-hidden">
+                                        <div key={run.id} className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl overflow-hidden">
                                             {/* Run Header */}
                                             <div
-                                                className="p-6 cursor-pointer hover:bg-gray-700/30 transition-colors"
+                                                className="p-6 cursor-pointer hover:bg-white/5 transition-colors"
                                                 onClick={() => toggleRunExpand(run.id)}
                                             >
                                                 <div className="flex items-start justify-between mb-4">
                                                     <div className="flex items-center gap-3">
-                                                        <div className="w-12 h-12 rounded-full bg-teal-500/20 border border-teal-400/30 flex items-center justify-center">
-                                                            <Clock className="w-6 h-6 text-teal-400" />
+                                                        <div className="w-12 h-12 rounded-full bg-[#139187]/10 border border-[#139187]/20 flex items-center justify-center">
+                                                            <Clock className="w-6 h-6 text-[#139187]" />
                                                         </div>
                                                         <div>
                                                             <h3 className="font-semibold text-white text-lg">
@@ -228,13 +228,13 @@ const Logbook = () => {
 
                                                 {/* Stats Grid */}
                                                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                                                    <div className="bg-gray-900/50 rounded-lg p-4 border border-gray-700/50">
-                                                        <Building className="w-5 h-5 text-teal-400 mb-2" />
+                                                    <div className="bg-black/20 rounded-lg p-4 border border-white/10">
+                                                        <Building className="w-5 h-5 text-[#139187] mb-2" />
                                                         <p className="text-2xl font-bold text-white">{stats.companies}</p>
                                                         <p className="text-xs text-gray-400 uppercase tracking-wider">Companies</p>
                                                     </div>
                                                     <div className="bg-gray-900/50 rounded-lg p-4 border border-gray-700/50">
-                                                        <Users className="w-5 h-5 text-teal-400 mb-2" />
+                                                        <Users className="w-5 h-5 text-[#139187] mb-2" />
                                                         <p className="text-2xl font-bold text-white">{stats.totalLeads}</p>
                                                         <p className="text-xs text-gray-400 uppercase tracking-wider">Total Leads</p>
                                                     </div>
@@ -244,7 +244,7 @@ const Logbook = () => {
                                                         <p className="text-xs text-gray-400 uppercase tracking-wider">Qualified</p>
                                                     </div>
                                                     <div className="bg-gray-900/50 rounded-lg p-4 border border-gray-700/50">
-                                                        <Filter className="w-5 h-5 text-yellow-400 mb-2" />
+                                                        <Filter className="w-5 h-5 text-[#139187] mb-2" />
                                                         <p className="text-2xl font-bold text-white">{stats.disqualified}</p>
                                                         <p className="text-xs text-gray-400 uppercase tracking-wider">Disqualified</p>
                                                     </div>
@@ -261,9 +261,9 @@ const Logbook = () => {
                                                         {stats.logs.length > 0 ? (
                                                             <div className="space-y-2 max-h-96 overflow-y-auto">
                                                                 {stats.logs.map((log, idx) => (
-                                                                    <div key={idx} className="bg-gray-900/50 rounded-lg p-3 border border-gray-700/50">
+                                                                    <div key={idx} className="bg-black/20 rounded-lg p-3 border border-white/10">
                                                                         <div className="flex items-start gap-3">
-                                                                            <div className="flex-shrink-0 w-2 h-2 bg-teal-400 rounded-full mt-2"></div>
+                                                                            <div className="flex-shrink-0 w-2 h-2 bg-[#139187] rounded-full mt-2"></div>
                                                                             <div className="flex-1">
                                                                                 <p className="text-sm text-gray-300">{log.message || log}</p>
                                                                                 {log.timestamp && (
@@ -300,16 +300,16 @@ const Logbook = () => {
                 {/* TAB CONTENT: DISQUALIFIED LEADS */}
                 {activeTab === 'disqualified' && (
                     <div className="space-y-4">
-                        <div className="flex justify-between items-center bg-yellow-500/10 backdrop-blur-md border border-yellow-500/30 p-4 rounded-xl">
+                        <div className="flex justify-between items-center bg-white/5 backdrop-blur-md border border-white/10 p-4 rounded-xl">
                             <div className="flex items-center gap-3">
-                                <AlertCircle className="text-yellow-400 w-5 h-5" />
+                                <AlertCircle className="text-[#139187] w-5 h-5" />
                                 <p className="text-sm text-yellow-200">
                                     These leads were filtered out by the AI Agent. Review and reinstate them to restore to CRM.
                                 </p>
                             </div>
                             <button
                                 onClick={loadDroppedLeads}
-                                className="p-2 hover:bg-yellow-500/20 rounded-lg text-yellow-400 transition-colors"
+                                className="p-2 hover:bg-white/5 rounded-lg text-gray-400 transition-colors"
                             >
                                 <RefreshCw className={`w-4 h-4 ${loadingLeads ? 'animate-spin' : ''}`} />
                             </button>
@@ -324,10 +324,10 @@ const Logbook = () => {
                                 <p className="text-sm text-gray-400 mt-1">All leads passed AI validation</p>
                             </div>
                         ) : (
-                            <div className="bg-gray-800/50 backdrop-blur-md border border-gray-700/50 rounded-2xl overflow-hidden">
+                            <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl overflow-hidden">
                                 <div className="overflow-x-auto">
                                     <table className="w-full text-sm">
-                                        <thead className="bg-gray-900/50 text-xs font-semibold uppercase tracking-wider text-gray-400">
+                                        <thead className="bg-black/20 text-xs font-semibold uppercase tracking-wider text-gray-400">
                                             <tr>
                                                 <th className="px-4 py-3 text-left">Person</th>
                                                 <th className="px-4 py-3 text-left">Email</th>
@@ -337,9 +337,9 @@ const Logbook = () => {
                                                 <th className="px-4 py-3"></th>
                                             </tr>
                                         </thead>
-                                        <tbody className="divide-y divide-gray-700/50">
+                                        <tbody className="divide-y divide-white/5">
                                             {droppedLeads.map((lead) => (
-                                                <tr key={lead.id} className="hover:bg-gray-700/30 transition-colors">
+                                                <tr key={lead.id} className="hover:bg-white/5 transition-colors">
                                                     <td className="px-4 py-3 text-white font-medium">{lead.person_name || '—'}</td>
                                                     <td className="px-4 py-3 text-gray-300">{lead.email || '—'}</td>
                                                     <td className="px-4 py-3 text-gray-400">{lead.job_title || '—'}</td>
@@ -348,7 +348,7 @@ const Logbook = () => {
                                                     <td className="px-4 py-3 text-right">
                                                         <button
                                                             onClick={() => openApprovalModal(lead.id)}
-                                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-500/20 hover:bg-teal-500/30 text-teal-400 text-xs font-medium rounded-lg transition-colors"
+                                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#139187]/20 hover:bg-[#139187]/30 text-[#139187] text-xs font-medium rounded-lg transition-colors"
                                                         >
                                                             <ThumbsUp className="w-3 h-3" />
                                                             Reinstate
@@ -390,7 +390,7 @@ const Logbook = () => {
                             </button>
                             <button
                                 onClick={confirmApproval}
-                                className="flex-1 px-4 py-2.5 bg-teal-500 hover:bg-teal-600 text-white rounded-lg transition-colors font-medium disabled:opacity-50"
+                                className="flex-1 px-4 py-2.5 bg-[#139187]/20 hover:bg-[#139187]/30 text-[#139187] rounded-lg transition-colors font-medium disabled:opacity-50"
                                 disabled={submittingApproval}
                             >
                                 {submittingApproval ? 'Reinstating...' : 'Reinstate & Train'}
