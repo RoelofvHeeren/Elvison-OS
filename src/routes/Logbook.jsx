@@ -329,6 +329,14 @@ const Logbook = () => {
                                     <table className="w-full text-sm">
                                         <thead className="bg-black/20 text-xs font-semibold uppercase tracking-wider text-gray-400">
                                             <tr>
+                                                <th className="px-4 py-3 text-left">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectAll}
+                                                        onChange={toggleSelectAll}
+                                                        className="rounded border-gray-600 text-[#139187] focus:ring-[#139187] focus:ring-offset-gray-900"
+                                                    />
+                                                </th>
                                                 <th className="px-4 py-3 text-left">Person</th>
                                                 <th className="px-4 py-3 text-left">Email</th>
                                                 <th className="px-4 py-3 text-left">Title</th>
@@ -338,24 +346,35 @@ const Logbook = () => {
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-white/5">
-                                            {droppedLeads.map((lead) => (
-                                                <tr key={lead.id} className="hover:bg-white/5 transition-colors">
-                                                    <td className="px-4 py-3 text-white font-medium">{lead.person_name || '—'}</td>
-                                                    <td className="px-4 py-3 text-gray-300">{lead.email || '—'}</td>
-                                                    <td className="px-4 py-3 text-gray-400">{lead.job_title || '—'}</td>
-                                                    <td className="px-4 py-3 text-gray-300">{lead.company_name || '—'}</td>
-                                                    <td className="px-4 py-3 text-yellow-400 text-xs">{lead.source_notes || 'AI Filtered'}</td>
-                                                    <td className="px-4 py-3 text-right">
-                                                        <button
-                                                            onClick={() => openApprovalModal(lead.id)}
-                                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#139187]/20 hover:bg-[#139187]/30 text-[#139187] text-xs font-medium rounded-lg transition-colors"
-                                                        >
-                                                            <ThumbsUp className="w-3 h-3" />
-                                                            Reinstate
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                            ))}
+                                            {droppedLeads.map((lead) => {
+                                                const reason = (lead.source_notes || 'AI Filtered').replace(/archived|no connection request sent|zombie/gi, '').trim() || 'Did not match ICP criteria'
+                                                return (
+                                                    <tr key={lead.id} className="hover:bg-white/5 transition-colors">
+                                                        <td className="px-4 py-3">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={selectedLeads.has(lead.id)}
+                                                                onChange={() => toggleLeadSelection(lead.id)}
+                                                                className="rounded border-gray-600 text-[#139187] focus:ring-[#139187] focus:ring-offset-gray-900"
+                                                            />
+                                                        </td>
+                                                        <td className="px-4 py-3 text-white font-medium">{lead.person_name || '—'}</td>
+                                                        <td className="px-4 py-3 text-gray-300">{lead.email || '—'}</td>
+                                                        <td className="px-4 py-3 text-gray-400">{lead.job_title || '—'}</td>
+                                                        <td className="px-4 py-3 text-gray-300">{lead.company_name || '—'}</td>
+                                                        <td className="px-4 py-3 text-yellow-400 text-xs">{lead.source_notes || 'AI Filtered'}</td>
+                                                        <td className="px-4 py-3 text-right">
+                                                            <button
+                                                                onClick={() => openApprovalModal(lead.id)}
+                                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#139187]/20 hover:bg-[#139187]/30 text-[#139187] text-xs font-medium rounded-lg transition-colors"
+                                                            >
+                                                                <ThumbsUp className="w-3 h-3" />
+                                                                Reinstate
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                )
+                                            })}
                                         </tbody>
                                     </table>
                                 </div>
