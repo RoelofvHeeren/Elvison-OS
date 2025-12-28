@@ -30,8 +30,14 @@ export const completeOnboarding = async () => {
 
 // --- LEADS & CRM ---
 
-export const fetchLeads = async () => {
-  const { data } = await client.get('/api/leads')
+export const fetchLeads = async (params = {}) => {
+  const query = new URLSearchParams(params).toString()
+  const { data } = await client.get(`/api/leads?${query}`)
+  return data
+}
+
+export const approveLead = async (id, reason) => {
+  const { data } = await client.post(`/api/leads/${id}/approve`, { reason })
   return data
 }
 

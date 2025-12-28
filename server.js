@@ -270,6 +270,9 @@ app.post('/api/agent-prompts', requireAuth, async (req, res) => {
 })
 
 import OpenAI from 'openai'
+import { Runner } from "@openai/agents";
+import { OutreachService } from "./src/backend/services/outreach-service.js";
+import { createOutreachAgent } from "./src/backend/agent-setup.js";
 
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
@@ -624,14 +627,101 @@ app.post('/api/crm-columns', requireAuth, async (req, res) => {
 
 // Get Leads
 app.get('/api/leads', requireAuth, async (req, res) => {
+    const { status } = req.query;
     try {
-        const { rows } = await query('SELECT * FROM leads WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100', [req.userId])
+        let queryStr = 'SELECT * FROM leads WHERE user_id = $1';
+        const params = [req.userId];
+
+        if (status) {
+            queryStr += ' AND status = $2';
+            params.push(status);
+        } else {
+            // Default: Hide disqualified
+            queryStr += " AND status != 'DISQUALIFIED'";
+        }
+
+        queryStr += ' ORDER BY created_at DESC LIMIT 100';
+
+        const { rows } = await query(queryStr, params);
         res.json(rows)
     } catch (err) {
         console.error('Failed to fetch leads:', err)
         res.status(500).json({ error: 'Database error' })
     }
 })
+
+// Approve Lead (Restore from Logbook)
+app.post('/api/leads/:id/approve', requireAuth, async (req, res) => {
+    const { id } = req.params;
+    const { reason } = req.body;
+    if (!reason || !reason.trim()) return res.status(400).json({ error: 'Reason required' });
+    try {
+        // 1. Fetch Lead
+        const { rows } = await query('SELECT * FROM leads WHERE id = $1 AND user_id = $2', [id, req.userId]);
+        if (rows.length === 0) return res.status(404).json({ error: 'Lead not found' });
+
+        let lead = rows[0];
+
+        await query(
+            `INSERT INTO lead_feedback (lead_id, user_id, reason, original_status, new_status) VALUES ($1, $2, $3, $4, 'NEW')`,
+            [id, req.userId, reason, lead.status]
+        );
+
+        // 2. Generate Outreach
+        // Need configs to get custom instructions
+        const promptRes = await query('SELECT system_prompt FROM agent_prompts WHERE agent_id = $1 AND user_id = $2', ['outreach_creator', req.userId]);
+        const customInstructions = promptRes.rows[0]?.system_prompt;
+
+        const runner = new Runner();
+        const agent = createOutreachAgent(customInstructions); // Tools default to empty for now
+        const service = new OutreachService(runner);
+
+        // Normalize lead for Agent
+        const leadForAgent = {
+            date_added: new Date().toISOString(),
+            first_name: lead.person_name?.split(' ')[0] || '',
+            last_name: lead.person_name?.split(' ').slice(1).join(' ') || '',
+            company_name: lead.company_name,
+            title: lead.job_title,
+            email: lead.email,
+            linkedin_url: lead.linkedin_url,
+            company_website: lead.custom_data?.company_website || '',
+            company_profile: lead.custom_data?.company_profile || ''
+        };
+
+        console.log(`Generating outreach for approved lead ${id}...`);
+        const enrichedLeads = await service.generateOutreach([leadForAgent], agent, (msg) => console.log(`[Approval] ${msg}`));
+
+        let updates = { status: 'NEW', source_notes: 'Approved from Logbook' };
+        if (enrichedLeads.length > 0) {
+            const result = enrichedLeads[0];
+            if (result.email_message) updates.email_message = result.email_message;
+            if (result.connection_request) updates.connection_request = result.connection_request;
+        }
+
+        // 3. Update DB
+        // Update status
+        await query('UPDATE leads SET status = $1 WHERE id = $2', ['NEW', id]);
+
+        // Update custom_data with message
+        if (enrichedLeads.length > 0) {
+            const r = enrichedLeads[0];
+            const newCustomData = {
+                ...lead.custom_data,
+                email_message: r.email_message,
+                connection_request: r.connection_request,
+                restored_at: new Date().toISOString()
+            };
+            await query('UPDATE leads SET custom_data = $1 WHERE id = $2', [newCustomData, id]);
+        }
+
+        res.json({ success: true });
+
+    } catch (err) {
+        console.error('Approval failed:', err);
+        res.status(500).json({ error: 'Approval failed' });
+    }
+});
 
 // Create/Update Lead
 app.post('/api/leads', requireAuth, async (req, res) => {
@@ -1227,6 +1317,34 @@ const initDB = async () => {
 
         // Migration: Add phone_numbers if not exists
         await query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS phone_numbers JSONB DEFAULT '[]'::jsonb;`)
+
+        // Create Lead Feedback Table (Migration 06)
+        await query(`
+            CREATE TABLE IF NOT EXISTS lead_feedback (
+                id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                lead_id UUID REFERENCES leads(id) ON DELETE CASCADE,
+                user_id UUID REFERENCES users(id),
+                reason TEXT NOT NULL,
+                original_status VARCHAR(50),
+                new_status VARCHAR(50),
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+            );
+            CREATE INDEX IF NOT EXISTS idx_lead_feedback_lead_id ON lead_feedback(lead_id);
+        `);
+
+        // Migration: "Zombie Lead" Cleanup
+        // Move leads that are 'NEW' (active) but have NO connection request (meaning they weren't processed by outreach)
+        // to 'DISQUALIFIED'. This cleans up the CRM.
+        const zombieRes = await query(`
+            UPDATE leads 
+            SET status = 'DISQUALIFIED', source_notes = 'Archived: No connection request sent (Zombie)'
+            WHERE status = 'NEW' 
+            AND (custom_data->>'connection_request' IS NULL OR custom_data->>'connection_request' = '')
+            AND source != 'Import' -- Optional: Don't archive manual imports if that's desired, but safe to assume all valid leads need outreach
+        `);
+        if (zombieRes.rowCount > 0) {
+            console.log(`🧹 Migrated ${zombieRes.rowCount} zombie leads to DISQUALIFIED.`);
+        }
 
         console.log('Database Schema Verified.')
     } catch (err) {

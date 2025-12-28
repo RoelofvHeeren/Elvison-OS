@@ -331,16 +331,36 @@ export const runAgentWorkflow = async (input, config) => {
     });
 
     // 3. Lead Finder
+    // NEW: Active Learning - Fetch latest user feedback
+    let feedbackExamples = "";
+    try {
+        const fbRows = await query(`
+            SELECT reason FROM lead_feedback 
+            WHERE user_id = $1 AND new_status = 'NEW' 
+            ORDER BY created_at DESC LIMIT 5
+        `, [userId]);
+
+        if (fbRows.rows.length > 0) {
+            feedbackExamples = "\n\n[USER FEEDBACK - EXAMPLES OF QUALIFIED LEADS]:\n" +
+                fbRows.rows.map(r => `- "${r.reason}"`).join("\n") +
+                "\n(Prioritize leads similar to these examples.)";
+            logStep('Workflow', `🧠 Injected ${fbRows.rows.length} user feedback examples into Lead Finder.`);
+        }
+    } catch (e) {
+        console.warn("Failed to load feedback", e);
+    }
+
     let leadInst = `You are the Apollo Headhunter Agent for Fifth Avenue Properties.
     Goal: Find decision-makers (Partner, Principal, Director of Acquisitions) at real estate investment firms.
     CRITICAL:
     1. ROLES: Partner, Principal, Managing Director, Head of Acquisitions, VP Development.
     2. EXCLUDE: Debt, Lending, Mortgage, Brokerage, Analyst, Associate.
-    3. ACTION: Use 'people_enrichment' or 'get_person_email' to REVEAL emails. DO NOT return "email_not_unlocked".`;
+    3. ACTION: Use 'people_enrichment' or 'get_person_email' to REVEAL emails. DO NOT return "email_not_unlocked".${feedbackExamples}`;
+
     if (agentConfigs['apollo_lead_finder']?.instructions) {
         leadInst += `\n\n[USER FILTERS]:\n${agentConfigs['apollo_lead_finder'].instructions}`;
     } else if (agentPrompts['apollo_lead_finder']) {
-        leadInst = agentPrompts['apollo_lead_finder']; // Allow full override from DB if present
+        leadInst = agentPrompts['apollo_lead_finder'] + feedbackExamples; // Append feedback even to custom prompts
     }
     const apolloLeadFinder = new Agent({
         name: "Apollo Lead Finder",
