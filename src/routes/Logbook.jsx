@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Book, Clock, CheckCircle, AlertCircle, Trash2, ChevronDown, ChevronUp, RefreshCw, ThumbsUp, Building, Users, Filter } from 'lucide-react'
+import { Book, Clock, CheckCircle, AlertCircle, Trash2, ChevronDown, ChevronUp, RefreshCw, ThumbsUp, Building, Users, Filter, Check } from 'lucide-react'
 import { fetchRuns, fetchLeads, approveLead } from '../utils/api'
 
 const Logbook = () => {
