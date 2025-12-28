@@ -20,17 +20,40 @@ function Companies() {
     const loadCompanies = async () => {
         setLoading(true)
         try {
-            // Fetch all leads (respecting ICP filter)
-            const params = {}
+            // Fetch ALL leads - request large page size to get everything
+            const params = { pageSize: 1000 } // Request up to 1000 leads
             if (filters.icpId) params.icpId = filters.icpId
 
             const response = await fetchLeads(params)
-            const leads = Array.isArray(response) ? response : (response?.data || [])
+
+            // Handle both array and paginated response
+            let allLeads = []
+            if (Array.isArray(response)) {
+                allLeads = response
+            } else if (response?.data) {
+                allLeads = response.data
+
+                // If there are more pages, fetch them
+                if (response.pagination?.totalPages > 1) {
+                    const totalPages = response.pagination.totalPages
+                    const pagePromises = []
+
+                    for (let page = 2; page <= totalPages; page++) {
+                        pagePromises.push(fetchLeads({ ...params, page }))
+                    }
+
+                    const results = await Promise.all(pagePromises)
+                    results.forEach(result => {
+                        const pageData = Array.isArray(result) ? result : (result?.data || [])
+                        allLeads.push(...pageData)
+                    })
+                }
+            }
 
             // Group leads by company
             const companyMap = new Map()
 
-            leads.forEach(lead => {
+            allLeads.forEach(lead => {
                 const companyName = lead.company_name || 'Unknown Company'
 
                 if (!companyMap.has(companyName)) {
