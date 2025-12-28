@@ -15,6 +15,7 @@ import { IcpProvider } from './context/IcpContext'
 import Profile from './routes/Profile'
 import Optimize from './routes/Optimize'
 import IcpSettings from './routes/IcpSettings'
+import Companies from './routes/Companies'
 import ErrorBoundary from './components/ErrorBoundary'
 
 // Protected Route wrapper
@@ -94,6 +95,7 @@ const AppContent = () => {
 
             <Route path="/runner" element={<ProtectedRoute><AgentRunner /></ProtectedRoute>} />
             <Route path="/crm" element={<ProtectedRoute><CRM /></ProtectedRoute>} />
+            <Route path="/companies" element={<ProtectedRoute><Companies /></ProtectedRoute>} />
             <Route path="/connections" element={<ProtectedRoute><Connections /></ProtectedRoute>} />
             <Route path="/kb" element={<ProtectedRoute><KnowledgeBase /></ProtectedRoute>} />
             <Route path="/agents" element={<ProtectedRoute><AgentConfig /></ProtectedRoute>} />
