@@ -441,6 +441,12 @@ export const runAgentWorkflow = async (input, config) => {
 
         while (totalLeadsCollected < targetLeads && attempts < MAX_ATTEMPTS) {
             attempts++;
+
+            // OPTIMIZATION: Early exit if target already met
+            if (totalLeadsCollected >= targetLeads) {
+                logStep('Optimization', `✅ Target of ${targetLeads} leads already met (${totalLeadsCollected} collected). Skipping attempt ${attempts}.`);
+                break;
+            }
             // Calculate how many more LEADS we need
             const leadsNeeded = targetLeads - totalLeadsCollected;
 
@@ -452,7 +458,10 @@ export const runAgentWorkflow = async (input, config) => {
             // Minimum batch size to avoid tiny runs
             if (companiesNeeded < minBatchSize) companiesNeeded = minBatchSize;
 
-            logStep('Workflow', `Round ${attempts}: Need ${leadsNeeded} leads. Target: Accumulate ${companiesNeeded} new qualified companies.`);
+            logStep('Workflow', `Round ${attempts}/${MAX_ATTEMPTS}: Need ${leadsNeeded} more leads. Target: ${companiesNeeded} new qualified companies.`);
+
+            // Track companies found in previous round for diminishing returns detection
+            const companiesBeforeThisRound = qualifiedCompanies.length;
 
             // --- STEP 1: ACCUMULATION PHASE ---
             let accumulatedCandidates = []; // Companies found in this round
@@ -460,6 +469,13 @@ export const runAgentWorkflow = async (input, config) => {
 
             while (accumulatedCandidates.length < companiesNeeded && discoveryAttempts < maxDiscoveryAttempts) {
                 discoveryAttempts++;
+
+                // OPTIMIZATION: Check if we've already met target (leads may have been collected from previous companies)
+                if (totalLeadsCollected >= targetLeads) {
+                    logStep('Optimization', `Target already met (${totalLeadsCollected}/${targetLeads}). Stopping company discovery early.`);
+                    break;
+                }
+
                 logStep('Company Finder', `🔎 Discovery Sub-Round ${discoveryAttempts}/${maxDiscoveryAttempts}: Seeking ${companiesNeeded - accumulatedCandidates.length} more companies...`);
 
                 // ENHANCED: Use 4 distinct keyword searches for comprehensive coverage
@@ -836,22 +852,27 @@ OUTPUT: JSON list (company_name, website, capital_role, description). Target 20+
         }
 
         return {
-            status: "success",
-            leads: outreachOutput.leads,
+            status: 'success',
+            leads: globalLeads,
             debug: debugLog,
             stats: {
                 companies_discovered: qualifiedCompanies.length,
-                leads_returned: outreachOutput.leads ? outreachOutput.leads.length : 0,
+                leads_returned: globalLeads.length,
                 target_leads: targetLeads,
+                email_yield_percentage: Math.round((globalLeads.filter(l => l.email).length / globalLeads.length) * 100),
                 filtering_breakdown: {
-                    companies_found_raw: qualifiedCompanies.length + (debugLog.discovery?.length || 0),
-                    companies_qualified: qualifiedCompanies.length,
-                    leads_scraped: globalLeads.length,
-                    leads_after_filtering: outreachOutput.leads ? outreachOutput.leads.length : 0,
-                    leads_disqualified: globalLeads.length - (outreachOutput.leads ? outreachOutput.leads.length : 0)
+                    total_scraped: scrapedNamesSet.size,
+                    qualified: globalLeads.length,
+                    dropped: scrapedNamesSet.size - globalLeads.length
                 },
-                discovery_rounds: attempts,
-                email_yield_percentage: calculateEmailYield(outreachOutput.leads || [])
+                // OPTIMIZATION METRICS
+                optimization: {
+                    attempts_used: attempts,
+                    attempts_available: MAX_ATTEMPTS,
+                    early_exit: attempts < MAX_ATTEMPTS && totalLeadsCollected >= targetLeads,
+                    companies_per_attempt: (qualifiedCompanies.length / attempts).toFixed(1),
+                    leads_per_attempt: (globalLeads.length / attempts).toFixed(1)
+                }
             }
         };
     });
