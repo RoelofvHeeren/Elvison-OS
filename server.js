@@ -1341,7 +1341,7 @@ const initDB = async () => {
                 lead_id UUID REFERENCES leads(id) ON DELETE CASCADE,
                 user_id UUID REFERENCES users(id),
                 reason TEXT NOT NULL,
-                original_status VARCHAR(50),
+    original_status VARCHAR(50),
                 new_status VARCHAR(50),
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
             );
@@ -1349,18 +1349,24 @@ const initDB = async () => {
         `);
 
         // Migration: "Zombie Lead" Cleanup
-        // Move leads that are 'NEW' (active) but have NO connection request (meaning they weren't processed by outreach)
-        // to 'DISQUALIFIED'. This cleans up the CRM.
+        // DISABLED: This migration was TOO aggressive - it marked ALL leads without connection requests as zombies,
+        // including high-quality VPs/EVPs that were recently imported and haven't had outreach yet.
+        // TODO: Reimplement with proper filters:
+        // - Only leads imported >30 days ago
+        // - Must also lack email
+        // - Skip if title contains VP/President/Director/CEO/CIO/COO
+        /*
         const zombieRes = await query(`
             UPDATE leads 
             SET status = 'DISQUALIFIED', source_notes = 'Archived: No connection request sent (Zombie)'
             WHERE status = 'NEW' 
             AND (custom_data->>'connection_request' IS NULL OR custom_data->>'connection_request' = '')
-            AND source != 'Import' -- Optional: Don't archive manual imports if that's desired, but safe to assume all valid leads need outreach
+            AND source != 'Import'
         `);
-        if (zombieRes.rowCount > 0) {
+        if ( zombieRes.rowCount > 0) {
             console.log(`🧹 Migrated ${zombieRes.rowCount} zombie leads to DISQUALIFIED.`);
         }
+        */
 
         console.log('Database Schema Verified.')
     } catch (err) {
