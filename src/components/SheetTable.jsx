@@ -81,7 +81,7 @@ const SheetTable = ({ rows, loading, error, onDeleteRow }) => {
                   key={`${row.email}-${idx}`}
                   className="transition-all duration-200 hover:bg-surface/30 group"
                 >
-                  <td className="px-4 py-3.5 text-xs text-muted/50 font-mono">{idx + 1}</td>
+                  <td className="px-4 py-3.5 text-xs text-muted/50 font-mono">{row.originalIndex || (idx + 1)}</td>
                   <td className="px-4 py-3.5 text-xs font-medium text-muted">{row.date || '—'}</td>
                   <td
                     className="px-4 py-3.5 text-sm font-semibold text-accent tracking-tight cursor-text"

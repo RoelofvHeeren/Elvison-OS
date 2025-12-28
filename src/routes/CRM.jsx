@@ -63,7 +63,7 @@ function CRM() {
         let dateStr = new Date(lead.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
         return {
-          originalIndex: idx,
+          originalIndex: (page - 1) * pageSize + idx + 1, // Global index across pages
           id: lead.id,
           date: dateStr,
           name: lead.person_name || '',
@@ -288,10 +288,10 @@ function CRM() {
         <div className="glass-panel flex items-center justify-between px-5 py-4">
           <div>
             <p className="text-xs uppercase tracking-[0.25em] font-bold text-primary">Leads tracked</p>
-            <p className="font-serif text-2xl font-bold text-accent">{rows.length}</p>
+            <p className="font-serif text-2xl font-bold text-accent">{pagination.total || rows.length}</p>
           </div>
           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-white font-serif text-lg font-bold shadow-lg shadow-primary/30">
-            {rows.length}
+            {pagination.total || rows.length}
           </div>
         </div>
       </div>
