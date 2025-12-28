@@ -13,6 +13,8 @@ const Logbook = () => {
     // Disqualified Leads State
     const [droppedLeads, setDroppedLeads] = useState([])
     const [loadingLeads, setLoadingLeads] = useState(false)
+    const [selectedLeads, setSelectedLeads] = useState(new Set())
+    const [selectAll, setSelectAll] = useState(false)
 
     // Approval Modal State
     const [approvalModalOpen, setApprovalModalOpen] = useState(false)
@@ -84,6 +86,50 @@ const Logbook = () => {
 
     const toggleRunExpand = (runId) => {
         setExpandedRunId(expandedRunId === runId ? null : runId)
+    }
+
+    const toggleLeadSelection = (leadId) => {
+        const newSelected = new Set(selectedLeads)
+        if (newSelected.has(leadId)) {
+            newSelected.delete(leadId)
+        } else {
+            newSelected.add(leadId)
+        }
+        setSelectedLeads(newSelected)
+        setSelectAll(newSelected.size === droppedLeads.length && droppedLeads.length > 0)
+    }
+
+    const toggleSelectAll = () => {
+        if (selectAll) {
+            setSelectedLeads(new Set())
+            setSelectAll(false)
+        } else {
+            setSelectedLeads(new Set(droppedLeads.map(l => l.id)))
+            setSelectAll(true)
+        }
+    }
+
+    const reinstateSelected = async () => {
+        if (selectedLeads.size === 0) {
+            alert('Please select at least one lead to reinstate')
+            return
+        }
+
+        const reason = prompt('Why are these leads being reinstated? (This helps train the AI)')
+        if (!reason || !reason.trim()) return
+
+        try {
+            await Promise.all(
+                Array.from(selectedLeads).map(leadId => approveLead(leadId, reason))
+            )
+            setDroppedLeads(prev => prev.filter(l => !selectedLeads.has(l.id)))
+            setSelectedLeads(new Set())
+            setSelectAll(false)
+            alert(`Successfully reinstated ${selectedLeads.size} leads`)
+        } catch (error) {
+            console.error('Failed to reinstate leads:', error)
+            alert('Failed to reinstate some leads. Please try again.')
+        }
     }
 
     const parseRunStats = (run) => {
