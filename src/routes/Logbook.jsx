@@ -105,11 +105,6 @@ const Logbook = () => {
         }
     }
 
-    const openApprovalModal = (leadId) => {
-        setSelectedLeadId(leadId)
-        setApprovalModalOpen(true)
-    }
-
     return (
         <div className="space-y-6 p-6 lg:p-8 max-w-[1600px] mx-auto animate-fade-in">
             {/* Enhanced Header */}
