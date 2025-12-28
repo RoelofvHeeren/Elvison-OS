@@ -1,42 +1,50 @@
 import React, { useState, useEffect } from 'react'
-import { Book, Clock, CheckCircle, AlertCircle, Trash2, FileText, ChevronRight, ChevronDown, User, Building, Mail, RefreshCw, ThumbsUp } from 'lucide-react'
-
+import { Book, Clock, CheckCircle, AlertCircle, Trash2, ChevronDown, ChevronUp, RefreshCw, ThumbsUp, Building, Users, Filter } from 'lucide-react'
 import { fetchRuns, fetchLeads, approveLead } from '../utils/api'
 
 const Logbook = () => {
-    const [activeTab, setActiveTab] = useState('import') // 'import' (Job History) | 'review' (Disqualified Leads)
+    const [activeTab, setActiveTab] = useState('history') // 'history' | 'disqualified'
+
+    // Job History State
+    const [runs, setRuns] = useState([])
+    const [loadingRuns, setLoadingRuns] = useState(false)
+    const [expandedRunId, setExpandedRunId] = useState(null)
 
     // Disqualified Leads State
     const [droppedLeads, setDroppedLeads] = useState([])
     const [loadingLeads, setLoadingLeads] = useState(false)
 
-    // Approval / Feedback State
+    // Approval Modal State
     const [approvalModalOpen, setApprovalModalOpen] = useState(false)
     const [selectedLeadId, setSelectedLeadId] = useState(null)
     const [approvalReason, setApprovalReason] = useState('')
     const [submittingApproval, setSubmittingApproval] = useState(false)
 
-    // Apify Integration State (Legacy/Jobs Tab)
-    const [jobs, setJobs] = useState([])
-    const [expandedJobId, setExpandedJobId] = useState(null)
-    const [loadingJobs, setLoadingJobs] = useState(false)
-    const [apifyInputs, setApifyInputs] = useState({})
-    const [extracting, setExtracting] = useState({})
-    const [extractionStatus, setExtractionStatus] = useState({})
-
     useEffect(() => {
-        if (activeTab === 'review') {
-            loadDroppedLeads()
+        if (activeTab === 'history') {
+            loadRuns()
         } else {
-            loadJobs()
+            loadDroppedLeads()
         }
     }, [activeTab])
+
+    const loadRuns = async () => {
+        setLoadingRuns(true)
+        try {
+            const data = await fetchRuns()
+            setRuns(Array.isArray(data) ? data : [])
+        } catch (e) {
+            console.error("Failed to load runs", e)
+            setRuns([])
+        } finally {
+            setLoadingRuns(false)
+        }
+    }
 
     const loadDroppedLeads = async () => {
         setLoadingLeads(true)
         try {
             const data = await fetchLeads({ status: 'DISQUALIFIED' })
-            // Handle paginated response and ensure array
             const leadsArray = Array.isArray(data) ? data : (data?.data || [])
             setDroppedLeads(leadsArray)
         } catch (e) {
@@ -47,50 +55,6 @@ const Logbook = () => {
         }
     }
 
-    // --- Legacy Job Loading ---
-    const loadJobs = async () => {
-        setLoadingJobs(true)
-        try {
-            const data = await fetchRuns()
-            // Fix: Handle null/undefined data from API
-            const mapped = (data || []).map(run => {
-                let result = {}
-                let prompt = 'Workflow Run'
-                try {
-                    if (run.output_data) result = run.output_data
-                    if (typeof result === 'string') result = JSON.parse(result)
-                    const meta = run.metadata || {}
-                    if (meta.prompt) prompt = meta.prompt
-                } catch (e) { console.error(e) }
-
-                return {
-                    id: run.id,
-                    timestamp: run.started_at,
-                    status: run.status === 'COMPLETED' ? 'success' : run.status.toLowerCase(),
-                    prompt: prompt,
-                    // Extract stats from result properly
-                    stats: {
-                        companies_discovered: result.stats?.companies_discovered || 0,
-                        leads_returned: result.stats?.leads_returned || 0,
-                        target_leads: result.stats?.target_leads || null,
-                        email_yield_percentage: result.stats?.email_yield_percentage || 0
-                    },
-                    result: result,
-                    error: run.error_log,
-                    agent_id: run.agent_id
-                }
-            })
-            setJobs(mapped)
-        } catch (e) {
-            console.error("Failed to load runs", e)
-            setJobs([]) // Fail gracefully with empty array
-        } finally {
-            setLoadingJobs(false)
-        }
-    }
-
-    // --- Approval Logic ---
-
     const openApprovalModal = (leadId) => {
         setSelectedLeadId(leadId)
         setApprovalReason('')
@@ -99,336 +63,337 @@ const Logbook = () => {
 
     const confirmApproval = async () => {
         if (!approvalReason.trim()) {
-            alert("Please provide a reason. This helps the AI learn.")
+            alert('Please provide a reason for reinstating this lead')
             return
         }
 
         setSubmittingApproval(true)
         try {
             await approveLead(selectedLeadId, approvalReason)
-            alert("Lead restored! Your feedback has been saved.")
-            // Remove from list
             setDroppedLeads(prev => prev.filter(l => l.id !== selectedLeadId))
             setApprovalModalOpen(false)
-        } catch (e) {
-            alert("Failed to approve lead: " + e.message)
+            setSelectedLeadId(null)
+            setApprovalReason('')
+        } catch (error) {
+            console.error('Failed to approve lead:', error)
+            alert('Failed to reinstate lead. Please try again.')
         } finally {
             setSubmittingApproval(false)
         }
     }
 
+    const toggleRunExpand = (runId) => {
+        setExpandedRunId(expandedRunId === runId ? null : runId)
+    }
+
+    const parseRunStats = (run) => {
+        // Parse metadata and output_data to extract stats
+        const metadata = typeof run.metadata === 'string' ? JSON.parse(run.metadata) : (run.metadata || {})
+        const outputData = typeof run.output_data === 'string' ? JSON.parse(run.output_data) : (run.output_data || {})
+
+        return {
+            companies: outputData.companiesFound || metadata.companiesFound || 0,
+            totalLeads: outputData.leadsGenerated || metadata.leadsGenerated || 0,
+            qualified: outputData.leadsQualified || metadata.leadsQualified || 0,
+            disqualified: outputData.leadsDisqualified || metadata.leadsDisqualified || 0,
+            emailYield: outputData.emailYield || metadata.emailYield || 0,
+            logs: outputData.executionLogs || metadata.executionLogs || []
+        }
+    }
+
+    const formatDuration = (startedAt, completedAt) => {
+        if (!startedAt || !completedAt) return 'Unknown'
+        const start = new Date(startedAt)
+        const end = new Date(completedAt)
+        const diffMs = end - start
+        const minutes = Math.floor(diffMs / 60000)
+        const seconds = Math.floor((diffMs % 60000) / 1000)
+        return `${minutes}m ${seconds}s`
+    }
+
     return (
-        <div className="space-y-6 p-6 lg:p-8 max-w-[1600px] mx-auto animate-fade-in">
-            {/* Enhanced Header */}
-            <div className="glass-panel p-6 bg-white/5 border border-white/10 backdrop-blur-md">
-                <div className="flex items-center gap-3 mb-2">
-                    <Book className="h-8 w-8 text-teal-400" />
-                    <h1 className="font-serif text-3xl font-bold text-white">Logbook</h1>
+        <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-900 p-6 lg:p-8">
+            <div className="max-w-[1400px] mx-auto space-y-6">
+                {/* Header */}
+                <div className="bg-gray-800/50 backdrop-blur-md border border-gray-700/50 rounded-2xl p-6">
+                    <h1 className="font-serif text-3xl font-bold text-white flex items-center gap-3">
+                        <Book className="w-8 h-8 text-teal-400" />
+                        Workflow Logbook
+                    </h1>
+                    <p className="text-sm text-gray-400 mt-1">
+                        Review workflow runs, execution logs, and disqualified leads
+                    </p>
                 </div>
-                <p className="text-sm text-gray-400">Track workflow runs, review disqualified leads, and monitor system performance.</p>
-            </div>
 
-            {/* Tabs */}
-            <div className="bg-gray-800/50 backdrop-blur-md border border-gray-700/50 rounded-2xl overflow-hidden">
-                <nav className="flex" aria-label="Tabs">
-                    <button
-                        onClick={() => setActiveTab('import')}
-                        className={`flex-1 py-4 px-6 font-medium text-sm transition-colors ${activeTab === 'import'
-                            ? 'bg-teal-500/20 text-teal-400 border-b-2 border-teal-400'
-                            : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700/30'
-                            }`}
-                    >
-                        <span className="flex items-center justify-center gap-2">
-                            <FileText className="w-4 h-4" />
-                            Job History & Imports
-                        </span>
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('review')}
-                        className={`flex-1 py-4 px-6 font-medium text-sm transition-colors ${activeTab === 'review'
-                            ? 'bg-teal-500/20 text-teal-400 border-b-2 border-teal-400'
-                            : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700/30'
-                            }`}
-                    >
-                        <span className="flex items-center justify-center gap-2">
-                            <Trash2 className="w-4 h-4" />
-                            Disqualified Leads
-                        </span>
-                    </button>
-                </nav>
-            </div>
-
-            {/* TAB CONTENT: REVIEW */}
-            {activeTab === 'review' && (
-                <div className="space-y-4">
-                    <div className="flex justify-between items-center bg-yellow-500/10 backdrop-blur-md border border-yellow-500/30 p-4 rounded-xl">
-                        <div className="flex items-center gap-3">
-                            <AlertCircle className="text-yellow-400 w-5 h-5" />
-                            <p className="text-sm text-yellow-200">
-                                These leads were filtered out by the AI Agent. Review and approve them to restore to CRM.
-                            </p>
-                        </div>
-                        <button onClick={loadDroppedLeads} className="p-2 hover:bg-yellow-500/20 rounded-lg text-yellow-400 transition-colors">
-                            <RefreshCw className={`w-4 h-4 ${loadingLeads ? 'animate-spin' : ''}`} />
+                {/* Tabs */}
+                <div className="bg-gray-800/50 backdrop-blur-md border border-gray-700/50 rounded-2xl overflow-hidden">
+                    <nav className="flex" aria-label="Tabs">
+                        <button
+                            onClick={() => setActiveTab('history')}
+                            className={`flex-1 py-4 px-6 font-medium text-sm transition-colors ${activeTab === 'history'
+                                ? 'bg-teal-500/20 text-teal-400 border-b-2 border-teal-400'
+                                : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700/30'
+                                }`}
+                        >
+                            <span className="flex items-center justify-center gap-2">
+                                <Clock className="w-4 h-4" />
+                                Workflow Runs
+                            </span>
                         </button>
-                    </div>
-
-                    {loadingLeads ? (
-                        <div className="text-center py-12 text-gray-400">Loading leads...</div>
-                    ) : droppedLeads.length === 0 ? (
-                        <div className="text-center py-12 bg-white rounded-xl border border-dashed border-gray-300">
-                            <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-3" />
-                            <p className="text-gray-500 font-medium">No disqualified leads found!</p>
-                            <p className="text-sm text-gray-400">Your filters are working perfectly (or no runs yet).</p>
-                        </div>
-                    ) : (
-                        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                            <table className="w-full text-left border-collapse">
-                                <thead>
-                                    <tr className="bg-gray-50 border-b border-gray-100">
-                                        <th className="py-3 px-4 text-xs font-semibold text-gray-700 uppercase">Person</th>
-                                        <th className="py-3 px-4 text-xs font-semibold text-gray-700 uppercase">Role</th>
-                                        <th className="py-3 px-4 text-xs font-semibold text-gray-700 uppercase">Company</th>
-                                        <th className="py-3 px-4 text-xs font-semibold text-gray-700 uppercase">Reason</th>
-                                        <th className="py-3 px-4 text-xs font-semibold text-gray-700 uppercase text-right">Action</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-100">
-                                    {droppedLeads.map(lead => (
-                                        <tr key={lead.id} className="hover:bg-gray-50 transition-colors">
-                                            <td className="py-3 px-4">
-                                                <div className="font-medium text-gray-900">{lead.person_name}</div>
-                                                <div className="text-xs text-gray-400">{lead.email}</div>
-                                            </td>
-                                            <td className="py-3 px-4 text-sm text-gray-600">{lead.job_title}</td>
-                                            <td className="py-3 px-4 text-sm text-gray-600">{lead.company_name}</td>
-                                            <td className="py-3 px-4">
-                                                <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-700">
-                                                    {lead.source_notes || 'AI Filtered'}
-                                                </span>
-                                            </td>
-                                            <td className="py-3 px-4 text-right">
-                                                <button
-                                                    onClick={() => openApprovalModal(lead.id)}
-                                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-medium rounded-md transition-colors"
-                                                >
-                                                    <ThumbsUp className="w-3 h-3" />
-                                                    Reinstate
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    )}
+                        <button
+                            onClick={() => setActiveTab('disqualified')}
+                            className={`flex-1 py-4 px-6 font-medium text-sm transition-colors ${activeTab === 'disqualified'
+                                ? 'bg-teal-500/20 text-teal-400 border-b-2 border-teal-400'
+                                : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700/30'
+                                }`}
+                        >
+                            <span className="flex items-center justify-center gap-2">
+                                <Trash2 className="w-4 h-4" />
+                                Disqualified Leads
+                            </span>
+                        </button>
+                    </nav>
                 </div>
-            )}
 
-            {/* TAB CONTENT: JOB HISTORY & IMPORTS - Enhanced with detailed metrics */}
-            {activeTab === 'import' && (
-                <div className="space-y-4">
-                    {loadingJobs ? (
-                        <div className="text-center py-12 text-gray-400">Loading job history...</div>
-                    ) : jobs.length === 0 ? (
-                        <div className="text-center py-12 bg-white rounded-xl border border-dashed border-gray-300">
-                            <Clock className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                            <p className="text-gray-500 font-medium">No job history.</p>
-                            <p className="text-sm text-gray-400">Run your first workflow to see results here.</p>
-                        </div>
-                    ) : (
-                        <div className="bg-gray-800 rounded-xl shadow-lg border border-gray-700 overflow-hidden">
-                            <table className="w-full text-left border-collapse">
-                                <thead>
-                                    <tr className="bg-gray-900/50 border-b border-gray-700">
-                                        <th className="py-3 px-4 text-xs font-semibold text-gray-300 uppercase">Run Name</th>
-                                        <th className="py-3 px-4 text-xs font-semibold text-gray-300 uppercase">Date/Time</th>
-                                        <th className="py-3 px-4 text-xs font-semibold text-gray-300 uppercase">Status</th>
-                                        <th className="py-3 px-4 text-xs font-semibold text-gray-300 uppercase text-center">Companies</th>
-                                        <th className="py-3 px-4 text-xs font-semibold text-gray-300 uppercase text-center">Leads</th>
-                                        <th className="py-3 px-4 text-xs font-semibold text-gray-300 uppercase text-center">Yield</th>
-                                        <th className="py-3 px-4 text-xs font-semibold text-gray-300 uppercase text-right">Details</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-700">
-                                    {jobs.map(job => {
-                                        const stats = job.stats || {};
-                                        const companiesDiscovered = stats.companies_discovered ?? 0;
-                                        const leadsReturned = stats.leads_returned ?? 0;
-                                        const targetLeads = stats.target_leads ?? null;
-                                        const emailYield = stats.email_yield_percentage ?? 0;
-                                        const hasStats = stats.companies_discovered !== undefined;
-                                        const isPartial = targetLeads && leadsReturned < targetLeads;
-                                        const isExpanded = expandedJobId === job.id;
-
-                                        return (
-                                            <React.Fragment key={job.id}>
-                                                {/* Main Row - Enhanced Design */}
-                                                <tr className="hover:bg-gray-700/50 transition-colors cursor-pointer" onClick={() => setExpandedJobId(isExpanded ? null : job.id)}>
-                                                    <td className="py-4 px-4">
-                                                        <div className="flex items-center gap-3">
-                                                            <div className={`h-10 w-10 rounded-full flex items-center justify-center ${job.status === 'COMPLETED' ? 'bg-teal-500/10 border border-teal-500/20' :
-                                                                job.status === 'RUNNING' ? 'bg-blue-500/10 border border-blue-500/20' :
-                                                                    'bg-red-500/10 border border-red-500/20'
-                                                                }`}>
-                                                                {job.status === 'COMPLETED' && <CheckCircle className="w-5 h-5 text-teal-400" />}
-                                                                {job.status === 'RUNNING' && <RefreshCw className="w-5 h-5 text-blue-400 animate-spin" />}
-                                                                {job.status === 'FAILED' && <AlertCircle className="w-5 h-5 text-red-400" />}
-                                                            </div>
-                                                            <div>
-                                                                <div className="text-sm font-semibold text-gray-100">
-                                                                    {new Date(job.started_at).toLocaleDateString('en-US', {
-                                                                        month: 'short',
-                                                                        day: 'numeric',
-                                                                        hour: 'numeric',
-                                                                        minute: '2-digit'
-                                                                    })}
-                                                                </div>
-                                                                {job.icp_name && (
-                                                                    <div className="text-xs text-gray-500">{job.icp_name}</div>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    </td>
-                                                    <td className="py-4 px-4 text-center">
-                                                        <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gray-800 border border-gray-700">
-                                                            <Building className="w-3.5 h-3.5 text-gray-400" />
-                                                            <span className="text-sm font-semibold text-gray-100">{companiesDiscovered}</span>
-                                                        </div>
-                                                    </td>
-                                                    <td className="py-4 px-4 text-center">
-                                                        <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gray-800 border border-gray-700">
-                                                            <User className="w-3.5 h-3.5 text-gray-400" />
-                                                            <span className="text-sm font-semibold text-gray-100">
-                                                                {leadsReturned}
-                                                                {isPartial && (
-                                                                    <span className="text-xs text-orange-400 ml-1">/ {targetLeads}</span>
-                                                                )}
-                                                            </span>
-                                                        </div>
-                                                    </td>
-                                                    <td className="py-4 px-4 text-center">
-                                                        <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gray-800 border border-gray-700">
-                                                            <Mail className="w-3.5 h-3.5 text-gray-400" />
-                                                            <span className="text-sm font-medium text-gray-300">
-                                                                {emailYield > 0 ? `${emailYield}%` : !hasStats ? '-' : '0%'}
-                                                            </span>
-                                                        </div>
-                                                    </td>
-                                                    <td className="py-4 px-4 text-center">
-                                                        <span className={`inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium ${job.status === 'success' || job.status === 'COMPLETED'
-                                                            ? isPartial
-                                                                ? 'bg-orange-900/50 text-orange-300 border border-orange-700/50'
-                                                                : 'bg-emerald-900/50 text-emerald-300 border border-emerald-700/50'
-                                                            : job.status === 'RUNNING'
-                                                                ? 'bg-blue-900/50 text-blue-300 border border-blue-700/50'
-                                                                : 'bg-red-900/50 text-red-300 border border-red-700/50'
-                                                            }`}>
-                                                            {job.status === 'FAILED' && isPartial
-                                                                ? `Partial (${leadsReturned}/${targetLeads})`
-                                                                : job.status === 'success' || job.status === 'COMPLETED'
-                                                                    ? 'Completed'
-                                                                    : job.status}
-                                                        </span>
-                                                    </td>
-                                                    <td className="py-4 px-4 text-right">
-                                                        <button className="text-gray-400 hover:text-teal-400 transition-colors">
-                                                            {isExpanded ? (
-                                                                <ChevronDown className="w-5 h-5" />
-                                                            ) : (
-                                                                <ChevronRight className="w-5 h-5" />
-                                                            )}
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                                {isExpanded && stats.filtering_breakdown && (
-                                                    <tr>
-                                                        <td colSpan="7" className="bg-gray-900/30 p-4">
-                                                            {stats.error_message && (
-                                                                <div className="mb-4 p-3 bg-orange-900/30 border border-orange-700/50 rounded-lg">
-                                                                    <div className="text-xs font-semibold text-orange-400 mb-1">Why Target Not Met</div>
-                                                                    <div className="text-sm text-orange-300">{stats.error_message}</div>
-                                                                </div>
-                                                            )}
-                                                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                                                <div className="bg-white p-3 rounded-lg border border-gray-200">
-                                                                    <div className="text-xs text-gray-500 mb-1">Companies Found (Raw)</div>
-                                                                    <div className="text-lg font-bold text-gray-900">{stats.filtering_breakdown.companies_found_raw || 0}</div>
-                                                                </div>
-                                                                <div className="bg-white p-3 rounded-lg border border-gray-200">
-                                                                    <div className="text-xs text-gray-500 mb-1">Companies Qualified</div>
-                                                                    <div className="text-lg font-bold text-green-600">{stats.filtering_breakdown.companies_qualified || 0}</div>
-                                                                </div>
-                                                                <div className="bg-white p-3 rounded-lg border border-gray-200">
-                                                                    <div className="text-xs text-gray-500 mb-1">Leads Scraped</div>
-                                                                    <div className="text-lg font-bold text-blue-600">{stats.filtering_breakdown.leads_scraped || 0}</div>
-                                                                </div>
-                                                                <div className="bg-white p-3 rounded-lg border border-gray-200">
-                                                                    <div className="text-xs text-gray-500 mb-1">Leads Disqualified</div>
-                                                                    <div className="text-lg font-bold text-red-600">{stats.filtering_breakdown.leads_disqualified || 0}</div>
-                                                                </div>
-                                                            </div>
-                                                            {job.error && (
-                                                                <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
-                                                                    <div className="text-xs font-semibold text-red-700 mb-1">Error Details</div>
-                                                                    <div className="text-sm text-red-600">{job.error}</div>
-                                                                </div>
-                                                            )}
-                                                        </td>
-                                                    </tr>
-                                                )}
-                                            </React.Fragment>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
-                        </div>
-                    )}
-                </div>
-            )}
-
-            {/* REINSTATEMENT MODAL */}
-            {approvalModalOpen && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 animate-fade-in">
-                    <div className="bg-white rounded-xl max-w-md w-full p-6 shadow-2xl">
-                        <div className="flex justify-between items-start mb-4">
-                            <div>
-                                <h3 className="text-lg font-bold text-gray-900">Reinstate Lead</h3>
-                                <p className="text-sm text-gray-500">Why should we approve this lead?</p>
-                            </div>
-                            <button onClick={() => setApprovalModalOpen(false)} className="text-gray-400 hover:text-gray-600">
-                                &times;
+                {/* TAB CONTENT: WORKFLOW RUNS */}
+                {activeTab === 'history' && (
+                    <div className="space-y-4">
+                        <div className="flex justify-end">
+                            <button
+                                onClick={loadRuns}
+                                className="flex items-center gap-2 px-4 py-2 bg-gray-700/50 hover:bg-gray-700 text-gray-300 rounded-lg transition-colors"
+                            >
+                                <RefreshCw className={`w-4 h-4 ${loadingRuns ? 'animate-spin' : ''}`} />
+                                Refresh
                             </button>
                         </div>
 
-                        <div className="bg-blue-50 p-3 rounded-lg text-xs text-blue-700 mb-4 flex gap-2">
-                            <Book className="w-4 h-4 shrink-0" />
-                            <p>Your feedback teaches the AI. e.g. "VP of Design is a key decision maker"</p>
+                        {loadingRuns ? (
+                            <div className="text-center py-12 text-gray-400">Loading workflow runs...</div>
+                        ) : runs.length === 0 ? (
+                            <div className="bg-gray-800/50 backdrop-blur-md border border-gray-700/50 rounded-2xl p-12 text-center">
+                                <Clock className="w-12 h-12 text-gray-600 mx-auto mb-3" />
+                                <p className="text-white font-medium">No workflow runs yet</p>
+                                <p className="text-sm text-gray-400 mt-1">Start a workflow to see run history here</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
+                                {runs.map((run) => {
+                                    const stats = parseRunStats(run)
+                                    const isExpanded = expandedRunId === run.id
+                                    const statusColor = run.status === 'COMPLETED' ? 'text-green-400'
+                                        : run.status === 'FAILED' ? 'text-red-400'
+                                            : run.status === 'RUNNING' ? 'text-yellow-400'
+                                                : 'text-gray-400'
+
+                                    return (
+                                        <div key={run.id} className="bg-gray-800/50 backdrop-blur-md border border-gray-700/50 rounded-2xl overflow-hidden">
+                                            {/* Run Header */}
+                                            <div
+                                                className="p-6 cursor-pointer hover:bg-gray-700/30 transition-colors"
+                                                onClick={() => toggleRunExpand(run.id)}
+                                            >
+                                                <div className="flex items-start justify-between mb-4">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="w-12 h-12 rounded-full bg-teal-500/20 border border-teal-400/30 flex items-center justify-center">
+                                                            <Clock className="w-6 h-6 text-teal-400" />
+                                                        </div>
+                                                        <div>
+                                                            <h3 className="font-semibold text-white text-lg">
+                                                                Workflow Run
+                                                            </h3>
+                                                            <p className="text-sm text-gray-400">
+                                                                {new Date(run.started_at).toLocaleString()}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-3">
+                                                        <span className={`text-sm font-medium ${statusColor}`}>
+                                                            {run.status === 'COMPLETED' && '✓ '}
+                                                            {run.status === 'FAILED' && '✗ '}
+                                                            {run.status}
+                                                            {run.status === 'COMPLETED' && run.completed_at && (
+                                                                <span className="text-gray-400 ml-2">
+                                                                    in {formatDuration(run.started_at, run.completed_at)}
+                                                                </span>
+                                                            )}
+                                                        </span>
+                                                        {isExpanded ? (
+                                                            <ChevronUp className="w-5 h-5 text-gray-400" />
+                                                        ) : (
+                                                            <ChevronDown className="w-5 h-5 text-gray-400" />
+                                                        )}
+                                                    </div>
+                                                </div>
+
+                                                {/* Stats Grid */}
+                                                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                                                    <div className="bg-gray-900/50 rounded-lg p-4 border border-gray-700/50">
+                                                        <Building className="w-5 h-5 text-teal-400 mb-2" />
+                                                        <p className="text-2xl font-bold text-white">{stats.companies}</p>
+                                                        <p className="text-xs text-gray-400 uppercase tracking-wider">Companies</p>
+                                                    </div>
+                                                    <div className="bg-gray-900/50 rounded-lg p-4 border border-gray-700/50">
+                                                        <Users className="w-5 h-5 text-teal-400 mb-2" />
+                                                        <p className="text-2xl font-bold text-white">{stats.totalLeads}</p>
+                                                        <p className="text-xs text-gray-400 uppercase tracking-wider">Total Leads</p>
+                                                    </div>
+                                                    <div className="bg-gray-900/50 rounded-lg p-4 border border-gray-700/50">
+                                                        <CheckCircle className="w-5 h-5 text-green-400 mb-2" />
+                                                        <p className="text-2xl font-bold text-white">{stats.qualified}</p>
+                                                        <p className="text-xs text-gray-400 uppercase tracking-wider">Qualified</p>
+                                                    </div>
+                                                    <div className="bg-gray-900/50 rounded-lg p-4 border border-gray-700/50">
+                                                        <Filter className="w-5 h-5 text-yellow-400 mb-2" />
+                                                        <p className="text-2xl font-bold text-white">{stats.disqualified}</p>
+                                                        <p className="text-xs text-gray-400 uppercase tracking-wider">Disqualified</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Expanded: Execution Logs */}
+                                            {isExpanded && (
+                                                <div className="px-6 pb-6 border-t border-gray-700/50">
+                                                    <div className="mt-4">
+                                                        <h4 className="text-sm font-semibold uppercase tracking-wider text-gray-400 mb-3">
+                                                            Execution Timeline
+                                                        </h4>
+                                                        {stats.logs.length > 0 ? (
+                                                            <div className="space-y-2 max-h-96 overflow-y-auto">
+                                                                {stats.logs.map((log, idx) => (
+                                                                    <div key={idx} className="bg-gray-900/50 rounded-lg p-3 border border-gray-700/50">
+                                                                        <div className="flex items-start gap-3">
+                                                                            <div className="flex-shrink-0 w-2 h-2 bg-teal-400 rounded-full mt-2"></div>
+                                                                            <div className="flex-1">
+                                                                                <p className="text-sm text-gray-300">{log.message || log}</p>
+                                                                                {log.timestamp && (
+                                                                                    <p className="text-xs text-gray-500 mt-1">
+                                                                                        {new Date(log.timestamp).toLocaleTimeString()}
+                                                                                    </p>
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        ) : (
+                                                            <p className="text-sm text-gray-500 italic">No execution logs available</p>
+                                                        )}
+                                                    </div>
+
+                                                    {run.error_log && (
+                                                        <div className="mt-4 bg-red-500/10 border border-red-500/30 rounded-lg p-4">
+                                                            <h4 className="text-sm font-semibold text-red-400 mb-2">Error Details:</h4>
+                                                            <p className="text-sm text-red-300 font-mono">{run.error_log}</p>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )
+                                })}
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* TAB CONTENT: DISQUALIFIED LEADS */}
+                {activeTab === 'disqualified' && (
+                    <div className="space-y-4">
+                        <div className="flex justify-between items-center bg-yellow-500/10 backdrop-blur-md border border-yellow-500/30 p-4 rounded-xl">
+                            <div className="flex items-center gap-3">
+                                <AlertCircle className="text-yellow-400 w-5 h-5" />
+                                <p className="text-sm text-yellow-200">
+                                    These leads were filtered out by the AI Agent. Review and reinstate them to restore to CRM.
+                                </p>
+                            </div>
+                            <button
+                                onClick={loadDroppedLeads}
+                                className="p-2 hover:bg-yellow-500/20 rounded-lg text-yellow-400 transition-colors"
+                            >
+                                <RefreshCw className={`w-4 h-4 ${loadingLeads ? 'animate-spin' : ''}`} />
+                            </button>
                         </div>
 
+                        {loadingLeads ? (
+                            <div className="text-center py-12 text-gray-400">Loading disqualified leads...</div>
+                        ) : droppedLeads.length === 0 ? (
+                            <div className="bg-gray-800/50 backdrop-blur-md border border-gray-700/50 rounded-2xl p-12 text-center">
+                                <CheckCircle className="w-12 h-12 text-green-400 mx-auto mb-3" />
+                                <p className="text-white font-medium">No disqualified leads!</p>
+                                <p className="text-sm text-gray-400 mt-1">All leads passed AI validation</p>
+                            </div>
+                        ) : (
+                            <div className="bg-gray-800/50 backdrop-blur-md border border-gray-700/50 rounded-2xl overflow-hidden">
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-sm">
+                                        <thead className="bg-gray-900/50 text-xs font-semibold uppercase tracking-wider text-gray-400">
+                                            <tr>
+                                                <th className="px-4 py-3 text-left">Person</th>
+                                                <th className="px-4 py-3 text-left">Email</th>
+                                                <th className="px-4 py-3 text-left">Title</th>
+                                                <th className="px-4 py-3 text-left">Company</th>
+                                                <th className="px-4 py-3 text-left">Reason</th>
+                                                <th className="px-4 py-3"></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-700/50">
+                                            {droppedLeads.map((lead) => (
+                                                <tr key={lead.id} className="hover:bg-gray-700/30 transition-colors">
+                                                    <td className="px-4 py-3 text-white font-medium">{lead.person_name || '—'}</td>
+                                                    <td className="px-4 py-3 text-gray-300">{lead.email || '—'}</td>
+                                                    <td className="px-4 py-3 text-gray-400">{lead.job_title || '—'}</td>
+                                                    <td className="px-4 py-3 text-gray-300">{lead.company_name || '—'}</td>
+                                                    <td className="px-4 py-3 text-yellow-400 text-xs">{lead.source_notes || 'AI Filtered'}</td>
+                                                    <td className="px-4 py-3 text-right">
+                                                        <button
+                                                            onClick={() => openApprovalModal(lead.id)}
+                                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-500/20 hover:bg-teal-500/30 text-teal-400 text-xs font-medium rounded-lg transition-colors"
+                                                        >
+                                                            <ThumbsUp className="w-3 h-3" />
+                                                            Reinstate
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
+
+            {/* Approval Modal */}
+            {approvalModalOpen && (
+                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                    <div className="bg-gray-800 border border-gray-700 rounded-2xl p-6 max-w-md w-full">
+                        <h3 className="text-xl font-bold text-white mb-4">Reinstate Lead</h3>
+                        <p className="text-sm text-gray-400 mb-4">
+                            Why should this lead be reinstated? This feedback helps train the AI.
+                        </p>
                         <textarea
-                            className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none mb-4"
-                            rows={3}
-                            placeholder="Reason for reinstatement..."
                             value={approvalReason}
                             onChange={(e) => setApprovalReason(e.target.value)}
-                            autoFocus
+                            className="w-full bg-gray-900/50 border border-gray-600 rounded-lg px-4 py-3 text-white text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-400/20 transition-all resize-none"
+                            rows={4}
+                            placeholder="e.g., This lead matches our ICP criteria because..."
                         />
-
-                        <div className="flex justify-end gap-3">
+                        <div className="flex gap-3 mt-6">
                             <button
                                 onClick={() => setApprovalModalOpen(false)}
-                                className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 rounded-lg"
+                                className="flex-1 px-4 py-2.5 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
+                                disabled={submittingApproval}
                             >
                                 Cancel
                             </button>
                             <button
                                 onClick={confirmApproval}
-                                disabled={submittingApproval || !approvalReason.trim()}
-                                className="px-4 py-2 text-sm font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
+                                className="flex-1 px-4 py-2.5 bg-teal-500 hover:bg-teal-600 text-white rounded-lg transition-colors font-medium disabled:opacity-50"
+                                disabled={submittingApproval}
                             >
-                                {submittingApproval && <RefreshCw className="w-3 h-3 animate-spin" />}
-                                Reinstate & Train
+                                {submittingApproval ? 'Reinstating...' : 'Reinstate & Train'}
                             </button>
                         </div>
                     </div>
