@@ -105,6 +105,11 @@ const Logbook = () => {
         }
     }
 
+    const openApprovalModal = (leadId) => {
+        setSelectedLeadId(leadId)
+        setApprovalModalOpen(true)
+    }
+
     return (
         <div className="space-y-6 p-6 lg:p-8 max-w-[1600px] mx-auto animate-fade-in">
             {/* Enhanced Header */}
@@ -256,8 +261,8 @@ const Logbook = () => {
                                                     <td className="py-4 px-4">
                                                         <div className="flex items-center gap-3">
                                                             <div className={`h-10 w-10 rounded-full flex items-center justify-center ${job.status === 'COMPLETED' ? 'bg-teal-500/10 border border-teal-500/20' :
-                                                                    job.status === 'RUNNING' ? 'bg-blue-500/10 border border-blue-500/20' :
-                                                                        'bg-red-500/10 border border-red-500/20'
+                                                                job.status === 'RUNNING' ? 'bg-blue-500/10 border border-blue-500/20' :
+                                                                    'bg-red-500/10 border border-red-500/20'
                                                                 }`}>
                                                                 {job.status === 'COMPLETED' && <CheckCircle className="w-5 h-5 text-teal-400" />}
                                                                 {job.status === 'RUNNING' && <RefreshCw className="w-5 h-5 text-blue-400 animate-spin" />}
@@ -305,12 +310,12 @@ const Logbook = () => {
                                                     </td>
                                                     <td className="py-4 px-4 text-center">
                                                         <span className={`inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium ${job.status === 'success' || job.status === 'COMPLETED'
-                                                                ? isPartial
-                                                                    ? 'bg-orange-900/50 text-orange-300 border border-orange-700/50'
-                                                                    : 'bg-emerald-900/50 text-emerald-300 border border-emerald-700/50'
-                                                                : job.status === 'RUNNING'
-                                                                    ? 'bg-blue-900/50 text-blue-300 border border-blue-700/50'
-                                                                    : 'bg-red-900/50 text-red-300 border border-red-700/50'
+                                                            ? isPartial
+                                                                ? 'bg-orange-900/50 text-orange-300 border border-orange-700/50'
+                                                                : 'bg-emerald-900/50 text-emerald-300 border border-emerald-700/50'
+                                                            : job.status === 'RUNNING'
+                                                                ? 'bg-blue-900/50 text-blue-300 border border-blue-700/50'
+                                                                : 'bg-red-900/50 text-red-300 border border-red-700/50'
                                                             }`}>
                                                             {job.status === 'FAILED' && isPartial
                                                                 ? `Partial (${leadsReturned}/${targetLeads})`
