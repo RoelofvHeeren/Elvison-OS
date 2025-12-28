@@ -211,8 +211,8 @@ const KnowledgeBase = () => {
                         onDragLeave={handleDragLeave}
                         onDrop={handleDrop}
                         className={`relative border-2 border-dashed rounded-xl p-8 text-center transition-all cursor-pointer ${isDragging
-                                ? 'border-[#139187] bg-[#139187]/10'
-                                : 'border-white/20 hover:border-[#139187]/50 hover:bg-white/5'
+                            ? 'border-[#139187] bg-[#139187]/10'
+                            : 'border-white/20 hover:border-[#139187]/50 hover:bg-white/5'
                             }`}
                         onClick={() => document.getElementById('file-upload').click()}
                     >
@@ -243,7 +243,7 @@ const KnowledgeBase = () => {
 
                 {/* Files List */}
                 <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-6">
-                    <h2 className="mb-4 text-xs font-bold uppercase tracking-wider text-muted">Uploaded Documents ({files.length})</h2>
+                    <h2 className="mb-4 text-xs font-bold uppercase tracking-wider text-gray-400">Uploaded Documents ({files.length})</h2>
 
                     {files.length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-20 text-center border-2 border-dashed border-white/5 rounded-2xl bg-white/5">
