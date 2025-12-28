@@ -625,25 +625,54 @@ app.post('/api/crm-columns', requireAuth, async (req, res) => {
 
 // --- LEADS & CRM ---
 
-// Get Leads
+// Get Leads with Pagination
 app.get('/api/leads', requireAuth, async (req, res) => {
-    const { status } = req.query;
+    const { status, page = 1, pageSize = 100 } = req.query;
+
     try {
+        // Parse and validate pagination params
+        const pageNum = Math.max(1, parseInt(page) || 1);
+        const pageSizeNum = Math.min(500, Math.max(1, parseInt(pageSize) || 100)); // Max 500 per page for performance
+        const offset = (pageNum - 1) * pageSizeNum;
+
+        // Build base query
         let queryStr = 'SELECT * FROM leads WHERE user_id = $1';
         const params = [req.userId];
+        let countParams = [req.userId];
 
         if (status) {
             queryStr += ' AND status = $2';
             params.push(status);
+            countParams.push(status);
         } else {
             // Default: Hide disqualified
             queryStr += " AND status != 'DISQUALIFIED'";
         }
 
-        queryStr += ' ORDER BY created_at DESC LIMIT 500'; // Increased from 100 to show all recent leads
+        // Get total count for pagination metadata
+        const countQuery = queryStr.replace('SELECT *', 'SELECT COUNT(*)');
+        const { rows: countRows } = await query(countQuery, countParams);
+        const totalCount = parseInt(countRows[0].count);
+        const totalPages = Math.ceil(totalCount / pageSizeNum);
+
+        // Add pagination
+        queryStr += ` ORDER BY created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+        params.push(pageSizeNum, offset);
 
         const { rows } = await query(queryStr, params);
-        res.json(rows)
+
+        // Return data with pagination metadata
+        res.json({
+            data: rows,
+            pagination: {
+                page: pageNum,
+                pageSize: pageSizeNum,
+                total: totalCount,
+                totalPages: totalPages,
+                hasNext: pageNum < totalPages,
+                hasPrevious: pageNum > 1
+            }
+        });
     } catch (err) {
         console.error('Failed to fetch leads:', err)
         res.status(500).json({ error: 'Database error' })
