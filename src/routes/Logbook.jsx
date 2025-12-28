@@ -36,9 +36,12 @@ const Logbook = () => {
         setLoadingLeads(true)
         try {
             const data = await fetchLeads({ status: 'DISQUALIFIED' })
-            setDroppedLeads(data || [])
+            // Handle paginated response and ensure array
+            const leadsArray = Array.isArray(data) ? data : (data?.data || [])
+            setDroppedLeads(leadsArray)
         } catch (e) {
             console.error("Failed to load disqualified leads", e)
+            setDroppedLeads([])
         } finally {
             setLoadingLeads(false)
         }
@@ -65,6 +68,13 @@ const Logbook = () => {
                     timestamp: run.started_at,
                     status: run.status === 'COMPLETED' ? 'success' : run.status.toLowerCase(),
                     prompt: prompt,
+                    // Extract stats from result properly
+                    stats: {
+                        companies_discovered: result.stats?.companies_discovered || 0,
+                        leads_returned: result.stats?.leads_returned || 0,
+                        target_leads: result.stats?.target_leads || null,
+                        email_yield_percentage: result.stats?.email_yield_percentage || 0
+                    },
                     result: result,
                     error: run.error_log,
                     agent_id: run.agent_id

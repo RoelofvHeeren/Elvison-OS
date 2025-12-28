@@ -201,7 +201,7 @@ function CRM() {
   }, [])
 
   const filteredRows = useMemo(() => {
-    return rows.filter((row) => {
+    return (rows || []).filter((row) => {
       const matchesDate = filters.date ? row.date?.startsWith(filters.date) : true
       const matchesCompany = filters.company
         ? row.company?.toLowerCase().includes(filters.company.toLowerCase())
@@ -281,7 +281,7 @@ function CRM() {
           <div>
             <p className="text-xs uppercase tracking-[0.25em] font-bold text-primary">Total companies</p>
             <p className="font-serif text-2xl font-bold text-accent">
-              {new Set(rows.map((r) => r.company).filter(Boolean)).size}
+              {new Set((rows || []).map((r) => r.company).filter(Boolean)).size}
             </p>
           </div>
         </div>
