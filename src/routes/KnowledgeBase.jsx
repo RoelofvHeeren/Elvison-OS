@@ -11,6 +11,8 @@ const KnowledgeBase = () => {
     // Inline editing state
     const [editingId, setEditingId] = useState(null)
     const [editingName, setEditingName] = useState('')
+    // Drag & drop state
+    const [isDragging, setIsDragging] = useState(false)
 
     useEffect(() => {
         const savedId = localStorage.getItem('elvison_vector_store_id')
@@ -76,8 +78,7 @@ const KnowledgeBase = () => {
         }
     }
 
-    const handleUpload = async (e) => {
-        const selectedFiles = e.target.files
+    const handleUpload = async (selectedFiles) => {
         if (!selectedFiles || selectedFiles.length === 0) return
 
         setUploading(true)
@@ -92,7 +93,7 @@ const KnowledgeBase = () => {
             // Upload to Server
             const res = await fetch(`/api/knowledge/upload?filename=${encodeURIComponent(file.name)}`, {
                 method: 'POST',
-                body: formData, // Browser automatically sets Content-Type to multipart/form-data
+                body: formData,
             })
             if (res.ok) {
                 await fetchFiles()
@@ -102,6 +103,26 @@ const KnowledgeBase = () => {
         } finally {
             setUploading(false)
         }
+    }
+
+    const handleFileInput = (e) => {
+        handleUpload(e.target.files)
+    }
+
+    const handleDragOver = (e) => {
+        e.preventDefault()
+        setIsDragging(true)
+    }
+
+    const handleDragLeave = (e) => {
+        e.preventDefault()
+        setIsDragging(false)
+    }
+
+    const handleDrop = (e) => {
+        e.preventDefault()
+        setIsDragging(false)
+        handleUpload(e.dataTransfer.files)
     }
 
     const handleDelete = async (id) => {
@@ -168,23 +189,60 @@ const KnowledgeBase = () => {
     // ... (Vector Store ID logic moved to top in previous edit) ...
 
     return (
-        <div className="space-y-8 p-6 lg:p-8 max-w-[1600px] mx-auto animate-fade-in">
-            <header className="glass-panel px-6 py-5 flex items-center justify-between">
-                <div>
-                    <h1 className="font-serif text-3xl font-bold text-white mb-1">Knowledge Base</h1>
-                    <p className="text-sm text-muted">Manage documents for your AI agents to reference.</p>
+        <div className="min-h-screen p-6 lg:p-8">
+            <div className="max-w-[1400px] mx-auto space-y-6">
+                {/* Header */}
+                <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-6">
+                    <h1 className="font-serif text-3xl font-bold text-white flex items-center gap-3">
+                        <FileText className="w-8 h-8 text-[#139187]" />
+                        Knowledge Base
+                    </h1>
+                    <p className="text-sm text-gray-400 mt-1">
+                        Upload documents for your AI agents to reference
+                    </p>
                 </div>
-                {syncing && (
-                    <div className="flex items-center gap-2 text-xs font-bold text-primary bg-primary/10 px-3 py-1.5 rounded-full animate-pulse border border-primary/20">
-                        <RefreshCw className="h-3 w-3 animate-spin" />
-                        Restoring files from cache...
-                    </div>
-                )}
-            </header>
 
-            <div className="grid gap-6 lg:grid-cols-[1fr,350px]">
+                {/* Upload Area */}
+                <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-6">
+                    <h2 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-4">Upload Documents</h2>
+
+                    <div
+                        onDragOver={handleDragOver}
+                        onDragLeave={handleDragLeave}
+                        onDrop={handleDrop}
+                        className={`relative border-2 border-dashed rounded-xl p-8 text-center transition-all cursor-pointer ${isDragging
+                                ? 'border-[#139187] bg-[#139187]/10'
+                                : 'border-white/20 hover:border-[#139187]/50 hover:bg-white/5'
+                            }`}
+                        onClick={() => document.getElementById('file-upload').click()}
+                    >
+                        <input
+                            id="file-upload"
+                            type="file"
+                            onChange={handleFileInput}
+                            className="hidden"
+                            accept=".pdf,.txt,.doc,.docx,.md"
+                        />
+
+                        {uploading ? (
+                            <div className="flex flex-col items-center gap-3">
+                                <RefreshCw className="w-10 h-10 text-[#139187] animate-spin" />
+                                <p className="text-sm text-gray-400">Uploading...</p>
+                            </div>
+                        ) : (
+                            <div className="flex flex-col items-center gap-3">
+                                <Upload className="w-10 h-10 text-gray-400" />
+                                <div>
+                                    <p className="text-white font-medium">Click to upload or drag and drop</p>
+                                    <p className="text-xs text-gray-400 mt-1">PDF, TXT, DOC, DOCX, MD files supported</p>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
                 {/* Files List */}
-                <div className="glass-panel p-6">
+                <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-6">
                     <h2 className="mb-4 text-xs font-bold uppercase tracking-wider text-muted">Uploaded Documents ({files.length})</h2>
 
                     {files.length === 0 ? (
