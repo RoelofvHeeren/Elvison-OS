@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Book, Clock, CheckCircle, AlertCircle, Trash2, ChevronDown, ChevronUp, RefreshCw, ThumbsUp, Building, Users, Filter } from 'lucide-react'
+import { Book, Clock, CheckCircle, AlertCircle, Trash2, ChevronDown, ChevronUp, RefreshCw, ThumbsUp, Building, Users, Filter, Check } from 'lucide-react'
 import { fetchRuns, fetchLeads, approveLead } from '../utils/api'
 
 const Logbook = () => {
@@ -13,6 +13,8 @@ const Logbook = () => {
     // Disqualified Leads State
     const [droppedLeads, setDroppedLeads] = useState([])
     const [loadingLeads, setLoadingLeads] = useState(false)
+    const [selectedLeads, setSelectedLeads] = useState(new Set())
+    const [selectAll, setSelectAll] = useState(false)
 
     // Approval Modal State
     const [approvalModalOpen, setApprovalModalOpen] = useState(false)
@@ -86,18 +88,66 @@ const Logbook = () => {
         setExpandedRunId(expandedRunId === runId ? null : runId)
     }
 
+    const toggleLeadSelection = (leadId) => {
+        const newSelected = new Set(selectedLeads)
+        if (newSelected.has(leadId)) {
+            newSelected.delete(leadId)
+        } else {
+            newSelected.add(leadId)
+        }
+        setSelectedLeads(newSelected)
+        setSelectAll(newSelected.size === droppedLeads.length && droppedLeads.length > 0)
+    }
+
+    const toggleSelectAll = () => {
+        if (selectAll) {
+            setSelectedLeads(new Set())
+            setSelectAll(false)
+        } else {
+            setSelectedLeads(new Set(droppedLeads.map(l => l.id)))
+            setSelectAll(true)
+        }
+    }
+
+    const reinstateSelected = async () => {
+        if (selectedLeads.size === 0) {
+            alert('Please select at least one lead to reinstate')
+            return
+        }
+
+        const reason = prompt('Why are these leads being reinstated? (This helps train the AI)')
+        if (!reason || !reason.trim()) return
+
+        try {
+            await Promise.all(
+                Array.from(selectedLeads).map(leadId => approveLead(leadId, reason))
+            )
+            setDroppedLeads(prev => prev.filter(l => !selectedLeads.has(l.id)))
+            setSelectedLeads(new Set())
+            setSelectAll(false)
+            alert(`Successfully reinstated ${selectedLeads.size} leads`)
+        } catch (error) {
+            console.error('Failed to reinstate leads:', error)
+            alert('Failed to reinstate some leads. Please try again.')
+        }
+    }
+
     const parseRunStats = (run) => {
         // Parse metadata and output_data to extract stats
         const metadata = typeof run.metadata === 'string' ? JSON.parse(run.metadata) : (run.metadata || {})
         const outputData = typeof run.output_data === 'string' ? JSON.parse(run.output_data) : (run.output_data || {})
 
+        // Extract from various possible locations in the data structure
+        const result = metadata.result || outputData.result || {}
+        const stats = result.stats || outputData.stats || {}
+
         return {
-            companies: outputData.companiesFound || metadata.companiesFound || 0,
-            totalLeads: outputData.leadsGenerated || metadata.leadsGenerated || 0,
-            qualified: outputData.leadsQualified || metadata.leadsQualified || 0,
-            disqualified: outputData.leadsDisqualified || metadata.leadsDisqualified || 0,
-            emailYield: outputData.emailYield || metadata.emailYield || 0,
-            logs: outputData.executionLogs || metadata.executionLogs || []
+            companies: stats.companiesFound || result.companiesFound || metadata.totalCompanies || 0,
+            totalLeads: stats.totalLeads || result.totalLeads || metadata.totalLeads || 0,
+            qualified: stats.leadsQualified || result.leadsQualified || metadata.leadsQualified || 0,
+            disqualified: stats.leadsDisqualified || result.leadsDisqualified || metadata.leadsDisqualified || 0,
+            emailYield: stats.emailYield || result.emailYield || metadata.emailYield || 0,
+            logs: metadata.logs || outputData.logs || result.logs || []
         }
     }
 
@@ -178,7 +228,8 @@ const Logbook = () => {
                             </div>
                         ) : (
                             <div className="space-y-4">
-                                {runs.map((run) => {
+                                {runs.map((run, index) => {
+                                    const runNumber = runs.length - index
                                     const stats = parseRunStats(run)
                                     const isExpanded = expandedRunId === run.id
                                     const statusColor = run.status === 'COMPLETED' ? 'text-green-400'
@@ -200,7 +251,7 @@ const Logbook = () => {
                                                         </div>
                                                         <div>
                                                             <h3 className="font-semibold text-white text-lg">
-                                                                Workflow Run
+                                                                Run #{runNumber}
                                                             </h3>
                                                             <p className="text-sm text-gray-400">
                                                                 {new Date(run.started_at).toLocaleString()}
@@ -228,23 +279,23 @@ const Logbook = () => {
 
                                                 {/* Stats Grid */}
                                                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                                                    <div className="bg-gray-900/50 rounded-lg p-4 border border-gray-700/50">
+                                                    <div className="bg-gray-700/30 rounded-lg p-4 border border-gray-600/50">
                                                         <Building className="w-5 h-5 text-teal-400 mb-2" />
                                                         <p className="text-2xl font-bold text-white">{stats.companies}</p>
                                                         <p className="text-xs text-gray-400 uppercase tracking-wider">Companies</p>
                                                     </div>
-                                                    <div className="bg-gray-900/50 rounded-lg p-4 border border-gray-700/50">
+                                                    <div className="bg-gray-700/30 rounded-lg p-4 border border-gray-600/50">
                                                         <Users className="w-5 h-5 text-teal-400 mb-2" />
                                                         <p className="text-2xl font-bold text-white">{stats.totalLeads}</p>
                                                         <p className="text-xs text-gray-400 uppercase tracking-wider">Total Leads</p>
                                                     </div>
-                                                    <div className="bg-gray-900/50 rounded-lg p-4 border border-gray-700/50">
+                                                    <div className="bg-gray-700/30 rounded-lg p-4 border border-gray-600/50">
                                                         <CheckCircle className="w-5 h-5 text-green-400 mb-2" />
                                                         <p className="text-2xl font-bold text-white">{stats.qualified}</p>
                                                         <p className="text-xs text-gray-400 uppercase tracking-wider">Qualified</p>
                                                     </div>
-                                                    <div className="bg-gray-900/50 rounded-lg p-4 border border-gray-700/50">
-                                                        <Filter className="w-5 h-5 text-yellow-400 mb-2" />
+                                                    <div className="bg-gray-700/30 rounded-lg p-4 border border-gray-600/50">
+                                                        <Filter className="w-5 h-5 text-teal-400 mb-2" />
                                                         <p className="text-2xl font-bold text-white">{stats.disqualified}</p>
                                                         <p className="text-xs text-gray-400 uppercase tracking-wider">Disqualified</p>
                                                     </div>
@@ -260,21 +311,24 @@ const Logbook = () => {
                                                         </h4>
                                                         {stats.logs.length > 0 ? (
                                                             <div className="space-y-2 max-h-96 overflow-y-auto">
-                                                                {stats.logs.map((log, idx) => (
-                                                                    <div key={idx} className="bg-gray-900/50 rounded-lg p-3 border border-gray-700/50">
-                                                                        <div className="flex items-start gap-3">
-                                                                            <div className="flex-shrink-0 w-2 h-2 bg-teal-400 rounded-full mt-2"></div>
-                                                                            <div className="flex-1">
-                                                                                <p className="text-sm text-gray-300">{log.message || log}</p>
-                                                                                {log.timestamp && (
-                                                                                    <p className="text-xs text-gray-500 mt-1">
-                                                                                        {new Date(log.timestamp).toLocaleTimeString()}
-                                                                                    </p>
-                                                                                )}
+                                                                {stats.logs.map((log, idx) => {
+                                                                    const logText = typeof log === 'string' ? log : (log.message || log.detail || JSON.stringify(log))
+                                                                    return (
+                                                                        <div key={idx} className="bg-gray-700/30 rounded-lg p-3 border border-gray-600/50">
+                                                                            <div className="flex items-start gap-3">
+                                                                                <div className="flex-shrink-0 w-2 h-2 bg-teal-400 rounded-full mt-2"></div>
+                                                                                <div className="flex-1">
+                                                                                    <p className="text-sm text-gray-300">{logText}</p>
+                                                                                    {log.timestamp && (
+                                                                                        <p className="text-xs text-gray-500 mt-1">
+                                                                                            {new Date(log.timestamp).toLocaleTimeString()}
+                                                                                        </p>
+                                                                                    )}
+                                                                                </div>
                                                                             </div>
                                                                         </div>
-                                                                    </div>
-                                                                ))}
+                                                                    )
+                                                                })}
                                                             </div>
                                                         ) : (
                                                             <p className="text-sm text-gray-500 italic">No execution logs available</p>
@@ -282,34 +336,43 @@ const Logbook = () => {
                                                     </div>
 
                                                     {run.error_log && (
-                                                        <div className="mt-4 bg-red-500/10 border border-red-500/30 rounded-lg p-4">
-                                                            <h4 className="text-sm font-semibold text-red-400 mb-2">Error Details:</h4>
-                                                            <p className="text-sm text-red-300 font-mono">{run.error_log}</p>
-                                                        </div>
-                                                    )}
+                                                        <p className="text-sm text-red-300 font-mono">{run.error_log}</p>
                                                 </div>
                                             )}
                                         </div>
                                     )
-                                })}
-                            </div>
-                        )}
+                                }
+                                        </div>
+                        )
+                        })}
                     </div>
                 )}
+            </div>
+                )}
 
-                {/* TAB CONTENT: DISQUALIFIED LEADS */}
-                {activeTab === 'disqualified' && (
-                    <div className="space-y-4">
-                        <div className="flex justify-between items-center bg-yellow-500/10 backdrop-blur-md border border-yellow-500/30 p-4 rounded-xl">
-                            <div className="flex items-center gap-3">
-                                <AlertCircle className="text-yellow-400 w-5 h-5" />
-                                <p className="text-sm text-yellow-200">
-                                    These leads were filtered out by the AI Agent. Review and reinstate them to restore to CRM.
-                                </p>
-                            </div>
+            {/* TAB CONTENT: DISQUALIFIED LEADS */}
+            {activeTab === 'disqualified' && (
+                <div className="space-y-4">
+                    <div className="flex justify-between items-center bg-gray-800/50 backdrop-blur-md border border-gray-700/50 p-4 rounded-xl">
+                        <div className="flex items-center gap-3">
+                            <AlertCircle className="text-teal-400 w-5 h-5" />
+                            <p className="text-sm text-gray-300">
+                                These leads were filtered out by the AI. Review and reinstate to restore to CRM.
+                            </p>
+                        </div>
+                        <div className="flex gap-2">
+                            {selectedLeads.size > 0 && (
+                                <button
+                                    onClick={reinstateSelected}
+                                    className="px-4 py-2 bg-teal-500/20 hover:bg-teal-500/30 text-teal-400 rounded-lg transition-colors flex items-center gap-2"
+                                >
+                                    <Check className="w-4 h-4" />
+                                    Reinstate Selected ({selectedLeads.size})
+                                </button>
+                            )}
                             <button
                                 onClick={loadDroppedLeads}
-                                className="p-2 hover:bg-yellow-500/20 rounded-lg text-yellow-400 transition-colors"
+                                className="p-2 hover:bg-gray-700/50 rounded-lg text-gray-400 transition-colors"
                             >
                                 <RefreshCw className={`w-4 h-4 ${loadingLeads ? 'animate-spin' : ''}`} />
                             </button>
@@ -329,33 +392,52 @@ const Logbook = () => {
                                     <table className="w-full text-sm">
                                         <thead className="bg-gray-900/50 text-xs font-semibold uppercase tracking-wider text-gray-400">
                                             <tr>
+                                                <th className="px-4 py-3 text-left">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectAll}
+                                                        onChange={toggleSelectAll}
+                                                        className="rounded border-gray-600 text-teal-500 focus:ring-teal-500 focus:ring-offset-gray-900"
+                                                    />
+                                                </th>
                                                 <th className="px-4 py-3 text-left">Person</th>
                                                 <th className="px-4 py-3 text-left">Email</th>
                                                 <th className="px-4 py-3 text-left">Title</th>
                                                 <th className="px-4 py-3 text-left">Company</th>
-                                                <th className="px-4 py-3 text-left">Reason</th>
+                                                <th className="px-4 py-3 text-left">Disqualified Because</th>
                                                 <th className="px-4 py-3"></th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-gray-700/50">
-                                            {droppedLeads.map((lead) => (
-                                                <tr key={lead.id} className="hover:bg-gray-700/30 transition-colors">
-                                                    <td className="px-4 py-3 text-white font-medium">{lead.person_name || '—'}</td>
-                                                    <td className="px-4 py-3 text-gray-300">{lead.email || '—'}</td>
-                                                    <td className="px-4 py-3 text-gray-400">{lead.job_title || '—'}</td>
-                                                    <td className="px-4 py-3 text-gray-300">{lead.company_name || '—'}</td>
-                                                    <td className="px-4 py-3 text-yellow-400 text-xs">{lead.source_notes || 'AI Filtered'}</td>
-                                                    <td className="px-4 py-3 text-right">
-                                                        <button
-                                                            onClick={() => openApprovalModal(lead.id)}
-                                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-500/20 hover:bg-teal-500/30 text-teal-400 text-xs font-medium rounded-lg transition-colors"
-                                                        >
-                                                            <ThumbsUp className="w-3 h-3" />
-                                                            Reinstate
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                            ))}
+                                            {droppedLeads.map((lead) => {
+                                                const reason = (lead.source_notes || 'AI Filtered').replace(/archived|no connection request sent|zombie/gi, '').trim() || 'Did not match ICP criteria'
+                                                return (
+                                                    <tr key={lead.id} className="hover:bg-gray-700/30 transition-colors">
+                                                        <td className="px-4 py-3">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={selectedLeads.has(lead.id)}
+                                                                onChange={() => toggleLeadSelection(lead.id)}
+                                                                className="rounded border-gray-600 text-teal-500 focus:ring-teal-500 focus:ring-offset-gray-900"
+                                                            />
+                                                        </td>
+                                                        <td className="px-4 py-3 text-white font-medium">{lead.person_name || '—'}</td>
+                                                        <td className="px-4 py-3 text-gray-300">{lead.email || '—'}</td>
+                                                        <td className="px-4 py-3 text-gray-400">{lead.job_title || '—'}</td>
+                                                        <td className="px-4 py-3 text-gray-300">{lead.company_name || '—'}</td>
+                                                        <td className="px-4 py-3 text-gray-400 text-xs">{reason}</td>
+                                                        <td className="px-4 py-3 text-right">
+                                                            <button
+                                                                onClick={() => openApprovalModal(lead.id)}
+                                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-500/20 hover:bg-teal-500/30 text-teal-400 text-xs font-medium rounded-lg transition-colors"
+                                                            >
+                                                                <ThumbsUp className="w-3 h-3" />
+                                                                Reinstate
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                )
+                                            })}
                                         </tbody>
                                     </table>
                                 </div>
@@ -363,7 +445,7 @@ const Logbook = () => {
                         )}
                     </div>
                 )}
-            </div>
+                </div>
 
             {/* Approval Modal */}
             {approvalModalOpen && (
