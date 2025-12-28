@@ -49,7 +49,8 @@ const Logbook = () => {
         setLoadingJobs(true)
         try {
             const data = await fetchRuns()
-            const mapped = data.map(run => {
+            // Fix: Handle null/undefined data from API
+            const mapped = (data || []).map(run => {
                 let result = {}
                 let prompt = 'Workflow Run'
                 try {
@@ -70,8 +71,9 @@ const Logbook = () => {
                 }
             })
             setJobs(mapped)
-        } catch (error) {
-            console.error('Failed to load logs:', error)
+        } catch (e) {
+            console.error("Failed to load runs", e)
+            setJobs([]) // Fail gracefully with empty array
         } finally {
             setLoadingJobs(false)
         }
