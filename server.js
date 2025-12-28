@@ -640,7 +640,7 @@ app.get('/api/leads', requireAuth, async (req, res) => {
             queryStr += " AND status != 'DISQUALIFIED'";
         }
 
-        queryStr += ' ORDER BY created_at DESC LIMIT 100';
+        queryStr += ' ORDER BY created_at DESC LIMIT 500'; // Increased from 100 to show all recent leads
 
         const { rows } = await query(queryStr, params);
         res.json(rows)

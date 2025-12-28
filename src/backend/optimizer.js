@@ -52,7 +52,7 @@ export class OptimizationService {
         const { rows } = await query(
             `SELECT * FROM run_feedback 
              WHERE icp_id = $1 
-             ORDER BY created_at DESC LIMIT 100`,
+             ORDER BY created_at DESC LIMIT 500`, // Increased from 100 to show all leads
             [this.icpId]
         );
         return rows;
