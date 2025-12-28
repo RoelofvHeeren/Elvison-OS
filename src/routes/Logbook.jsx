@@ -106,41 +106,44 @@ const Logbook = () => {
     }
 
     return (
-        <div className="p-8 max-w-7xl mx-auto animate-fade-in">
-            <header className="mb-8">
-                <h1 className="text-3xl font-bold font-display text-white mb-2 flex items-center gap-3">
+        <div className="space-y-6 p-6 lg:p-8 max-w-[1600px] mx-auto animate-fade-in">
+            {/* Enhanced Header */}
+            <div className="glass-panel p-6 bg-white/5 border border-white/10 backdrop-blur-md">
+                <div className="flex items-center gap-3 mb-2">
                     <Book className="h-8 w-8 text-teal-400" />
-                    Logbook
-                </h1>
-                <p className="text-gray-300">Review workflow results and disqualified leads.</p>
-            </header>
+                    <h1 className="font-serif text-3xl font-bold text-white">Logbook</h1>
+                </div>
+                <p className="text-sm text-gray-400">Track workflow runs, review disqualified leads, and monitor system performance.</p>
+            </div>
 
-            {/* TABS - Job History first, Disqualified Leads second */}
-            <div className="flex space-x-6 border-b border-gray-700 mb-6">
-                <button
-                    onClick={() => setActiveTab('import')}
-                    className={`pb-3 px-1 text-sm font-medium border-b-2 transition-colors ${activeTab === 'import'
-                        ? 'border-teal-500 text-teal-400'
-                        : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-600'
-                        }`}
-                >
-                    <div className="flex items-center gap-2">
-                        <Clock className="w-4 h-4" />
-                        Job History & Imports
-                    </div>
-                </button>
-                <button
-                    onClick={() => setActiveTab('review')}
-                    className={`pb-3 px-1 text-sm font-medium border-b-2 transition-colors ${activeTab === 'review'
-                        ? 'border-teal-500 text-teal-400'
-                        : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-600'
-                        }`}
-                >
-                    <div className="flex items-center gap-2">
-                        <AlertCircle className="w-4 h-4" />
-                        Disqualified Leads ({droppedLeads.length})
-                    </div>
-                </button>
+            {/* Tabs */}
+            <div className="border-b border-gray-700">
+                <nav className="-mb-px flex space-x-8" aria-label="Tabs">
+                    <button
+                        onClick={() => setActiveTab('import')}
+                        className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors ${activeTab === 'import'
+                            ? 'border-teal-500 text-teal-400'
+                            : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-600'
+                            }`}
+                    >
+                        <span className="flex items-center gap-2">
+                            <FileText className="w-4 h-4" />
+                            Job History & Imports
+                        </span>
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('review')}
+                        className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors ${activeTab === 'review'
+                            ? 'border-teal-500 text-teal-400'
+                            : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-600'
+                            }`}
+                    >
+                        <span className="flex items-center gap-2">
+                            <Trash2 className="w-4 h-4" />
+                            Disqualified Leads
+                        </span>
+                    </button>
+                </nav>
             </div>
 
             {/* TAB CONTENT: REVIEW */}
@@ -248,23 +251,66 @@ const Logbook = () => {
 
                                         return (
                                             <React.Fragment key={job.id}>
-                                                <tr className="hover:bg-gray-700/50 transition-colors">
-                                                    <td className="py-3 px-4">
-                                                        <div className="font-medium text-gray-100">
-                                                            {job.prompt || job.agent_id || 'Workflow Run'}
+                                                {/* Main Row - Enhanced Design */}
+                                                <tr className="hover:bg-gray-700/50 transition-colors cursor-pointer" onClick={() => setExpandedJobId(isExpanded ? null : job.id)}>
+                                                    <td className="py-4 px-4">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className={`h-10 w-10 rounded-full flex items-center justify-center ${job.status === 'COMPLETED' ? 'bg-teal-500/10 border border-teal-500/20' :
+                                                                    job.status === 'RUNNING' ? 'bg-blue-500/10 border border-blue-500/20' :
+                                                                        'bg-red-500/10 border border-red-500/20'
+                                                                }`}>
+                                                                {job.status === 'COMPLETED' && <CheckCircle className="w-5 h-5 text-teal-400" />}
+                                                                {job.status === 'RUNNING' && <RefreshCw className="w-5 h-5 text-blue-400 animate-spin" />}
+                                                                {job.status === 'FAILED' && <AlertCircle className="w-5 h-5 text-red-400" />}
+                                                            </div>
+                                                            <div>
+                                                                <div className="text-sm font-semibold text-gray-100">
+                                                                    {new Date(job.started_at).toLocaleDateString('en-US', {
+                                                                        month: 'short',
+                                                                        day: 'numeric',
+                                                                        hour: 'numeric',
+                                                                        minute: '2-digit'
+                                                                    })}
+                                                                </div>
+                                                                {job.icp_name && (
+                                                                    <div className="text-xs text-gray-500">{job.icp_name}</div>
+                                                                )}
+                                                            </div>
                                                         </div>
                                                     </td>
-                                                    <td className="py-3 px-4 text-sm text-gray-300">
-                                                        {new Date(job.timestamp).toLocaleString()}
+                                                    <td className="py-4 px-4 text-center">
+                                                        <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gray-800 border border-gray-700">
+                                                            <Building className="w-3.5 h-3.5 text-gray-400" />
+                                                            <span className="text-sm font-semibold text-gray-100">{companiesDiscovered}</span>
+                                                        </div>
                                                     </td>
-                                                    <td className="py-3 px-4">
-                                                        <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${job.status === 'success' || job.status === 'COMPLETED'
+                                                    <td className="py-4 px-4 text-center">
+                                                        <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gray-800 border border-gray-700">
+                                                            <User className="w-3.5 h-3.5 text-gray-400" />
+                                                            <span className="text-sm font-semibold text-gray-100">
+                                                                {leadsReturned}
+                                                                {isPartial && (
+                                                                    <span className="text-xs text-orange-400 ml-1">/ {targetLeads}</span>
+                                                                )}
+                                                            </span>
+                                                        </div>
+                                                    </td>
+                                                    <td className="py-4 px-4 text-center">
+                                                        <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gray-800 border border-gray-700">
+                                                            <Mail className="w-3.5 h-3.5 text-gray-400" />
+                                                            <span className="text-sm font-medium text-gray-300">
+                                                                {emailYield > 0 ? `${emailYield}%` : !hasStats ? '-' : '0%'}
+                                                            </span>
+                                                        </div>
+                                                    </td>
+                                                    <td className="py-4 px-4 text-center">
+                                                        <span className={`inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium ${job.status === 'success' || job.status === 'COMPLETED'
                                                                 ? isPartial
-                                                                    ? 'bg-orange-900/50 text-orange-300'
-                                                                    : 'bg-green-900/50 text-green-300'
+                                                                    ? 'bg-orange-900/50 text-orange-300 border border-orange-700/50'
+                                                                    : 'bg-emerald-900/50 text-emerald-300 border border-emerald-700/50'
                                                                 : job.status === 'RUNNING'
-                                                                    ? 'bg-blue-900/50 text-blue-300'
-                                                                    : 'bg-red-900/50 text-red-300'
+                                                                    ? 'bg-blue-900/50 text-blue-300 border border-blue-700/50'
+                                                                    : 'bg-red-900/50 text-red-300 border border-red-700/50'
                                                             }`}>
                                                             {job.status === 'FAILED' && isPartial
                                                                 ? `Partial (${leadsReturned}/${targetLeads})`
@@ -273,40 +319,14 @@ const Logbook = () => {
                                                                     : job.status}
                                                         </span>
                                                     </td>
-                                                    <td className="py-3 px-4 text-center">
-                                                        <div className="text-sm font-semibold text-gray-100">
-                                                            {companiesDiscovered}
-                                                            {!hasStats && (
-                                                                <span className="text-xs text-gray-500 ml-1">(legacy)</span>
+                                                    <td className="py-4 px-4 text-right">
+                                                        <button className="text-gray-400 hover:text-teal-400 transition-colors">
+                                                            {isExpanded ? (
+                                                                <ChevronDown className="w-5 h-5" />
+                                                            ) : (
+                                                                <ChevronRight className="w-5 h-5" />
                                                             )}
-                                                        </div>
-                                                    </td>
-                                                    <td className="py-3 px-4 text-center">
-                                                        <div className="text-sm font-semibold text-gray-100">
-                                                            {leadsReturned}
-                                                            {isPartial && (
-                                                                <span className="text-xs text-orange-400 ml-1">/ {targetLeads}</span>
-                                                            )}
-                                                            {!hasStats && (
-                                                                <span className="text-xs text-gray-500 ml-1">(legacy)</span>
-                                                            )}
-                                                        </div>
-                                                    </td>
-                                                    <td className="py-3 px-4 text-center">
-                                                        <div className="text-sm text-gray-300">
-                                                            {emailYield > 0 ? `${emailYield}%` : !hasStats ? '-' : '0%'}
-                                                        </div>
-                                                    </td>
-                                                    <td className="py-3 px-4 text-right">
-                                                        {stats.filtering_breakdown && (
-                                                            <button
-                                                                onClick={() => setExpandedJobId(isExpanded ? null : job.id)}
-                                                                className="inline-flex items-center gap-1 text-teal-400 hover:text-teal-300 text-xs font-medium"
-                                                            >
-                                                                {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                                                                {isExpanded ? 'Hide' : 'Show'}
-                                                            </button>
-                                                        )}
+                                                        </button>
                                                     </td>
                                                 </tr>
                                                 {isExpanded && stats.filtering_breakdown && (
