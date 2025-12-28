@@ -1323,6 +1323,9 @@ const initDB = async () => {
         // Migration: Add stats column to workflow_runs for logbook metrics
         await query(`ALTER TABLE workflow_runs ADD COLUMN IF NOT EXISTS stats JSONB;`)
 
+        // Migration: Add source_notes column to leads table (used for disqualified leads tracking)
+        await query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS source_notes TEXT;`)
+
 
         // Create Lead Feedback Table (Migration 06)
         await query(`
