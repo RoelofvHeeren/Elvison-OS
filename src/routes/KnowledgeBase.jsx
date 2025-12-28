@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Upload, FileText, Trash2, CheckCircle, Clock, RefreshCw } from 'lucide-react'
+import { Upload, FileText, Trash2, CheckCircle, Clock, RefreshCw, Edit2, Check, X } from 'lucide-react'
 import { saveFileToDB, getAllFilesFromDB, deleteFileFromDB } from '../utils/db'
 
 const KnowledgeBase = () => {
@@ -8,6 +8,9 @@ const KnowledgeBase = () => {
     const [syncing, setSyncing] = useState(false)
     // Vector Store ID Persistence
     const [vectorStoreId, setVectorStoreId] = useState('')
+    // Inline editing state
+    const [editingId, setEditingId] = useState(null)
+    const [editingName, setEditingName] = useState('')
 
     useEffect(() => {
         const savedId = localStorage.getItem('elvison_vector_store_id')
@@ -117,6 +120,51 @@ const KnowledgeBase = () => {
         }
     }
 
+    const handleStartEdit = (file) => {
+        setEditingId(file.id)
+        setEditingName(file.name)
+    }
+
+    const handleCancelEdit = () => {
+        setEditingId(null)
+        setEditingName('')
+    }
+
+    const handleSaveEdit = async (fileId) => {
+        if (!editingName.trim()) {
+            handleCancelEdit()
+            return
+        }
+
+        try {
+            // TODO: Add backend endpoint to update file name
+            // await fetch(`/api/knowledge/files/${fileId}`, {
+            //     method: 'PATCH',
+            //     headers: { 'Content-Type': 'application/json' },
+            //     body: JSON.stringify({ name: editingName })
+            // })
+
+            // Update local state optimistically
+            setFiles(prev => prev.map(f =>
+                f.id === fileId ? { ...f, name: editingName } : f
+            ))
+            handleCancelEdit()
+        } catch (err) {
+            console.error('Failed to update file name', err)
+            // Revert on error
+            handleCancelEdit()
+        }
+    }
+
+    const handleKeyDown = (e, fileId) => {
+        if (e.key === 'Enter') {
+            e.preventDefault()
+            handleSaveEdit(fileId)
+        } else if (e.key === 'Escape') {
+            handleCancelEdit()
+        }
+    }
+
     // ... (Vector Store ID logic moved to top in previous edit) ...
 
     return (
@@ -149,15 +197,54 @@ const KnowledgeBase = () => {
                         <div className="space-y-2">
                             {files.map((file) => (
                                 <div key={file.id} className="group flex items-center justify-between rounded-xl bg-white/5 p-3 hover:bg-white/10 transition-all border border-transparent hover:border-white/10">
-                                    <div className="flex items-center gap-4">
+                                    <div className="flex items-center gap-4 flex-1">
                                         <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-black/20 border border-white/10 text-primary">
                                             <FileText className="h-5 w-5" />
                                         </div>
-                                        <div>
-                                            <h3 className="font-medium text-white text-sm">{file.name}</h3>
-                                            <p className="text-[10px] text-gray-500 uppercase tracking-wide">
-                                                {new Date(file.uploadedAt).toLocaleDateString()}
-                                            </p>
+                                        <div className="flex-1">
+                                            {editingId === file.id ? (
+                                                <div className="flex items-center gap-2">
+                                                    <input
+                                                        type="text"
+                                                        value={editingName}
+                                                        onChange={(e) => setEditingName(e.target.value)}
+                                                        onKeyDown={(e) => handleKeyDown(e, file.id)}
+                                                        onBlur={() => handleSaveEdit(file.id)}
+                                                        className="flex-1 bg-black/40 border border-primary/50 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-primary"
+                                                        autoFocus
+                                                    />
+                                                    <button
+                                                        onClick={() => handleSaveEdit(file.id)}
+                                                        className="p-1 text-teal-400 hover:bg-teal-500/20 rounded"
+                                                        title="Save"
+                                                    >
+                                                        <Check className="h-4 w-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={handleCancelEdit}
+                                                        className="p-1 text-gray-400 hover:bg-gray-500/20 rounded"
+                                                        title="Cancel"
+                                                    >
+                                                        <X className="h-4 w-4" />
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <div className="flex items-center gap-2">
+                                                    <div>
+                                                        <h3 className="font-medium text-white text-sm">{file.name}</h3>
+                                                        <p className="text-[10px] text-gray-500 uppercase tracking-wide">
+                                                            {new Date(file.uploadedAt).toLocaleDateString()}
+                                                        </p>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => handleStartEdit(file)}
+                                                        className="p-1.5 text-gray-500 hover:text-teal-400 hover:bg-teal-500/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                                                        title="Edit name"
+                                                    >
+                                                        <Edit2 className="h-3.5 w-3.5" />
+                                                    </button>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
 
