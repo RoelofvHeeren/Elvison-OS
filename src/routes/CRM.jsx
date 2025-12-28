@@ -7,7 +7,7 @@ import { fetchLeads, deleteLead, approveLead } from '../utils/api'
 import { useIcp } from '../context/IcpContext'
 
 function CRM() {
-  const [leads, setLeads] = useState([])
+  const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
