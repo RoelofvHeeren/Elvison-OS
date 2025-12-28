@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Book, Clock, CheckCircle, AlertCircle, Trash2, FileText, ChevronRight, ChevronDown, User, Building, Mail, RefreshCw, ThumbsUp } from 'lucide-react'
 
 import { fetchRuns, fetchLeads, approveLead } from '../utils/api'
 
 const Logbook = () => {
-    const [activeTab, setActiveTab] = useState('review') // 'review' | 'import'
+    const [activeTab, setActiveTab] = useState('import') // 'import' (Job History) | 'review' (Disqualified Leads)
 
     // Disqualified Leads State
     const [droppedLeads, setDroppedLeads] = useState([])
@@ -115,30 +115,30 @@ const Logbook = () => {
                 <p className="text-gray-500">Review disqualified leads and manage data imports.</p>
             </header>
 
-            {/* TABS */}
+            {/* TABS - Job History first, Disqualified Leads second */}
             <div className="flex space-x-6 border-b border-gray-200 mb-6">
-                <button
-                    onClick={() => setActiveTab('review')}
-                    className={`pb-3 px-1 text-sm font-medium border-b-2 transition-colors ${activeTab === 'review'
-                            ? 'border-indigo-600 text-indigo-600'
-                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                        }`}
-                >
-                    <div className="flex items-center gap-2">
-                        <AlertCircle className="w-4 h-4" />
-                        Disqualified Leads ({droppedLeads.length})
-                    </div>
-                </button>
                 <button
                     onClick={() => setActiveTab('import')}
                     className={`pb-3 px-1 text-sm font-medium border-b-2 transition-colors ${activeTab === 'import'
-                            ? 'border-indigo-600 text-indigo-600'
-                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                        ? 'border-indigo-600 text-indigo-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                         }`}
                 >
                     <div className="flex items-center gap-2">
                         <Clock className="w-4 h-4" />
                         Job History & Imports
+                    </div>
+                </button>
+                <button
+                    onClick={() => setActiveTab('review')}
+                    className={`pb-3 px-1 text-sm font-medium border-b-2 transition-colors ${activeTab === 'review'
+                        ? 'border-indigo-600 text-indigo-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                        }`}
+                >
+                    <div className="flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4" />
+                        Disqualified Leads ({droppedLeads.length})
                     </div>
                 </button>
             </div>
@@ -171,11 +171,11 @@ const Logbook = () => {
                             <table className="w-full text-left border-collapse">
                                 <thead>
                                     <tr className="bg-gray-50 border-b border-gray-100">
-                                        <th className="py-3 px-4 text-xs font-semibold text-gray-500 uppercase">Person</th>
-                                        <th className="py-3 px-4 text-xs font-semibold text-gray-500 uppercase">Role</th>
-                                        <th className="py-3 px-4 text-xs font-semibold text-gray-500 uppercase">Company</th>
-                                        <th className="py-3 px-4 text-xs font-semibold text-gray-500 uppercase">Reason</th>
-                                        <th className="py-3 px-4 text-xs font-semibold text-gray-500 uppercase text-right">Action</th>
+                                        <th className="py-3 px-4 text-xs font-semibold text-gray-700 uppercase">Person</th>
+                                        <th className="py-3 px-4 text-xs font-semibold text-gray-700 uppercase">Role</th>
+                                        <th className="py-3 px-4 text-xs font-semibold text-gray-700 uppercase">Company</th>
+                                        <th className="py-3 px-4 text-xs font-semibold text-gray-700 uppercase">Reason</th>
+                                        <th className="py-3 px-4 text-xs font-semibold text-gray-700 uppercase text-right">Action</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
@@ -210,25 +210,124 @@ const Logbook = () => {
                 </div>
             )}
 
-            {/* TAB CONTENT: IMPORT (Simplified View for now) */}
+            {/* TAB CONTENT: JOB HISTORY & IMPORTS - Enhanced with detailed metrics */}
             {activeTab === 'import' && (
-                <div className="space-y-6">
-                    {jobs.length === 0 && !loadingJobs && (
-                        <div className="text-center py-12 text-gray-400">No job history.</div>
-                    )}
-                    {jobs.map(job => (
-                        <div key={job.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-                            <div className="flex justify-between">
-                                <div>
-                                    <div className="font-medium">{job.agent_id || 'Workflow'}</div>
-                                    <div className="text-xs text-gray-500">{new Date(job.timestamp).toLocaleString()}</div>
-                                </div>
-                                <div className={`text-sm ${job.status === 'success' ? 'text-green-600' : 'text-red-600'}`}>
-                                    {job.status}
-                                </div>
-                            </div>
+                <div className="space-y-4">
+                    {loadingJobs ? (
+                        <div className="text-center py-12 text-gray-400">Loading job history...</div>
+                    ) : jobs.length === 0 ? (
+                        <div className="text-center py-12 bg-white rounded-xl border border-dashed border-gray-300">
+                            <Clock className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                            <p className="text-gray-500 font-medium">No job history.</p>
+                            <p className="text-sm text-gray-400">Run your first workflow to see results here.</p>
                         </div>
-                    ))}
+                    ) : (
+                        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                            <table className="w-full text-left border-collapse">
+                                <thead>
+                                    <tr className="bg-gray-50 border-b border-gray-100">
+                                        <th className="py-3 px-4 text-xs font-semibold text-gray-700 uppercase">Run Name</th>
+                                        <th className="py-3 px-4 text-xs font-semibold text-gray-700 uppercase">Date/Time</th>
+                                        <th className="py-3 px-4 text-xs font-semibold text-gray-700 uppercase">Status</th>
+                                        <th className="py-3 px-4 text-xs font-semibold text-gray-700 uppercase text-center">Companies</th>
+                                        <th className="py-3 px-4 text-xs font-semibold text-gray-700 uppercase text-center">Leads</th>
+                                        <th className="py-3 px-4 text-xs font-semibold text-gray-700 uppercase text-center">Yield</th>
+                                        <th className="py-3 px-4 text-xs font-semibold text-gray-700 uppercase text-right">Details</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                    {jobs.map(job => {
+                                        const stats = job.stats || {};
+                                        const companiesDiscovered = stats.companies_discovered || 0;
+                                        const leadsReturned = stats.leads_returned || 0;
+                                        const emailYield = stats.email_yield_percentage || 0;
+                                        const isExpanded = expandedJobId === job.id;
+
+                                        return (
+                                            <React.Fragment key={job.id}>
+                                                <tr className="hover:bg-gray-50 transition-colors">
+                                                    <td className="py-3 px-4">
+                                                        <div className="font-medium text-gray-900">
+                                                            {job.prompt || job.agent_id || 'Workflow Run'}
+                                                        </div>
+                                                    </td>
+                                                    <td className="py-3 px-4 text-sm text-gray-600">
+                                                        {new Date(job.timestamp).toLocaleString()}
+                                                    </td>
+                                                    <td className="py-3 px-4">
+                                                        <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${job.status === 'success' || job.status === 'COMPLETED'
+                                                            ? 'bg-green-100 text-green-700'
+                                                            : job.status === 'RUNNING'
+                                                                ? 'bg-blue-100 text-blue-700'
+                                                                : 'bg-red-100 text-red-700'
+                                                            }`}>
+                                                            {job.status === 'success' ? 'Completed' : job.status}
+                                                        </span>
+                                                    </td>
+                                                    <td className="py-3 px-4 text-center">
+                                                        <div className="text-sm font-semibold text-gray-900">
+                                                            {companiesDiscovered > 0 ? companiesDiscovered : 'N/A'}
+                                                        </div>
+                                                    </td>
+                                                    <td className="py-3 px-4 text-center">
+                                                        <div className="text-sm font-semibold text-gray-900">
+                                                            {leadsReturned > 0 ? leadsReturned : stats.leads_returned === 0 ? '0' : 'N/A'}
+                                                        </div>
+                                                    </td>
+                                                    <td className="py-3 px-4 text-center">
+                                                        <div className="text-sm text-gray-600">
+                                                            {emailYield > 0 ? `${emailYield}%` : 'N/A'}
+                                                        </div>
+                                                    </td>
+                                                    <td className="py-3 px-4 text-right">
+                                                        {stats.filtering_breakdown && (
+                                                            <button
+                                                                onClick={() => setExpandedJobId(isExpanded ? null : job.id)}
+                                                                className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-800 text-xs font-medium"
+                                                            >
+                                                                {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                                                                {isExpanded ? 'Hide' : 'Show'}
+                                                            </button>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                                {isExpanded && stats.filtering_breakdown && (
+                                                    <tr>
+                                                        <td colSpan="7" className="bg-gray-50 p-4">
+                                                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                                                <div className="bg-white p-3 rounded-lg border border-gray-200">
+                                                                    <div className="text-xs text-gray-500 mb-1">Companies Found (Raw)</div>
+                                                                    <div className="text-lg font-bold text-gray-900">{stats.filtering_breakdown.companies_found_raw || 0}</div>
+                                                                </div>
+                                                                <div className="bg-white p-3 rounded-lg border border-gray-200">
+                                                                    <div className="text-xs text-gray-500 mb-1">Companies Qualified</div>
+                                                                    <div className="text-lg font-bold text-green-600">{stats.filtering_breakdown.companies_qualified || 0}</div>
+                                                                </div>
+                                                                <div className="bg-white p-3 rounded-lg border border-gray-200">
+                                                                    <div className="text-xs text-gray-500 mb-1">Leads Scraped</div>
+                                                                    <div className="text-lg font-bold text-blue-600">{stats.filtering_breakdown.leads_scraped || 0}</div>
+                                                                </div>
+                                                                <div className="bg-white p-3 rounded-lg border border-gray-200">
+                                                                    <div className="text-xs text-gray-500 mb-1">Leads Disqualified</div>
+                                                                    <div className="text-lg font-bold text-red-600">{stats.filtering_breakdown.leads_disqualified || 0}</div>
+                                                                </div>
+                                                            </div>
+                                                            {job.error && (
+                                                                <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                                                                    <div className="text-xs font-semibold text-red-700 mb-1">Error Details</div>
+                                                                    <div className="text-sm text-red-600">{job.error}</div>
+                                                                </div>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                )}
+                                            </React.Fragment>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
                 </div>
             )}
 

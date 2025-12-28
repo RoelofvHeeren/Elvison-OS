@@ -1197,9 +1197,11 @@ app.post('/api/agents/run', requireAuth, async (req, res) => {
         })
 
         // 4. Success Completion
+        // Extract stats from result for logbook display
+        const stats = result.stats || {};
         await query(
-            `UPDATE workflow_runs SET status = 'COMPLETED', completed_at = NOW() WHERE id = $1`,
-            [runId]
+            `UPDATE workflow_runs SET status = 'COMPLETED', completed_at = NOW(), stats = $2 WHERE id = $1`,
+            [runId, JSON.stringify(stats)]
         )
         await query(
             `INSERT INTO agent_results (run_id, output_data) VALUES ($1, $2)`,
@@ -1317,6 +1319,10 @@ const initDB = async () => {
 
         // Migration: Add phone_numbers if not exists
         await query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS phone_numbers JSONB DEFAULT '[]'::jsonb;`)
+
+        // Migration: Add stats column to workflow_runs for logbook metrics
+        await query(`ALTER TABLE workflow_runs ADD COLUMN IF NOT EXISTS stats JSONB;`)
+
 
         // Create Lead Feedback Table (Migration 06)
         await query(`

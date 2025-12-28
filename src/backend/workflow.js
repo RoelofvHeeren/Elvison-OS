@@ -798,10 +798,30 @@ OUTPUT: JSON list (company_name, website, capital_role, description). Target 20+
             logStep('CRM Sync', `Failed to save leads to DB: ${dbErr.message}`);
         }
 
+        // Calculate email yield percentage
+        const calculateEmailYield = (leads) => {
+            if (!leads || leads.length === 0) return 0;
+            const withEmail = leads.filter(l => l.email).length;
+            return Math.round((withEmail / leads.length) * 100);
+        };
+
         return {
             status: "success",
             leads: outreachOutput.leads,
-            debug: debugLog
+            debug: debugLog,
+            stats: {
+                companies_discovered: qualifiedCompanies.length,
+                leads_returned: outreachOutput.leads ? outreachOutput.leads.length : 0,
+                filtering_breakdown: {
+                    companies_found_raw: qualifiedCompanies.length + (debugLog.discovery?.length || 0),
+                    companies_qualified: qualifiedCompanies.length,
+                    leads_scraped: globalLeads.length,
+                    leads_after_filtering: outreachOutput.leads ? outreachOutput.leads.length : 0,
+                    leads_disqualified: globalLeads.length - (outreachOutput.leads ? outreachOutput.leads.length : 0)
+                },
+                discovery_rounds: attempts,
+                email_yield_percentage: calculateEmailYield(outreachOutput.leads || [])
+            }
         };
     });
 };
