@@ -303,16 +303,27 @@ const Logbook = () => {
                         <div className="flex justify-between items-center bg-white/5 backdrop-blur-md border border-white/10 p-4 rounded-xl">
                             <div className="flex items-center gap-3">
                                 <AlertCircle className="text-[#139187] w-5 h-5" />
-                                <p className="text-sm text-yellow-200">
-                                    These leads were filtered out by the AI Agent. Review and reinstate them to restore to CRM.
+                                <p className="text-sm text-gray-300">
+                                    These leads were filtered out by the AI. Review and reinstate to restore to CRM.
                                 </p>
                             </div>
-                            <button
-                                onClick={loadDroppedLeads}
-                                className="p-2 hover:bg-white/5 rounded-lg text-gray-400 transition-colors"
-                            >
-                                <RefreshCw className={`w-4 h-4 ${loadingLeads ? 'animate-spin' : ''}`} />
-                            </button>
+                            <div className="flex gap-2">
+                                {selectedLeads.size > 0 && (
+                                    <button
+                                        onClick={reinstateSelected}
+                                        className="px-4 py-2 bg-[#139187]/20 hover:bg-[#139187]/30 text-[#139187] rounded-lg transition-colors flex items-center gap-2 border border-[#139187]/30"
+                                    >
+                                        <Check className="w-4 h-4" />
+                                        Reinstate Selected ({selectedLeads.size})
+                                    </button>
+                                )}
+                                <button
+                                    onClick={loadDroppedLeads}
+                                    className="p-2 hover:bg-white/5 rounded-lg text-gray-400 transition-colors"
+                                >
+                                    <RefreshCw className={`w-4 h-4 ${loadingLeads ? 'animate-spin' : ''}`} />
+                                </button>
+                            </div>
                         </div>
 
                         {loadingLeads ? (
