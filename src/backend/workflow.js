@@ -731,7 +731,7 @@ OUTPUT: JSON list (company_name, website, capital_role, description). Target 20+
             }];
 
             try {
-                // logStep('Outreach Creator', `Batch ${i+1}/${outreachChunks.length} generating...`);
+                logStep('Outreach Creator', `Batch ${i + 1}/${outreachChunks.length} generating...`);
                 const outreachRes = await retryWithBackoff(() => runner.run(outreachCreator, outreachInput));
 
                 if (outreachRes.finalOutput && outreachRes.finalOutput.leads) {
