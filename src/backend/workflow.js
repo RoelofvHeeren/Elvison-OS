@@ -706,10 +706,9 @@ OUTPUT: JSON list (company_name, website, capital_role, description). Target 20+
                     leadsPerCompany[company.company_name] = leadsFromCompany;
                 }
 
-                totalLeadsCollected = globalLeads.length;
-
+                // NOTE: totalLeadsCollected is updated AFTER leads are added (see line ~758)
                 // --- END OF DISCOVERY & SCRAPING FOR THIS ROUND ---
-                logStep('Workflow', `Round ${attempts} complete: ${globalLeads.length} total leads collected so far.`);
+                logStep('Workflow', `Round ${attempts} complete: collecting leads...`);
 
                 // OPTIMIZATION: Diminishing returns check
                 const companiesFoundThisRound = qualifiedCompanies.length - companiesBeforeThisRound;
@@ -755,8 +754,10 @@ OUTPUT: JSON list (company_name, website, capital_role, description). Target 20+
                     scrapedNamesSet.add(companyName);
                 }
 
+                const previousCount = totalLeadsCollected || 0;
                 totalLeadsCollected = globalLeads.length;
-                logStep('Lead Finder', `Stats: Found ${leads.length} new leads. Total Pipeline: ${totalLeadsCollected}/${targetLeads}`);
+                const leadsAddedThisRound = totalLeadsCollected - previousCount;
+                logStep('Lead Finder', `Stats: ${leadsAddedThisRound} leads added this round (${leads.length} found by AI, limited by max ${maxLeadsPerCompany}/company). Total Pipeline: ${totalLeadsCollected}/${targetLeads}`);
 
             } catch (err) {
                 logStep('Lead Finder', `❌ Enrichment failed: ${err.message}`);
