@@ -326,15 +326,10 @@ const KnowledgeBase = () => {
                         </div>
                     )}
                 </div>
-
-                {/* Sidebar: Upload & Settings */}
-                <div className="space-y-6">
-                    {/* Upload Area */}
-                    <div className="glass-panel p-6">
-                        <h3 className="mb-4 text-xs font-bold uppercase tracking-wider text-muted">Upload New</h3>
-                    </div>
-                </div>
-                )
+            </div>
+        </div>
+    )
 }
 
-                export default KnowledgeBase
+export default KnowledgeBase
+    ```
