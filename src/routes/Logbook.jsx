@@ -140,6 +140,7 @@ const Logbook = () => {
         // Extract stats from workflow output (stats object) or result object
         const stats = outputData.stats || metadata.stats || outputData || metadata || {}
         const filtering = stats.filtering_breakdown || {}
+        const leads = outputData.leads || metadata.leads || []
 
         return {
             companies: stats.companies_discovered || stats.companiesFound || 0,
@@ -147,7 +148,9 @@ const Logbook = () => {
             qualified: filtering.qualified || stats.qualified || stats.leadsQualified || 0,
             disqualified: filtering.dropped || stats.dropped || stats.leadsDisqualified || 0,
             emailYield: stats.email_yield_percentage || stats.emailYield || 0,
-            logs: outputData.execution_logs || metadata.execution_logs || outputData.executionLogs || metadata.executionLogs || []
+            logs: outputData.execution_logs || metadata.execution_logs || outputData.executionLogs || metadata.executionLogs || [],
+            leads: leads,
+            companies_list: Array.from(new Set(leads.map(l => l.company_name).filter(Boolean)))
         }
     }
 
@@ -282,23 +285,11 @@ const Logbook = () => {
                                                         <Building className="w-5 h-5 text-[#139187] mb-2" />
                                                         <p className="text-2xl font-bold text-white">{stats.companies}</p>
                                                         <p className="text-xs text-gray-400 uppercase tracking-wider">Companies</p>
-                                                        <a
-                                                            href="/companies"
-                                                            className="mt-2 text-xs text-[#139187] hover:text-[#139187]/80 flex items-center gap-1"
-                                                        >
-                                                            View Companies →
-                                                        </a>
                                                     </div>
                                                     <div className="bg-black/20 rounded-lg p-4 border border-white/10">
                                                         <Users className="w-5 h-5 text-[#139187] mb-2" />
                                                         <p className="text-2xl font-bold text-white">{stats.totalLeads}</p>
                                                         <p className="text-xs text-gray-400 uppercase tracking-wider">Total Leads</p>
-                                                        <a
-                                                            href="/crm"
-                                                            className="mt-2 text-xs text-[#139187] hover:text-[#139187]/80 flex items-center gap-1"
-                                                        >
-                                                            View in CRM →
-                                                        </a>
                                                     </div>
                                                     <div className="bg-gray-900/50 rounded-lg p-4 border border-gray-700/50">
                                                         <CheckCircle className="w-5 h-5 text-green-400 mb-2" />
@@ -315,31 +306,64 @@ const Logbook = () => {
 
                                             {/* Expanded: Execution Logs */}
                                             {isExpanded && (
-                                                <div className="px-6 pb-6 border-t border-gray-700/50">
-                                                    <div className="mt-4">
-                                                        <h4 className="text-sm font-semibold uppercase tracking-wider text-gray-400 mb-3">
-                                                            Execution Timeline
-                                                        </h4>
-                                                        {stats.logs.length > 0 ? (
+                                                <div className="px-6 pb-6 border-t border-gray-700/50 space-y-4">
+                                                    {/* Companies Found */}
+                                                    {stats.companies_list && stats.companies_list.length > 0 && (
+                                                        <div className="bg-black/20 rounded-xl p-6 border border-white/10">
+                                                            <h4 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-4">Companies Found ({stats.companies_list.length})</h4>
+                                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                                                                {stats.companies_list.map((company, idx) => (
+                                                                    <div key={idx} className="flex items-center gap-2 text-sm bg-white/5 rounded-lg p-2 border border-white/5">
+                                                                        <Building className="w-4 h-4 text-[#139187] flex-shrink-0" />
+                                                                        <span className="text-white truncate">{company}</span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Leads Found */}
+                                                    {stats.leads && stats.leads.length > 0 && (
+                                                        <div className="bg-black/20 rounded-xl p-6 border border-white/10">
+                                                            <h4 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-4">Leads Found ({stats.leads.length})</h4>
+                                                            <div className="space-y-2 max-h-96 overflow-y-auto">
+                                                                {stats.leads.map((lead, idx) => (
+                                                                    <div key={idx} className="flex items-start gap-3 text-sm bg-white/5 rounded-lg p-3 border border-white/5">
+                                                                        <div className="flex-1">
+                                                                            <p className="text-white font-medium">
+                                                                                {lead.first_name} {lead.last_name}
+                                                                            </p>
+                                                                            <p className="text-gray-400 text-xs">{lead.title}</p>
+                                                                            <p className="text-gray-500 text-xs mt-1">{lead.company_name}</p>
+                                                                        </div>
+                                                                        {lead.email && (
+                                                                            <a href={`mailto:${lead.email}`} className="text-[#139187] text-xs hover:underline flex-shrink-0">
+                                                                                {lead.email}
+                                                                            </a>
+                                                                        )}
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Execution Logs */}
+                                                    <div className="bg-black/20 rounded-xl p-6 border border-white/10">
+                                                        <h4 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-4">Execution Timeline</h4>
+                                                        {stats.logs && stats.logs.length > 0 ? (
                                                             <div className="space-y-2 max-h-96 overflow-y-auto">
                                                                 {stats.logs.map((log, idx) => (
-                                                                    <div key={idx} className="bg-black/20 rounded-lg p-3 border border-white/10">
-                                                                        <div className="flex items-start gap-3">
-                                                                            <div className="flex-shrink-0 w-2 h-2 bg-[#139187] rounded-full mt-2"></div>
-                                                                            <div className="flex-1">
-                                                                                <p className="text-sm text-gray-300">{log.message || log}</p>
-                                                                                {log.timestamp && (
-                                                                                    <p className="text-xs text-gray-500 mt-1">
-                                                                                        {new Date(log.timestamp).toLocaleTimeString()}
-                                                                                    </p>
-                                                                                )}
-                                                                            </div>
-                                                                        </div>
+                                                                    <div key={idx} className="flex gap-3 text-sm">
+                                                                        <span className="text-gray-500 font-mono text-xs flex-shrink-0">
+                                                                            {new Date(log.timestamp).toLocaleTimeString()}
+                                                                        </span>
+                                                                        <span className="text-gray-400">[{log.stage}]</span>
+                                                                        <span className="text-white">{log.message}</span>
                                                                     </div>
                                                                 ))}
                                                             </div>
                                                         ) : (
-                                                            <p className="text-sm text-gray-500 italic">No execution logs available</p>
+                                                            <p className="text-sm text-gray-500">No execution logs available</p>
                                                         )}
                                                     </div>
 
