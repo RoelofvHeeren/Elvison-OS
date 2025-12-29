@@ -137,13 +137,16 @@ const Logbook = () => {
         const metadata = typeof run.metadata === 'string' ? JSON.parse(run.metadata) : (run.metadata || {})
         const outputData = typeof run.output_data === 'string' ? JSON.parse(run.output_data) : (run.output_data || {})
 
+        // Extract stats from workflow output (stats object) or result object
+        const stats = outputData.stats || metadata.stats || outputData || metadata || {}
+
         return {
-            companies: outputData.companiesFound || metadata.companiesFound || 0,
-            totalLeads: outputData.leadsGenerated || metadata.leadsGenerated || 0,
-            qualified: outputData.leadsQualified || metadata.leadsQualified || 0,
-            disqualified: outputData.leadsDisqualified || metadata.leadsDisqualified || 0,
-            emailYield: outputData.emailYield || metadata.emailYield || 0,
-            logs: outputData.executionLogs || metadata.executionLogs || []
+            companies: stats.companies_discovered || stats.companiesFound || 0,
+            totalLeads: stats.leads_returned || stats.leadsGenerated || 0,
+            qualified: stats.qualified || stats.leadsQualified || 0,
+            disqualified: stats.dropped || stats.leadsDisqualified || 0,
+            emailYield: stats.email_yield_percentage || stats.emailYield || 0,
+            logs: outputData.execution_logs || metadata.execution_logs || outputData.executionLogs || metadata.executionLogs || []
         }
     }
 
