@@ -139,12 +139,13 @@ const Logbook = () => {
 
         // Extract stats from workflow output (stats object) or result object
         const stats = outputData.stats || metadata.stats || outputData || metadata || {}
+        const filtering = stats.filtering_breakdown || {}
 
         return {
             companies: stats.companies_discovered || stats.companiesFound || 0,
             totalLeads: stats.leads_returned || stats.leadsGenerated || 0,
-            qualified: stats.qualified || stats.leadsQualified || 0,
-            disqualified: stats.dropped || stats.leadsDisqualified || 0,
+            qualified: filtering.qualified || stats.qualified || stats.leadsQualified || 0,
+            disqualified: filtering.dropped || stats.dropped || stats.leadsDisqualified || 0,
             emailYield: stats.email_yield_percentage || stats.emailYield || 0,
             logs: outputData.execution_logs || metadata.execution_logs || outputData.executionLogs || metadata.executionLogs || []
         }
@@ -281,11 +282,23 @@ const Logbook = () => {
                                                         <Building className="w-5 h-5 text-[#139187] mb-2" />
                                                         <p className="text-2xl font-bold text-white">{stats.companies}</p>
                                                         <p className="text-xs text-gray-400 uppercase tracking-wider">Companies</p>
+                                                        <a
+                                                            href="/companies"
+                                                            className="mt-2 text-xs text-[#139187] hover:text-[#139187]/80 flex items-center gap-1"
+                                                        >
+                                                            View Companies →
+                                                        </a>
                                                     </div>
-                                                    <div className="bg-gray-900/50 rounded-lg p-4 border border-gray-700/50">
+                                                    <div className="bg-black/20 rounded-lg p-4 border border-white/10">
                                                         <Users className="w-5 h-5 text-[#139187] mb-2" />
                                                         <p className="text-2xl font-bold text-white">{stats.totalLeads}</p>
                                                         <p className="text-xs text-gray-400 uppercase tracking-wider">Total Leads</p>
+                                                        <a
+                                                            href="/crm"
+                                                            className="mt-2 text-xs text-[#139187] hover:text-[#139187]/80 flex items-center gap-1"
+                                                        >
+                                                            View in CRM →
+                                                        </a>
                                                     </div>
                                                     <div className="bg-gray-900/50 rounded-lg p-4 border border-gray-700/50">
                                                         <CheckCircle className="w-5 h-5 text-green-400 mb-2" />
