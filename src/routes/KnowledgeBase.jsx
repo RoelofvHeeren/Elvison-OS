@@ -332,4 +332,3 @@ const KnowledgeBase = () => {
 }
 
 export default KnowledgeBase
-export default KnowledgeBase
