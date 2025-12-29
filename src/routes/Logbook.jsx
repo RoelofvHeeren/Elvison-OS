@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
-import { Book, Clock, CheckCircle, AlertCircle, Trash2, ChevronDown, ChevronUp, RefreshCw, ThumbsUp, Building, Users, Filter, Check } from 'lucide-react'
-import { fetchRuns, fetchLeads, approveLead } from '../utils/api'
+import { Book, Clock, CheckCircle, AlertCircle, Trash2, ChevronDown, ChevronUp, RefreshCw, ThumbsUp, Building, Users, Filter, Check, DollarSign, Zap, Activity } from 'lucide-react'
+import { fetchRuns, fetchLeads, approveLead, deleteLead } from '../utils/api'
 
 const Logbook = () => {
     const [activeTab, setActiveTab] = useState('history') // 'history' | 'disqualified'
@@ -132,6 +132,42 @@ const Logbook = () => {
         }
     }
 
+    const handleDeleteLead = async (leadId) => {
+        if (!confirm('Are you sure you want to permanently delete this disqualified lead?')) return
+
+        try {
+            await deleteLead(leadId)
+            setDroppedLeads(prev => prev.filter(l => l.id !== leadId))
+            selectedLeads.delete(leadId)
+            setSelectedLeads(new Set(selectedLeads))
+        } catch (error) {
+            console.error('Failed to delete lead:', error)
+            alert('Failed to delete lead. Please try again.')
+        }
+    }
+
+    const deleteSelected = async () => {
+        if (selectedLeads.size === 0) {
+            alert('Please select at least one lead to delete')
+            return
+        }
+
+        if (!confirm(`Are you sure you want to permanently delete ${selectedLeads.size} disqualified leads? This cannot be undone.`)) return
+
+        try {
+            await Promise.all(
+                Array.from(selectedLeads).map(leadId => deleteLead(leadId))
+            )
+            setDroppedLeads(prev => prev.filter(l => !selectedLeads.has(l.id)))
+            setSelectedLeads(new Set())
+            setSelectAll(false)
+            alert(`Successfully deleted ${selectedLeads.size} leads`)
+        } catch (error) {
+            console.error('Failed to delete leads:', error)
+            alert('Failed to delete some leads. Please try again.')
+        }
+    }
+
     const parseRunStats = (run) => {
         // Parse metadata and output_data to extract stats
         const metadata = typeof run.metadata === 'string' ? JSON.parse(run.metadata) : (run.metadata || {})
@@ -141,6 +177,7 @@ const Logbook = () => {
         const stats = outputData.stats || metadata.stats || outputData || metadata || {}
         const filtering = stats.filtering_breakdown || {}
         const leads = outputData.leads || metadata.leads || []
+        const apiCosts = stats.api_costs || {}
 
         return {
             companies: stats.companies_discovered || stats.companiesFound || 0,
@@ -150,7 +187,18 @@ const Logbook = () => {
             emailYield: stats.email_yield_percentage || stats.emailYield || 0,
             logs: outputData.execution_logs || metadata.execution_logs || outputData.executionLogs || metadata.executionLogs || [],
             leads: leads,
-            companies_list: Array.from(new Set(leads.map(l => l.company_name).filter(Boolean)))
+            companies_list: Array.from(new Set(leads.map(l => l.company_name).filter(Boolean))),
+            // API Cost tracking
+            apiCosts: {
+                totalCost: apiCosts.total_cost || '$0.00',
+                totalTokens: apiCosts.total_tokens || 0,
+                inputTokens: apiCosts.input_tokens || 0,
+                outputTokens: apiCosts.output_tokens || 0,
+                totalCalls: apiCosts.total_calls || 0,
+                byAgent: apiCosts.by_agent || {},
+                byModel: apiCosts.by_model || {},
+                detailedCalls: apiCosts.detailed_calls || []
+            }
         }
     }
 
@@ -280,7 +328,7 @@ const Logbook = () => {
                                                 </div>
 
                                                 {/* Stats Grid */}
-                                                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                                                <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
                                                     <div className="bg-black/20 rounded-lg p-4 border border-white/10">
                                                         <Building className="w-5 h-5 text-[#139187] mb-2" />
                                                         <p className="text-2xl font-bold text-white">{stats.companies}</p>
@@ -300,6 +348,12 @@ const Logbook = () => {
                                                         <Filter className="w-5 h-5 text-[#139187] mb-2" />
                                                         <p className="text-2xl font-bold text-white">{stats.disqualified}</p>
                                                         <p className="text-xs text-gray-400 uppercase tracking-wider">Disqualified</p>
+                                                    </div>
+                                                    {/* API Cost Card */}
+                                                    <div className="bg-gradient-to-br from-yellow-500/10 to-orange-500/10 rounded-lg p-4 border border-yellow-500/20">
+                                                        <DollarSign className="w-5 h-5 text-yellow-400 mb-2" />
+                                                        <p className="text-2xl font-bold text-yellow-300">{stats.apiCosts.totalCost}</p>
+                                                        <p className="text-xs text-gray-400 uppercase tracking-wider">API Cost</p>
                                                     </div>
                                                 </div>
                                             </div>
@@ -367,6 +421,110 @@ const Logbook = () => {
                                                         )}
                                                     </div>
 
+                                                    {/* API Cost Breakdown */}
+                                                    {(stats.apiCosts.totalCalls > 0 || stats.apiCosts.totalTokens > 0) && (
+                                                        <div className="bg-gradient-to-br from-yellow-500/5 to-orange-500/5 rounded-xl p-6 border border-yellow-500/20">
+                                                            <h4 className="text-xs font-bold uppercase tracking-wider text-yellow-400 mb-4 flex items-center gap-2">
+                                                                <DollarSign className="w-4 h-4" />
+                                                                API Cost Breakdown
+                                                            </h4>
+
+                                                            {/* Summary Stats */}
+                                                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                                                                <div className="bg-black/30 rounded-lg p-3 border border-white/5">
+                                                                    <p className="text-lg font-bold text-yellow-300">{stats.apiCosts.totalCost}</p>
+                                                                    <p className="text-xs text-gray-500">Total Cost</p>
+                                                                </div>
+                                                                <div className="bg-black/30 rounded-lg p-3 border border-white/5">
+                                                                    <p className="text-lg font-bold text-white">{stats.apiCosts.totalTokens?.toLocaleString()}</p>
+                                                                    <p className="text-xs text-gray-500">Total Tokens</p>
+                                                                </div>
+                                                                <div className="bg-black/30 rounded-lg p-3 border border-white/5">
+                                                                    <p className="text-lg font-bold text-blue-300">{stats.apiCosts.inputTokens?.toLocaleString()}</p>
+                                                                    <p className="text-xs text-gray-500">Input Tokens</p>
+                                                                </div>
+                                                                <div className="bg-black/30 rounded-lg p-3 border border-white/5">
+                                                                    <p className="text-lg font-bold text-green-300">{stats.apiCosts.outputTokens?.toLocaleString()}</p>
+                                                                    <p className="text-xs text-gray-500">Output Tokens</p>
+                                                                </div>
+                                                            </div>
+
+                                                            {/* By Agent Breakdown */}
+                                                            {Object.keys(stats.apiCosts.byAgent).length > 0 && (
+                                                                <div className="mb-6">
+                                                                    <h5 className="text-xs font-semibold text-gray-400 mb-3 flex items-center gap-2">
+                                                                        <Activity className="w-3 h-3" />
+                                                                        Cost by Agent
+                                                                    </h5>
+                                                                    <div className="space-y-2">
+                                                                        {Object.entries(stats.apiCosts.byAgent).map(([agent, data]) => (
+                                                                            <div key={agent} className="flex items-center justify-between bg-black/20 rounded-lg p-3 border border-white/5">
+                                                                                <div className="flex items-center gap-3">
+                                                                                    <Zap className="w-4 h-4 text-purple-400" />
+                                                                                    <div>
+                                                                                        <p className="text-sm font-medium text-white">{agent}</p>
+                                                                                        <p className="text-xs text-gray-500">
+                                                                                            {data.callCount} call{data.callCount !== 1 ? 's' : ''} • {data.totalTokens?.toLocaleString()} tokens
+                                                                                        </p>
+                                                                                    </div>
+                                                                                </div>
+                                                                                <div className="text-right">
+                                                                                    <p className="text-sm font-bold text-yellow-300">${data.cost?.toFixed(4)}</p>
+                                                                                    <p className="text-xs text-gray-500">avg {data.avgDuration?.toFixed(1)}s</p>
+                                                                                </div>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                            )}
+
+                                                            {/* By Model Breakdown */}
+                                                            {Object.keys(stats.apiCosts.byModel).length > 0 && (
+                                                                <div className="mb-6">
+                                                                    <h5 className="text-xs font-semibold text-gray-400 mb-3">Cost by Model</h5>
+                                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                                                        {Object.entries(stats.apiCosts.byModel).map(([model, data]) => (
+                                                                            <div key={model} className="flex items-center justify-between bg-black/20 rounded-lg p-3 border border-white/5">
+                                                                                <div>
+                                                                                    <p className="text-xs font-mono text-gray-300">{model}</p>
+                                                                                    <p className="text-xs text-gray-500">{data.callCount} calls</p>
+                                                                                </div>
+                                                                                <p className="text-sm font-bold text-yellow-300">${data.cost?.toFixed(4)}</p>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                            )}
+
+                                                            {/* Detailed Calls (Collapsible) */}
+                                                            {stats.apiCosts.detailedCalls && stats.apiCosts.detailedCalls.length > 0 && (
+                                                                <details className="group">
+                                                                    <summary className="text-xs font-semibold text-gray-400 mb-3 cursor-pointer hover:text-gray-300 flex items-center gap-2">
+                                                                        <ChevronDown className="w-3 h-3 group-open:rotate-180 transition-transform" />
+                                                                        Individual API Calls ({stats.apiCosts.detailedCalls.length})
+                                                                    </summary>
+                                                                    <div className="space-y-1 max-h-64 overflow-y-auto mt-3">
+                                                                        {stats.apiCosts.detailedCalls.map((call, idx) => (
+                                                                            <div key={idx} className="flex items-center justify-between text-xs bg-black/30 rounded p-2 border border-white/5">
+                                                                                <div className="flex items-center gap-2">
+                                                                                    <span className={`w-2 h-2 rounded-full ${call.success ? 'bg-green-400' : 'bg-red-400'}`}></span>
+                                                                                    <span className="text-gray-400">{call.agent}</span>
+                                                                                    <span className="text-gray-600">•</span>
+                                                                                    <span className="text-gray-500 font-mono">{call.model}</span>
+                                                                                </div>
+                                                                                <div className="flex items-center gap-3">
+                                                                                    <span className="text-gray-500">{call.inputTokens}→{call.outputTokens}</span>
+                                                                                    <span className="text-yellow-400 font-mono">${call.cost?.toFixed(6)}</span>
+                                                                                    <span className="text-gray-600">{call.duration?.toFixed(1)}s</span>
+                                                                                </div>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                </details>
+                                                            )}
+                                                        </div>
+                                                    )}
+
                                                     {run.error_log && (
                                                         <div className="mt-4 bg-red-500/10 border border-red-500/30 rounded-lg p-4">
                                                             <h4 className="text-sm font-semibold text-red-400 mb-2">Error Details:</h4>
@@ -395,13 +553,22 @@ const Logbook = () => {
                             </div>
                             <div className="flex gap-2">
                                 {selectedLeads.size > 0 && (
-                                    <button
-                                        onClick={reinstateSelected}
-                                        className="px-4 py-2 bg-[#139187]/20 hover:bg-[#139187]/30 text-[#139187] rounded-lg transition-colors flex items-center gap-2 border border-[#139187]/30"
-                                    >
-                                        <Check className="w-4 h-4" />
-                                        Reinstate Selected ({selectedLeads.size})
-                                    </button>
+                                    <>
+                                        <button
+                                            onClick={reinstateSelected}
+                                            className="px-4 py-2 bg-[#139187]/20 hover:bg-[#139187]/30 text-[#139187] rounded-lg transition-colors flex items-center gap-2 border border-[#139187]/30"
+                                        >
+                                            <Check className="w-4 h-4" />
+                                            Reinstate Selected ({selectedLeads.size})
+                                        </button>
+                                        <button
+                                            onClick={deleteSelected}
+                                            className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg transition-colors flex items-center gap-2 border border-red-500/30"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                            Delete Selected ({selectedLeads.size})
+                                        </button>
+                                    </>
                                 )}
                                 <button
                                     onClick={loadDroppedLeads}
@@ -461,13 +628,22 @@ const Logbook = () => {
                                                         <td className="px-4 py-3 text-gray-300">{lead.company_name || '—'}</td>
                                                         <td className="px-4 py-3 text-yellow-400 text-xs">{lead.source_notes || 'AI Filtered'}</td>
                                                         <td className="px-4 py-3 text-right">
-                                                            <button
-                                                                onClick={() => openApprovalModal(lead.id)}
-                                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#139187]/20 hover:bg-[#139187]/30 text-[#139187] text-xs font-medium rounded-lg transition-colors"
-                                                            >
-                                                                <ThumbsUp className="w-3 h-3" />
-                                                                Reinstate
-                                                            </button>
+                                                            <div className="flex items-center justify-end gap-2">
+                                                                <button
+                                                                    onClick={() => openApprovalModal(lead.id)}
+                                                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#139187]/20 hover:bg-[#139187]/30 text-[#139187] text-xs font-medium rounded-lg transition-colors"
+                                                                >
+                                                                    <ThumbsUp className="w-3 h-3" />
+                                                                    Reinstate
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleDeleteLead(lead.id)}
+                                                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-400 text-xs font-medium rounded-lg transition-colors"
+                                                                >
+                                                                    <Trash2 className="w-3 h-3" />
+                                                                    Delete
+                                                                </button>
+                                                            </div>
                                                         </td>
                                                     </tr>
                                                 )

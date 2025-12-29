@@ -11,6 +11,7 @@ import {
 import { LeadScraperService } from "./services/lead-scraper-service.js";
 import { WORKFLOW_CONFIG, getEffectiveMaxLeads, AGENT_MODELS } from "../config/workflow.js";
 import { finderBackup, profilerBackup, apolloBackup } from "./workflow_prompts_backup.js";
+import { CostTracker, extractTokenUsage } from "./services/cost-tracker.js";
 
 // --- Schema Definitions ---
 const CompanyFinderSchema = z.object({
@@ -389,6 +390,9 @@ export const runAgentWorkflow = async (input, config) => {
             }
         });
 
+        // Initialize Cost Tracker for this run
+        const costTracker = new CostTracker(`workflow_${Date.now()}`);
+
         // 0. Parse Target Parameters from Input
         // Extract targetLeads and maxLeadsPerCompany from user prompt
         // Examples: "Find me 100 leads", "50 leads with max 5 per company"
@@ -510,6 +514,7 @@ OUTPUT: JSON list (company_name, website, capital_role, description). Target 20+
 
                 let finderResults = [];
                 try {
+                    const finderStartTime = Date.now();
                     const finderRes = await logTiming('Company Finder Agent', logStep)(async () => {
                         return await retryWithBackoff(() =>
                             runWithTimeout(
@@ -518,6 +523,19 @@ OUTPUT: JSON list (company_name, website, capital_role, description). Target 20+
                                 'Company Finder Agent'
                             )
                         );
+                    });
+
+                    // Track cost for Company Finder
+                    const finderDuration = (Date.now() - finderStartTime) / 1000;
+                    const finderUsage = extractTokenUsage(finderRes);
+                    costTracker.recordCall({
+                        agent: 'Company Finder',
+                        model: AGENT_MODELS.company_finder,
+                        inputTokens: finderUsage.inputTokens,
+                        outputTokens: finderUsage.outputTokens,
+                        duration: finderDuration,
+                        success: true,
+                        metadata: { round: attempts, subRound: discoveryAttempts }
                     });
 
                     if (finderRes.finalOutput && finderRes.finalOutput.results) {
@@ -564,6 +582,7 @@ OUTPUT: JSON list (company_name, website, capital_role, description). Target 20+
 
             let qualifiedInBatch = [];
             try {
+                const profilerStartTime = Date.now();
                 const profilerRes = await logTiming('Company Profiler Agent', logStep)(async () => {
                     return await retryWithBackoff(() =>
                         runWithTimeout(
@@ -572,6 +591,19 @@ OUTPUT: JSON list (company_name, website, capital_role, description). Target 20+
                             'Company Profiler Agent'
                         )
                     );
+                });
+
+                // Track cost for Company Profiler
+                const profilerDuration = (Date.now() - profilerStartTime) / 1000;
+                const profilerUsage = extractTokenUsage(profilerRes);
+                costTracker.recordCall({
+                    agent: 'Company Profiler',
+                    model: AGENT_MODELS.company_profiler,
+                    inputTokens: profilerUsage.inputTokens,
+                    outputTokens: profilerUsage.outputTokens,
+                    duration: profilerDuration,
+                    success: true,
+                    metadata: { round: attempts, companiesProcessed: accumulatedCandidates.length }
                 });
 
                 if (profilerRes.finalOutput && profilerRes.finalOutput.results) {
@@ -647,7 +679,21 @@ OUTPUT: JSON list (company_name, website, capital_role, description). Target 20+
                             }];
 
                             try {
+                                const filterStartTime = Date.now();
                                 const filterRes = await retryWithBackoff(() => runner.run(apolloLeadFinder, filterInput));
+
+                                // Track cost for Lead Filter
+                                const filterDuration = (Date.now() - filterStartTime) / 1000;
+                                const filterUsage = extractTokenUsage(filterRes);
+                                costTracker.recordCall({
+                                    agent: 'Apollo Lead Finder',
+                                    model: AGENT_MODELS.apollo_lead_finder,
+                                    inputTokens: filterUsage.inputTokens,
+                                    outputTokens: filterUsage.outputTokens,
+                                    duration: filterDuration,
+                                    success: true,
+                                    metadata: { batch: i + 1, leadsInBatch: chunk.length }
+                                });
 
                                 if (filterRes.finalOutput && filterRes.finalOutput.leads) {
                                     const kept = filterRes.finalOutput.leads;
@@ -810,7 +856,21 @@ OUTPUT: JSON list (company_name, website, capital_role, description). Target 20+
 
             try {
                 logStep('Outreach Creator', `Batch ${i + 1}/${outreachChunks.length} generating...`);
+                const outreachStartTime = Date.now();
                 const outreachRes = await retryWithBackoff(() => runner.run(outreachCreator, outreachInput));
+
+                // Track cost for Outreach Creator
+                const outreachDuration = (Date.now() - outreachStartTime) / 1000;
+                const outreachUsage = extractTokenUsage(outreachRes);
+                costTracker.recordCall({
+                    agent: 'Outreach Creator',
+                    model: AGENT_MODELS.outreach_creator,
+                    inputTokens: outreachUsage.inputTokens,
+                    outputTokens: outreachUsage.outputTokens,
+                    duration: outreachDuration,
+                    success: true,
+                    metadata: { batch: i + 1, leadsInBatch: chunk.length }
+                });
 
                 if (outreachRes.finalOutput && outreachRes.finalOutput.leads) {
                     finalOutreachLeads.push(...outreachRes.finalOutput.leads);
@@ -878,6 +938,13 @@ OUTPUT: JSON list (company_name, website, capital_role, description). Target 20+
             throw error;
         }
 
+        // Get final cost summary
+        const costSummary = costTracker.getSummary();
+
+        // Log the cost report
+        logStep('Cost Report', costTracker.getReport());
+        logStep('Cost Summary', `💰 Total API Cost: ${costSummary.cost.formatted} | Tokens: ${costSummary.tokens.total.toLocaleString()} | Calls: ${costSummary.totalCalls}`);
+
         return {
             status: 'success',
             leads: globalLeads,
@@ -899,6 +966,17 @@ OUTPUT: JSON list (company_name, website, capital_role, description). Target 20+
                     early_exit: attempts < MAX_ATTEMPTS && totalLeadsCollected >= targetLeads,
                     companies_per_attempt: (qualifiedCompanies.length / attempts).toFixed(1),
                     leads_per_attempt: (globalLeads.length / attempts).toFixed(1)
+                },
+                // API COST TRACKING
+                api_costs: {
+                    total_cost: costSummary.cost.formatted,
+                    total_tokens: costSummary.tokens.total,
+                    input_tokens: costSummary.tokens.input,
+                    output_tokens: costSummary.tokens.output,
+                    total_calls: costSummary.totalCalls,
+                    by_agent: costSummary.breakdown.byAgent,
+                    by_model: costSummary.breakdown.byModel,
+                    detailed_calls: costSummary.calls
                 }
             }
         };
