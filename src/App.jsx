@@ -97,7 +97,7 @@ const AppContent = () => {
             <Route path="/crm" element={<ProtectedRoute><CRM /></ProtectedRoute>} />
             <Route path="/companies" element={<ProtectedRoute><Companies /></ProtectedRoute>} />
             <Route path="/connections" element={<ProtectedRoute><Connections /></ProtectedRoute>} />
-            <Route path="/kb" element={<ProtectedRoute><KnowledgeBase /></ProtectedRoute>} />
+            <Route path="/knowledge" element={<ProtectedRoute><KnowledgeBase /></ProtectedRoute>} />
             <Route path="/agents" element={<ProtectedRoute><AgentConfig /></ProtectedRoute>} />
             <Route path="/logbook" element={<ProtectedRoute><Logbook /></ProtectedRoute>} />
             <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />

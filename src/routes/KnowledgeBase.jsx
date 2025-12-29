@@ -332,49 +332,9 @@ const KnowledgeBase = () => {
                     {/* Upload Area */}
                     <div className="glass-panel p-6">
                         <h3 className="mb-4 text-xs font-bold uppercase tracking-wider text-muted">Upload New</h3>
-                        <div className="rounded-2xl border-2 border-dashed border-white/10 bg-white/5 p-8 text-center transition-all hover:border-primary/50 hover:bg-primary/5 group relative overflow-hidden">
-                            <input
-                                type="file"
-                                id="file-upload"
-                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                                onChange={handleUpload}
-                                disabled={uploading}
-                            />
-                            <div className="flex flex-col items-center gap-3 pointer-events-none">
-                                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary group-hover:scale-110 transition-transform">
-                                    <Upload className="h-6 w-6" />
-                                </div>
-                                <div>
-                                    <span className="text-sm font-bold text-white block">Click or Drag File</span>
-                                    <span className="text-xs text-muted">PDF, TXT, DOCX</span>
-                                </div>
-                            </div>
-                            {uploading && (
-                                <div className="absolute inset-0 bg-black/80 flex items-center justify-center backdrop-blur-sm">
-                                    <p className="text-sm font-bold text-primary animate-pulse">Uploading...</p>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Vector Store ID Input */}
-                    <div className="glass-panel p-6">
-                        <label className="text-xs font-bold uppercase tracking-wider text-primary mb-2 block">OpenAI Vector Store ID</label>
-                        <input
-                            type="text"
-                            value={vectorStoreId}
-                            onChange={handleVectorStoreIdChange}
-                            placeholder="vs_..."
-                            className="w-full rounded-lg border-2 border-white/10 bg-black/20 p-2.5 text-sm text-white placeholder:text-gray-700 focus:border-primary focus:outline-none transition-all"
-                        />
-                        <p className="text-[10px] text-gray-500 mt-2 leading-relaxed">
-                            Connect an existing vector store to skip manual uploads. Agents will use this ID for knowledge retrieval.
-                        </p>
                     </div>
                 </div>
-            </div>
-        </div>
-    )
+                )
 }
 
-export default KnowledgeBase
+                export default KnowledgeBase
