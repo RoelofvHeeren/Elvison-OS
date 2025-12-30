@@ -9,6 +9,8 @@ import axios from 'axios';
 
 const APIFY_API_URL = 'https://api.apify.com/v2';
 
+// ... (previous helper functions buildPipelineLabsPayload, startApifyScrape, checkApifyRun, getApifyResults remain unchanged) ...
+
 /**
  * Constructs the payload for Pipeline Labs scraper
  * @param {Array<string>} companyNames - List of company names
@@ -308,3 +310,70 @@ export const startApolloDomainScrape = async (token, domains, filters = {}, idem
     }
 };
 
+// =============================================================================
+// NEW: Google Search (for Company Finder replacement)
+// =============================================================================
+
+/**
+ * Perform a Google Search via Apify (apify/google-search-scraper)
+ * @param {string} query - The search query
+ * @param {string} token - Apify API Token
+ */
+export const performGoogleSearch = async (query, token) => {
+    const ACTOR_ID = 'apify~google-search-scraper';
+    const cleanQuery = query || "";
+    if (!cleanQuery) return [];
+
+    const input = {
+        queries: cleanQuery,
+        resultsPerPage: 20,
+        maxPagesPerQuery: 1,
+        languageCode: "",
+        mobileResults: false,
+        includeUnfilteredResults: false,
+        saveHtml: false,
+        saveHtmlToKeyValueStore: false,
+        includeIcons: false
+    };
+
+    try {
+        const url = `${APIFY_API_URL}/acts/${ACTOR_ID}/runs?token=${token}`;
+        const startRes = await axios.post(url, input);
+        const runId = startRes.data.data.id;
+
+        // Poll
+        const POLL_INTERVAL = 2000;
+        const MAX_ATTEMPTS = 30; // 60s max
+        let attempts = 0;
+        let datasetId = null;
+
+        while (attempts < MAX_ATTEMPTS) {
+            await new Promise(r => setTimeout(r, POLL_INTERVAL));
+            const statusRes = await checkApifyRun(token, runId);
+            if (statusRes.status === 'SUCCEEDED') {
+                datasetId = statusRes.datasetId;
+                break;
+            }
+            if (statusRes.status === 'FAILED' || statusRes.status === 'ABORTED') {
+                throw new Error("Search failed on Apify side.");
+            }
+            attempts++;
+        }
+
+        if (!datasetId) throw new Error("Search timeout.");
+
+        // Fetch
+        const results = await getApifyResults(token, datasetId);
+
+        // Normalize to simple { title, link, snippet }
+        return results.flatMap(r => r.organicResults || []).map(r => ({
+            title: r.title,
+            link: r.url,
+            snippet: r.description
+        }));
+
+    } catch (e) {
+        console.warn("Google Search Error:", e.message);
+        return [];
+    }
+};

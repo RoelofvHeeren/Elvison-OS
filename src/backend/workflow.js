@@ -1,17 +1,15 @@
-import { fileSearchTool, hostedMcpTool, webSearchTool, Agent, Runner, withTrace } from "@openai/agents";
-import { startApifyScrape, checkApifyRun, getApifyResults } from "./services/apify.js";
+import { fileSearchTool, hostedMcpTool, Agent, Runner, withTrace } from "@openai/agents";
+import { startApifyScrape, checkApifyRun, getApifyResults, performGoogleSearch } from "./services/apify.js"; // Import performGoogleSearch
 import { z } from "zod";
 import { query } from "../../db/index.js";
 import {
     getExcludedDomains,
     getExcludedCompanyNames,
-    markCompaniesAsResearched,
     getCompanyStats
 } from "./company-tracker.js";
 import { LeadScraperService } from "./services/lead-scraper-service.js";
 import { WORKFLOW_CONFIG, getEffectiveMaxLeads, AGENT_MODELS } from "../config/workflow.js";
-import { finderBackup, profilerBackup, apolloBackup } from "./workflow_prompts_backup.js";
-import { CostTracker, extractTokenUsage } from "./services/cost-tracker.js";
+import { CostTracker } from "./services/cost-tracker.js";
 
 // --- Schema Definitions ---
 const CompanyFinderSchema = z.object({
@@ -22,7 +20,6 @@ const CompanyFinderSchema = z.object({
     }))
 });
 
-// UPDATED: Added match_score for Profiler-Driven Exclusion
 const CompanyProfilerSchema = z.object({
     results: z.array(z.object({
         company_name: z.string(),
@@ -63,7 +60,7 @@ const OutreachCreatorSchema = z.object({
     }))
 });
 
-// NEW: Schema for the Filter Refiner
+// Refiner Schema
 const FilterRefinerSchema = z.object({
     job_titles: z.array(z.string()).describe("Specific job titles to search for"),
     excluded_keywords: z.array(z.string()).describe("Keywords to exclude from titles (e.g. 'assistant', 'intern')"),
@@ -73,16 +70,6 @@ const FilterRefinerSchema = z.object({
 // --- Helper Functions ---
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-const retryWithBackoff = async (fn, retries = 2, baseDelay = 500) => {
-    try {
-        return await fn();
-    } catch (error) {
-        if (retries === 0) throw error;
-        await delay(baseDelay);
-        return retryWithBackoff(fn, retries - 1, baseDelay * 2);
-    }
-};
-
 const getToolsForAgent = (agentName) => {
     const apolloMcp = hostedMcpTool({
         serverLabel: "Apollo_Lead_Finder",
@@ -90,8 +77,31 @@ const getToolsForAgent = (agentName) => {
         authorization: "apollo-mcp-client-key-01"
     });
 
-    if (agentName === 'company_finder') return [webSearchTool];
-    if (agentName === 'company_profiler') return [webSearchTool];
+    // CUSTOM TOOL: Google Search via Apify
+    const googleSearchTool = {
+        type: 'function',
+        function: {
+            name: 'web_search',
+            description: 'Search the web for companies, verification, or information using Google.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    query: { type: 'string', description: 'The search query string.' }
+                },
+                required: ['query']
+            }
+        },
+        handler: async ({ query }) => {
+            console.log(`[GoogleSearch] Searching for: "${query}"`);
+            const token = process.env.APIFY_API_TOKEN;
+            if (!token) throw new Error("Missing APIFY_API_TOKEN");
+            const results = await performGoogleSearch(query, token);
+            return JSON.stringify(results.slice(0, 5)); // Return top 5 results as context
+        }
+    };
+
+    if (agentName === 'company_finder') return [googleSearchTool];
+    if (agentName === 'company_profiler') return [googleSearchTool];
     if (agentName === 'apollo_lead_finder') return [apolloMcp];
     if (agentName === 'outreach_creator') return [];
     return [];
@@ -190,7 +200,7 @@ export const runAgentWorkflow = async (input, config) => {
     // --- Agent Definitions ---
     const companyFinder = new Agent({
         name: "Company Finder",
-        instructions: `Hunter for ${companyContext.name}. Find 20+ companies for: ${input.input_as_text}. PASS: ${leadLearning.pass}. AVOID: ${leadLearning.reject}.`,
+        instructions: `Hunter for ${companyContext.name}. Find 20+ companies for: ${input.input_as_text}. PASS: ${leadLearning.pass}. AVOID: ${leadLearning.reject}. USES: web_search tool.`,
         model: AGENT_MODELS.company_finder,
         tools: getToolsForAgent('company_finder'),
         outputType: CompanyFinderSchema,
@@ -199,7 +209,7 @@ export const runAgentWorkflow = async (input, config) => {
     // OPTIMIZATION 3: Updated Profiler Inst to ask for Score
     const companyProfiler = new Agent({
         name: "Company Profiler",
-        instructions: `Evaluator. Visit domains to verify match for: ${companyContext.goal}. 
+        instructions: `Evaluator. Visit domains using 'web_search' to verify match for: ${companyContext.goal}. 
         Assign 'match_score' (0-10).
         CRITICAL: 
         - Score < 4: Mismatch / Fake.
