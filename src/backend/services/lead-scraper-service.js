@@ -11,6 +11,10 @@ import {
     buildApolloSearchUrl
 } from "./scrapercity.js";
 
+// --- DEFAULTS ---
+const defaultTitles = ["ceo", "founder", "owner", "partner", "president", "director", "vp", "head", "principal", "executive"];
+const defaultSeniorities = ["c_suite", "executive", "owner", "partner", "vp", "director"];
+
 /**
  * Standardized Lead Object
  * @typedef {Object} StandardLead
