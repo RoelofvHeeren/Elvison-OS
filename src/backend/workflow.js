@@ -192,8 +192,15 @@ export const runAgentWorkflow = async (input, config) => {
     const costTracker = new CostTracker(`wf_${Date.now()}`);
 
     // --- Model Initialization ---
-    const googleKey = process.env.GOOGLE_API_KEY;
+    const googleKey = process.env.GOOGLE_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY; // Support both names
     const anthropicKey = process.env.ANTHROPIC_API_KEY;
+
+    if (!googleKey) {
+        logStep('System', '⚠️ Warning: GOOGLE_API_KEY is missing. Discovery and Outreach agents will fail or revert to more expensive OpenAI models.');
+    }
+    if (!anthropicKey) {
+        logStep('System', '⚠️ Warning: ANTHROPIC_API_KEY is missing. Company Profiling will fail.');
+    }
 
     // 5-Agent Model Assignments
     const finderModel = googleKey ? new GeminiModel(googleKey, 'gemini-1.5-flash') : AGENT_MODELS.company_finder;
