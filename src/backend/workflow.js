@@ -358,6 +358,7 @@ STRICTURE: LLM is fallback only. Zero creativity. If data is unsalvageable, mark
             logStep('Lead Finder', `Scraping batch of ${batch.length} companies...`);
 
             try {
+                const leads = await leadScraper.fetchLeads(batch, filters, logStep);
                 // 4. Data Architect: Validation & Normalization
                 if (leads.length > 0) {
                     logStep('Data Architect', `Normalizing ${leads.length} leads...`);
