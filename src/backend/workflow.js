@@ -1,4 +1,4 @@
-import { fileSearchTool, hostedMcpTool, Agent, Runner, withTrace } from "@openai/agents";
+import { fileSearchTool, hostedMcpTool, Agent, Runner, withTrace, tool } from "@openai/agents";
 import { startApifyScrape, checkApifyRun, getApifyResults, performGoogleSearch } from "./services/apify.js"; // Import performGoogleSearch
 import { z } from "zod";
 import { query } from "../../db/index.js";
@@ -78,27 +78,20 @@ const getToolsForAgent = (agentName) => {
     });
 
     // CUSTOM TOOL: Google Search via Apify
-    const googleSearchTool = {
-        type: 'function',
-        function: {
-            name: 'web_search',
-            description: 'Search the web for companies, verification, or information using Google.',
-            parameters: {
-                type: 'object',
-                properties: {
-                    query: { type: 'string', description: 'The search query string.' }
-                },
-                required: ['query']
-            }
-        },
-        handler: async ({ query }) => {
+    const googleSearchTool = tool({
+        name: 'web_search',
+        description: 'Search the web for companies, verification, or information using Google.',
+        parameters: z.object({
+            query: z.string().describe('The search query string.')
+        }),
+        execute: async ({ query }) => {
             console.log(`[GoogleSearch] Searching for: "${query}"`);
             const token = process.env.APIFY_API_TOKEN;
             if (!token) throw new Error("Missing APIFY_API_TOKEN");
             const results = await performGoogleSearch(query, token);
             return JSON.stringify(results.slice(0, 5)); // Return top 5 results as context
         }
-    };
+    });
 
     if (agentName === 'company_finder') return [googleSearchTool];
     if (agentName === 'company_profiler') return [googleSearchTool];
