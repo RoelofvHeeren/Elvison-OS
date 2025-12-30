@@ -191,6 +191,18 @@ export const runAgentWorkflow = async (input, config) => {
     const runner = new Runner();
     const costTracker = new CostTracker(`wf_${Date.now()}`);
 
+    // --- Model Initialization ---
+    const googleKey = process.env.GOOGLE_API_KEY;
+    const anthropicKey = process.env.ANTHROPIC_API_KEY;
+
+    // 5-Agent Model Assignments
+    const finderModel = googleKey ? new GeminiModel(googleKey, 'gemini-1.5-flash') : AGENT_MODELS.company_finder;
+    const profilerModel = anthropicKey ? new ClaudeModel(anthropicKey, 'claude-3-5-sonnet-20240620') : AGENT_MODELS.company_profiler;
+    const apolloModel = AGENT_MODELS.apollo_lead_finder; // gpt-4-turbo
+    const outreachModel = googleKey ? new GeminiModel(googleKey, 'gemini-1.5-flash') : AGENT_MODELS.outreach_creator;
+    const architectModel = anthropicKey ? new ClaudeModel(anthropicKey, 'claude-3-5-sonnet-20240620') : AGENT_MODELS.data_architect;
+    const defaultModel = googleKey ? new GeminiModel(googleKey, 'gemini-1.5-flash') : AGENT_MODELS.default;
+
     // --- OPTIMIZATION 1: LLM Filter Refiner ---
     logStep('System', '🧠 Refining scraper filters based on user request...');
     try {
@@ -202,7 +214,7 @@ export const runAgentWorkflow = async (input, config) => {
             - Only add new titles if they are strictly missing and highly relevant to the goal: ${companyContext.goal}
             Constraints: Be precise. Exclude 'intern', 'assistant' unless requested.
             Input: "${input.input_as_text}"`,
-            model: AGENT_MODELS.default, // Using Gemini 1.5 Flash as default (cheaper, safe)
+            model: defaultModel, // Using Gemini 1.5 Flash as default (cheaper, safe)
             outputType: FilterRefinerSchema
         });
 
@@ -225,16 +237,6 @@ export const runAgentWorkflow = async (input, config) => {
         logStep('Filter Refiner', `⚠️ Refinement skipped: ${e.message}`);
     }
 
-    // --- Model Initialization ---
-    const googleKey = process.env.GOOGLE_API_KEY;
-    const anthropicKey = process.env.ANTHROPIC_API_KEY;
-
-    // 5-Agent Model Assignments
-    const finderModel = googleKey ? new GeminiModel(googleKey, 'gemini-1.5-flash') : AGENT_MODELS.company_finder;
-    const profilerModel = anthropicKey ? new ClaudeModel(anthropicKey, 'claude-3-5-sonnet-20240620') : AGENT_MODELS.company_profiler;
-    const apolloModel = AGENT_MODELS.apollo_lead_finder; // gpt-4-turbo
-    const outreachModel = googleKey ? new GeminiModel(googleKey, 'gemini-1.5-flash') : AGENT_MODELS.outreach_creator;
-    const architectModel = anthropicKey ? new ClaudeModel(anthropicKey, 'claude-3-5-sonnet-20240620') : AGENT_MODELS.data_architect;
 
     // --- Agent Definitions ---
 
@@ -275,7 +277,7 @@ Assign 'match_score' (1-10) against goal: ${companyContext.goal}.`,
         instructions: `GOAL: Generate precise Apollo filters only. 
 PROTOCOL: Take domain + company profile. Generate filters for contacts.
 STRICTURE: Use GPT-4 Turbo logic to be reliable. Do NOT improvise filters.
-CONTEXT: Goal for ${companyContext.name} is ${companyContext.goal}. Match these types: ${icpTitles.join(', ')}.`,
+CONTEXT: Goal for ${companyContext.name} is ${companyContext.goal}. Match these types: ${companyContext.baselineTitles.join(', ')}.`,
         model: apolloModel,
         tools: getToolsForAgent('apollo_lead_finder'),
         outputType: ApolloLeadFinderSchema,
