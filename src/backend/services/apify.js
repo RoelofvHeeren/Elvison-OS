@@ -311,8 +311,78 @@ export const startApolloDomainScrape = async (token, domains, filters = {}, idem
 };
 
 // =============================================================================
-// NEW: Google Search (for Company Finder replacement)
+// NEW: Deep Website Scraper (for Company Profiler)
+// Targets: Homepage, About, Services, Pricing
 // =============================================================================
+
+/**
+ * Scrape a company's key pages (Home, About, Services, Pricing)
+ * @param {string} domain - The company domain (e.g. "greybrook.com")
+ * @param {string} token - Apify API Token
+ */
+export const scrapeCompanyWebsite = async (domain, token) => {
+    const ACTOR_ID = 'apify~website-content-crawler';
+    if (!domain) return "No domain provided.";
+
+    const url = domain.startsWith('http') ? domain : `https://${domain}`;
+
+    // Configure crawler to find key pages
+    const input = {
+        startUrls: [{ url }],
+        maxPagesPerCrawl: 5,
+        maxConcurrency: 2,
+        // Target subpages like /about, /services, /pricing
+        globs: [
+            { glob: `${url}/*about*` },
+            { glob: `${url}/*service*` },
+            { glob: `${url}/*pricing*` },
+            { glob: `${url}/*solution*` },
+            { glob: `${url}/` }
+        ],
+        saveHtml: false,
+        removeElementsCssSelector: 'nav, footer, script, style, noscript, svg',
+        crawlerType: 'cheerio' // Fast & cheap
+    };
+
+    try {
+        console.log(`[Apify] Deep scraping ${domain}...`);
+        const runUrl = `${APIFY_API_URL}/acts/${ACTOR_ID}/runs?token=${token}`;
+        const startRes = await axios.post(runUrl, input);
+        const runId = startRes.data.data.id;
+
+        // Poll (Max 2 mins for crawl)
+        let attempts = 0;
+        let datasetId = null;
+        while (attempts < 60) {
+            await new Promise(r => setTimeout(r, 2000));
+            const statusRes = await checkApifyRun(token, runId);
+            if (statusRes.status === 'SUCCEEDED') {
+                datasetId = statusRes.datasetId;
+                break;
+            }
+            if (['FAILED', 'ABORTED', 'TIMED-OUT'].includes(statusRes.status)) {
+                throw new Error(`Crawl failed: ${statusRes.status}`);
+            }
+            attempts++;
+        }
+
+        if (!datasetId) return "Crawl timed out.";
+
+        const results = await getApifyResults(token, datasetId);
+
+        // Combine text from all pages
+        const combinedText = results.map(r => {
+            const cleanText = (r.text || "").replace(/\s+/g, ' ').trim();
+            return `--- PAGE: ${r.url} ---\n${cleanText.substring(0, 3000)}`;
+        }).join('\n\n');
+
+        return combinedText || "No content found.";
+
+    } catch (e) {
+        console.warn(`[Apify] Scrape Error for ${domain}:`, e.message);
+        return `Error scraping ${domain}: ${e.message}`;
+    }
+};
 
 /**
  * Perform a Google Search via Apify (apify/google-search-scraper)

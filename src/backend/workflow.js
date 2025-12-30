@@ -1,6 +1,7 @@
 import { fileSearchTool, hostedMcpTool, Agent, Runner, withTrace, tool } from "@openai/agents";
-import { startApifyScrape, checkApifyRun, getApifyResults, performGoogleSearch } from "./services/apify.js"; // Import performGoogleSearch
+import { startApifyScrape, checkApifyRun, getApifyResults, performGoogleSearch, scrapeCompanyWebsite } from "./services/apify.js"; // Import performGoogleSearch and scrapeCompanyWebsite
 import { GeminiModel } from "./services/gemini.js"; // Import GeminiModel
+import { ClaudeModel } from "./services/claude.js"; // Import ClaudeModel
 import { z } from "zod";
 import { query } from "../../db/index.js";
 import {
@@ -61,6 +62,20 @@ const OutreachCreatorSchema = z.object({
     }))
 });
 
+// Architect Schema for normalization
+const DataArchitectSchema = z.object({
+    leads: z.array(z.object({
+        first_name: z.string(),
+        last_name: z.string(),
+        company_name: z.string(),
+        title: z.string(),
+        email: z.string(),
+        linkedin_url: z.string(),
+        company_website: z.string(),
+        is_valid: z.boolean()
+    }))
+});
+
 // Refiner Schema
 const FilterRefinerSchema = z.object({
     job_titles: z.array(z.string()).describe("Specific job titles to search for"),
@@ -72,32 +87,45 @@ const FilterRefinerSchema = z.object({
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 const getToolsForAgent = (agentName) => {
-    const apolloMcp = hostedMcpTool({
-        serverLabel: "Apollo_Lead_Finder",
-        serverUrl: "https://apollo-mcp-v4-production.up.railway.app/sse?apiKey=apollo-mcp-client-key-01",
-        authorization: "apollo-mcp-client-key-01"
-    });
+    const apifyToken = process.env.APIFY_API_TOKEN;
 
-    // CUSTOM TOOL: Google Search via Apify
-    const googleSearchTool = tool({
-        name: 'web_search',
-        description: 'Search the web for companies, verification, or information using Google.',
-        parameters: z.object({
-            query: z.string().describe('The search query string.')
-        }),
-        execute: async ({ query }) => {
-            console.log(`[GoogleSearch] Searching for: "${query}"`);
-            const token = process.env.APIFY_API_TOKEN;
-            if (!token) throw new Error("Missing APIFY_API_TOKEN");
-            const results = await performGoogleSearch(query, token);
-            return JSON.stringify(results.slice(0, 10)); // Increased to 10 results for better context
-        }
-    });
+    if (agentName === 'company_finder') {
+        return [
+            tool({
+                name: "google_search_and_extract",
+                description: "Search using Google and return organic results (Title, URL, Snippet).",
+                parameters: z.object({ query: z.string() }),
+                execute: async ({ query }) => {
+                    const results = await performGoogleSearch(query, apifyToken);
+                    return results.map(r => `NAME: ${r.title}\nURL: ${r.link}\nDESC: ${r.snippet}`).join('\n\n');
+                }
+            })
+        ];
+    }
 
-    if (agentName === 'company_finder') return [googleSearchTool];
-    if (agentName === 'company_profiler') return [googleSearchTool];
-    if (agentName === 'apollo_lead_finder') return [apolloMcp];
-    if (agentName === 'outreach_creator') return [];
+    if (agentName === 'company_profiler') {
+        return [
+            tool({
+                name: "scrape_company_website",
+                description: "Deep research: Scrape home, about, services, and pricing pages for a domain.",
+                parameters: z.object({ domain: z.string() }),
+                execute: async ({ domain }) => {
+                    return await scrapeCompanyWebsite(domain, apifyToken);
+                }
+            })
+        ];
+    }
+
+    if (agentName === 'apollo_lead_finder') {
+        return [
+            hostedMcpTool({
+                serverLabel: "Apollo_Lead_Finder",
+                serverUrl: "https://apollo-mcp-v4-production.up.railway.app/sse?apiKey=apollo-mcp-client-key-01",
+                authorization: "apollo-mcp-client-key-01"
+            })
+        ];
+    }
+
     return [];
 };
 
@@ -168,13 +196,13 @@ export const runAgentWorkflow = async (input, config) => {
     try {
         const refinerAgent = new Agent({
             name: "Filter Refiner",
-            instructions: `Extract tactical lead filters. 
+            instructions: `GOAL: Extract tactical lead filters. 
             BASELINE TITLES (from User Onboarding): ${companyContext.baselineTitles.join(', ') || 'None selected'}
             - If baseline titles exist, use them as the primary list.
             - Only add new titles if they are strictly missing and highly relevant to the goal: ${companyContext.goal}
             Constraints: Be precise. Exclude 'intern', 'assistant' unless requested.
             Input: "${input.input_as_text}"`,
-            model: "gpt-4o-mini", // Keep mini for this simple logic task
+            model: AGENT_MODELS.default, // Using Gemini 1.5 Flash as default (cheaper, safe)
             outputType: FilterRefinerSchema
         });
 
@@ -199,49 +227,79 @@ export const runAgentWorkflow = async (input, config) => {
 
     // --- Model Initialization ---
     const googleKey = process.env.GOOGLE_API_KEY;
-    const geminiFlash = googleKey ? new GeminiModel(googleKey, 'gemini-1.5-flash') : null;
+    const anthropicKey = process.env.ANTHROPIC_API_KEY;
 
-    // Fallback logic: If Google Key missing, use GPT-4o-mini for discovery
-    const discoveryModel = geminiFlash || AGENT_MODELS.company_finder;
-    const profilerModel = geminiFlash || AGENT_MODELS.company_profiler;
+    // 5-Agent Model Assignments
+    const finderModel = googleKey ? new GeminiModel(googleKey, 'gemini-1.5-flash') : AGENT_MODELS.company_finder;
+    const profilerModel = anthropicKey ? new ClaudeModel(anthropicKey, 'claude-3-5-sonnet-20240620') : AGENT_MODELS.company_profiler;
+    const apolloModel = AGENT_MODELS.apollo_lead_finder; // gpt-4-turbo
+    const outreachModel = googleKey ? new GeminiModel(googleKey, 'gemini-1.5-flash') : AGENT_MODELS.outreach_creator;
+    const architectModel = anthropicKey ? new ClaudeModel(anthropicKey, 'claude-3-5-sonnet-20240620') : AGENT_MODELS.data_architect;
 
     // --- Agent Definitions ---
+
+    // 1. Company Finder: Gemini 1.5 Flash
     const companyFinder = new Agent({
         name: "Company Finder",
-        instructions: `Hunter for ${companyContext.name}. Find 20+ companies for: ${input.input_as_text}. PASS: ${leadLearning.pass}. AVOID: ${leadLearning.reject}. USES: web_search tool.`,
-        model: discoveryModel,
+        instructions: `GOAL: Discover real companies via Google search.
+PROTOCOL: Use google_search_and_extract to find organic results.
+STRICTURE: Extract ONLY: Company name, Primary domain, One-line description. 
+REJECT: Ambiguous or directory-style results (LinkedIn, Yelp, etc).
+CONTEXT: ${input.input_as_text}. PASS: ${leadLearning.pass}.`,
+        model: finderModel,
         tools: getToolsForAgent('company_finder'),
         outputType: CompanyFinderSchema,
     });
 
-    // OPTIMIZATION 3: Updated Profiler Inst to ask for Score
+    // 2. Company Profiler: Claude 3.5 Sonnet
     const companyProfiler = new Agent({
         name: "Company Profiler",
-        instructions: `Evaluator. Visit domains using 'web_search' to verify match for: ${companyContext.goal}. 
-        Assign 'match_score' (0-10).
-        CRITICAL: 
-        - Score < 4: Mismatch / Fake.
-        - Score > 7: Strong Match.
-        Reject parked domains (Score 0).`,
+        instructions: `GOAL: Deep research and business inference. 
+PROTOCOL: Use 'scrape_company_website' for each domain.
+STRICTURE: Output a strict structured profile:
+- Core offer: What do they sell?
+- Target customer: Who do they sell to?
+- Industry: Category.
+- Company size estimate: Size based on web evidence.
+- Buying signals: Expansion, hiring, pain points.
+NO creative writing. NO outreach content.
+Assign 'match_score' (1-10) against goal: ${companyContext.goal}.`,
         model: profilerModel,
         tools: getToolsForAgent('company_profiler'),
         outputType: CompanyProfilerSchema,
     });
 
+    // 3. Apollo (Lead Finder): GPT-4 Turbo
     const apolloLeadFinder = new Agent({
-        name: "Apollo Lead Finder",
-        instructions: `Headhunter. Goal: ${companyContext.goal}. Assign match_score (1-10) to each lead. PASS: ${leadLearning.pass}. REJECT: ${leadLearning.reject}.`,
-        model: AGENT_MODELS.apollo_lead_finder,
+        name: "Apollo Agent",
+        instructions: `GOAL: Generate precise Apollo filters only. 
+PROTOCOL: Take domain + company profile. Generate filters for contacts.
+STRICTURE: Use GPT-4 Turbo logic to be reliable. Do NOT improvise filters.
+CONTEXT: Goal for ${companyContext.name} is ${companyContext.goal}. Match these types: ${icpTitles.join(', ')}.`,
+        model: apolloModel,
         tools: getToolsForAgent('apollo_lead_finder'),
         outputType: ApolloLeadFinderSchema,
     });
 
+    // 4. Outreach Creator: Gemini 1.5 Flash
     const outreachCreator = new Agent({
         name: "Outreach Creator",
-        instructions: `Draft outreach for ${companyContext.name}.`,
-        model: AGENT_MODELS.outreach_creator,
+        instructions: `GOAL: Generate personalized outreach.
+PROTOCOL: Use strict message templates. Inject personalization fields only. 
+STRICTURE: No decision-making. No research. No tone exploration.`,
+        model: outreachModel,
         tools: [],
         outputType: OutreachCreatorSchema,
+    });
+
+    // 5. Data Architect: Claude 3.5 Sonnet (Fallback)
+    const dataArchitect = new Agent({
+        name: "Data Architect",
+        instructions: `GOAL: Normalize, validate, and store data.
+PROTOCOL: Use strict schema. Normalize names (CapitalCase), fix broken URLs, and validate emails.
+STRICTURE: LLM is fallback only. Zero creativity. If data is unsalvageable, mark is_valid: false.`,
+        model: architectModel,
+        outputType: DataArchitectSchema,
     });
 
     // --- Main Workflow Loop ---
@@ -300,21 +358,39 @@ export const runAgentWorkflow = async (input, config) => {
             logStep('Lead Finder', `Scraping batch of ${batch.length} companies...`);
 
             try {
-                const leads = await leadScraper.fetchLeads(batch, filters, logStep);
+                // 4. Data Architect: Validation & Normalization
                 if (leads.length > 0) {
-                    const rankRes = await runner.run(apolloLeadFinder, [{ role: "user", content: `Rank these leads (Match 1-10) for ${companyContext.goal}: ${JSON.stringify(leads.slice(0, 30))}` }]);
-                    const ranked = rankRes.finalOutput?.leads || leads;
-                    const sorted = ranked.sort((a, b) => (b.match_score || 0) - (a.match_score || 0));
+                    logStep('Data Architect', `Normalizing ${leads.length} leads...`);
+                    // Deterministic normalization
+                    const deterministicLeads = leads.filter(l => l.first_name && l.last_name && l.email);
 
-                    const perCompany = {};
-                    sorted.forEach(l => {
-                        if (!perCompany[l.company_name]) perCompany[l.company_name] = [];
-                        if (perCompany[l.company_name].length < maxLeadsPerCompany) perCompany[l.company_name].push(l);
-                    });
+                    // Fallback to Claude only for ambiguous records
+                    const ambiguousLeads = leads.filter(l => !l.first_name || !l.last_name || !l.email);
+                    let fixedLeads = [];
+                    if (ambiguousLeads.length > 0) {
+                        const architectRes = await runner.run(dataArchitect, [{ role: "user", content: `Normalize these ambiguous leads: ${JSON.stringify(ambiguousLeads)}` }]);
+                        fixedLeads = (architectRes.finalOutput?.leads || []).filter(l => l.is_valid);
+                    }
 
-                    const added = Object.values(perCompany).flat();
-                    globalLeads.push(...added);
-                    logStep('Workflow', `+${added.length} leads. Total: ${globalLeads.length}/${targetLeads}`);
+                    const validatedLeads = [...deterministicLeads, ...fixedLeads];
+
+                    // Proceed with ranking on validated data
+                    if (validatedLeads.length > 0) {
+                        const rankRes = await runner.run(apolloLeadFinder, [{ role: "user", content: `Rank these leads (Match 1-10) for ${companyContext.goal}: ${JSON.stringify(validatedLeads.slice(0, 30))}` }]);
+                        const ranked = rankRes.finalOutput?.leads || validatedLeads;
+                        // ... rest of logic uses ranked ...
+                        const sorted = ranked.sort((a, b) => (b.match_score || 0) - (a.match_score || 0));
+
+                        const perCompany = {};
+                        sorted.forEach(l => {
+                            if (!perCompany[l.company_name]) perCompany[l.company_name] = [];
+                            if (perCompany[l.company_name].length < maxLeadsPerCompany) perCompany[l.company_name].push(l);
+                        });
+
+                        const added = Object.values(perCompany).flat();
+                        globalLeads.push(...added);
+                        logStep('Workflow', `+${added.length} leads. Total: ${globalLeads.length}/${targetLeads}`);
+                    }
                 }
 
                 // Mark processed
