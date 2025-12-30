@@ -54,20 +54,31 @@ export class CostTracker {
      * Get pricing for a model
      */
     getPricing(model) {
+        // Handle object models (like GeminiModel or ClaudeModel instances)
+        let modelName = model;
+        if (model && typeof model === 'object') {
+            modelName = model.modelName || model.name || 'default';
+        }
+
+        // Ensure modelName is a string
+        if (typeof modelName !== 'string') {
+            modelName = String(modelName || 'default');
+        }
+
         // Try exact match first
-        if (MODEL_PRICING[model]) {
-            return MODEL_PRICING[model];
+        if (MODEL_PRICING[modelName]) {
+            return MODEL_PRICING[modelName];
         }
 
         // Try prefix match (e.g., 'gpt-4o-2024-11-20' -> 'gpt-4o')
         for (const key of Object.keys(MODEL_PRICING)) {
-            if (model.startsWith(key)) {
+            if (modelName.startsWith(key)) {
                 return MODEL_PRICING[key];
             }
         }
 
         // Fallback to default
-        console.warn(`[CostTracker] Unknown model: ${model}, using default pricing`);
+        console.warn(`[CostTracker] Unknown model: ${modelName}, using default pricing`);
         return MODEL_PRICING['default'];
     }
 
@@ -94,13 +105,20 @@ export class CostTracker {
         error = null,
         metadata = {}
     }) {
+        const pricing = this.getPricing(model);
         const cost = this.calculateCost(model, inputTokens, outputTokens);
+
+        // Standardize model name for record
+        let modelName = model;
+        if (model && typeof model === 'object') {
+            modelName = model.modelName || model.name || 'unknown';
+        }
 
         const callRecord = {
             id: `call_${this.calls.length + 1}`,
             timestamp: new Date().toISOString(),
             agent,
-            model,
+            model: modelName,
             inputTokens,
             outputTokens,
             totalTokens: inputTokens + outputTokens,
