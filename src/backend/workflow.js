@@ -17,20 +17,18 @@ import { CostTracker, extractTokenUsage } from "./services/cost-tracker.js";
 const CompanyFinderSchema = z.object({
     results: z.array(z.object({
         company_name: z.string(),
-        hq_city: z.string(),
-        capital_role: z.enum(["LP", "JV", "CoGP", "Mixed"]),
-        website: z.string(),
         domain: z.string(),
-        why_considered: z.string(),
-        source_links: z.array(z.string())
+        description: z.string().optional()
     }))
 });
 
+// UPDATED: Added match_score for Profiler-Driven Exclusion
 const CompanyProfilerSchema = z.object({
     results: z.array(z.object({
         company_name: z.string(),
         domain: z.string(),
-        company_profile: z.string()
+        company_profile: z.string(),
+        match_score: z.number().min(0).max(10).describe("Relevance score 0-10")
     }))
 });
 
@@ -44,7 +42,8 @@ const ApolloLeadFinderSchema = z.object({
         email: z.string(),
         linkedin_url: z.string(),
         company_website: z.string(),
-        company_profile: z.string()
+        company_profile: z.string(),
+        match_score: z.number().min(1).max(10).optional()
     }))
 });
 
@@ -64,1012 +63,290 @@ const OutreachCreatorSchema = z.object({
     }))
 });
 
+// NEW: Schema for the Filter Refiner
+const FilterRefinerSchema = z.object({
+    job_titles: z.array(z.string()).describe("Specific job titles to search for"),
+    excluded_keywords: z.array(z.string()).describe("Keywords to exclude from titles (e.g. 'assistant', 'intern')"),
+    seniority: z.array(z.string()).describe("Seniority levels (e.g. 'owner', 'partner', 'cxo', 'vp')")
+});
+
 // --- Helper Functions ---
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
-// Timeout wrapper to prevent infinite hangs
-const runWithTimeout = async (fn, timeoutMs, label = 'Operation') => {
-    return Promise.race([
-        fn(),
-        new Promise((_, reject) =>
-            setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs)
-        )
-    ]);
-};
-
-// Timing instrumentation wrapper
-const logTiming = (label, logStep) => {
-    return async (fn) => {
-        const start = Date.now();
-        logStep('Timing', `⏱ ${label} started...`);
-        try {
-            const result = await fn();
-            const duration = ((Date.now() - start) / 1000).toFixed(2);
-            logStep('Timing', `✅ ${label} completed in ${duration}s`);
-            return result;
-        } catch (err) {
-            const duration = ((Date.now() - start) / 1000).toFixed(2);
-            logStep('Timing', `❌ ${label} failed after ${duration}s: ${err.message}`);
-            throw err;
-        }
-    };
-};
 
 const retryWithBackoff = async (fn, retries = 2, baseDelay = 500) => {
     try {
         return await fn();
     } catch (error) {
         if (retries === 0) throw error;
-        // Check if error is a rate limit or 5xx, or just retry all for now in this MVP
-        console.warn(`[Retry] Operation failed: ${error.message}. Retrying in ${baseDelay}ms... (Left: ${retries})`);
         await delay(baseDelay);
         return retryWithBackoff(fn, retries - 1, baseDelay * 2);
     }
 };
 
-/**
- * Runs the agent workflow with dynamic vector store inputs.
- * @param {Object} input - Workflow input { input_as_text: string }
- * @param {Object} config - Configuration
- * @param {string} config.vectorStoreId - Vector store ID for knowledge base
- * @param {Object} config.agentConfigs - Agent configurations
- * @param {Object} config.listeners - Event listeners
- * @param {string} config.userId - User ID (required for company tracking)
- * @param {number} config.targetLeads - Total number of leads to collect (default: 50)
- * @param {number} config.maxLeadsPerCompany - Maximum leads per company (default: 3)
- * @param {string} config.mode - Workflow mode ('default' or 'list_builder')
- * @param {Object} config.filters - Lead filtering criteria
- */
-export const runAgentWorkflow = async (input, config) => {
-    let {
-        vectorStoreId,
-        agentConfigs = {},
-        listeners,
-        userId,
-        targetLeads = 50, // NEW: Total leads target
-        maxLeadsPerCompany = 3, // NEW: Max per company
-        minBatchSize = 5,
-        maxDiscoveryAttempts = 5,
-        mode,
-        filters,
-        idempotencyKey = null, // NEW: Idempotency Key
-        icpId // NEW: passed from server.js
-    } = config;
-
-    // Validate userId requirement
-    if (!userId) {
-        throw new Error('userId is required for company tracking');
-    }
-
-    // Ensure idempotency key is passed to filters for scraper
-    if (idempotencyKey) {
-        filters = { ...filters, idempotencyKey };
-    }
-
-    // Helper for logging
-    // Helper for logging
-    const logStep = (step, detail) => {
-        if (listeners && listeners.onLog) {
-            listeners.onLog({ step, detail });
-        } else {
-            console.log(`[${step}] ${detail}`);
-        }
-    };
-    const logSection = (title) => logStep('System', `\n=== ${title} ===`);
-
-    if (idempotencyKey) logStep('System', `🔑 Idempotency Key: ${idempotencyKey}`);
-
-    // Default Vector Store Logic
-    if (!vectorStoreId) {
-        try {
-            const result = await query("SELECT value FROM system_config WHERE key = 'default_vector_store'");
-            if (result.rows.length > 0 && result.rows[0].value?.id) {
-                vectorStoreId = result.rows[0].value.id;
-            }
-        } catch (e) {
-            console.warn("Failed to fetch default vector store", e);
-        }
-    }
-
-    // --- ENFORCE TESTING LIMITS ---
-    const effectiveMaxLeads = getEffectiveMaxLeads();
-    if (WORKFLOW_CONFIG.IS_TESTING && targetLeads > effectiveMaxLeads) {
-        logStep('System', `⚠️ TESTING MODE ACTIVE: Capping requested ${targetLeads} leads to ${effectiveMaxLeads}.`);
-        targetLeads = effectiveMaxLeads;
-    } else if (WORKFLOW_CONFIG.IS_TESTING) {
-        logStep('System', `🧪 Testing Mode Active (Max ${effectiveMaxLeads} leads/run)`);
-    }
-
-    logStep('Workflow', `🎯 Targeting ${targetLeads} total leads (max ${maxLeadsPerCompany} per company).`);
-
-    // --- Fetch Prompts from DB ---
-    let agentPrompts = {};
-    try {
-        const { rows } = await query("SELECT agent_id, system_prompt FROM agent_prompts");
-        rows.forEach(row => {
-            agentPrompts[row.agent_id] = row.system_prompt;
-        });
-    } catch (e) {
-        console.warn("Failed to fetch agent prompts from DB, using defaults.", e);
-    }
-
-    // --- Initialize Tools ---
-    // --- Initialize Tools ---
-    // Note: We init webSearch inside getToolsForAgent now to allow per-agent logging if needed, 
-    // or we just reuse the base instance but wrap it dynamically.
-    const webSearch = webSearchTool();
-    const apolloMcp = hostedMcpTool({
-        serverLabel: "Apollo_Lead_Finder",
-        serverUrl: "https://apollo-mcp-v4-production.up.railway.app/sse?apiKey=apollo-mcp-client-key-01",
-        authorization: "apollo-mcp-client-key-01" // Required for the internal check
-    });
-
-    // Helper to get tools for an agent
-    const getToolsForAgent = (agentKey) => {
-        const agentConfig = agentConfigs[agentKey];
-        const configEnabledIds = agentConfig?.enabledToolIds;
-        const tools = [];
-
-        // 1. File Search Tool (Knowledge Base Access)
-        // User Rules: Finder, Profiler, and Outreach Creator need KB access.
-        if (vectorStoreId && vectorStoreId.startsWith('vs_') && ['company_finder', 'company_profiler', 'outreach_creator'].includes(agentKey)) {
-            tools.push(fileSearchTool([vectorStoreId]));
-        }
-
-        // 2. Determine enabled tool IDs (use config if present, otherwise defaults)
-        let enabledIds = [];
-        if (configEnabledIds && Array.isArray(configEnabledIds)) {
-            enabledIds = configEnabledIds;
-        } else {
-            // Default tools per agent if no config provided
-            switch (agentKey) {
-                case 'company_finder':
-                    enabledIds = ['web_search'];
-                    break;
-                case 'company_profiler':
-                    enabledIds = ['web_search'];
-                    break;
-                case 'apollo_lead_finder':
-                    enabledIds = ['apollo_mcp'];
-                    break;
-                case 'outreach_creator':
-                    enabledIds = []; // File search handled above
-                    break;
-            }
-        }
-
-        // 3. Attach matching tools (with Verbose Wrappers)
-        if (enabledIds.includes('apollo_mcp')) {
-            tools.push(apolloMcp);
-        }
-        if (enabledIds.includes('web_search')) {
-            // VERBOSE WRAPPER: Intercept web_search calls to log queries
-            const verboseWebSearch = {
-                ...webSearch,
-                execute: async (args, context) => {
-                    // Log the search query
-                    const query = args.query || args.q || JSON.stringify(args);
-                    logStep('Search', `🔍 Googling: "${query}"`);
-
-                    // Execute original tool
-                    try {
-                        const result = await webSearch.execute(args, context);
-                        return result;
-                    } catch (e) {
-                        logStep('Search', `❌ Failed: ${e.message}`);
-                        throw e;
-                    }
-                }
-            };
-            tools.push(verboseWebSearch);
-        }
-
-        return tools;
-    };
-
-    // --- Agent Definitions (Dynamic) ---
-
-    // 1. Company Finder
-    // 1. Company Finder
-    const finderInst = `You are the "Hunter" Agent for Fifth Avenue Properties.
-    GOAL: Find High-Net-Worth Real Estate Investment Firms (Family Offices, Private Equity, institutional investors) in Canada (Toronto, Vancouver, Montreal) and USA.
-    
-    CRITICAL PROTOCOL (STRICT ENFORCEMENT):
-    1. **NO HALLUCINATIONS**: You must ONLY return companies you have verifying using the 'web_search' tool in this session. Do NOT invent names.
-    2. **MANDATORY TOOL USAGE**: You cannot "know" companies. You MUST search for them. If you don't use the tool, you fail.
-    3. **VERIFY DOMAINS**: precise website domains are required. "example.com" or placeholders are INSTANT FAIL.
-    
-    CRITICAL CRITERIA:
-    - MUST be "Equity" investors (Limited Partners/LPs, Co-GPs).
-    - EXCLUDE purely "Debt" funds, "Lenders", "Mortgage Brokers", or "Mezzanine" providers.
-    - LOOK FOR: "Equity Partner", "Joint Venture", "Capital Placement", "Acquisitions".
-    
-    SEARCH STRATEGY:
-    1. Scan lists like "Top 100 Real Estate Investment Firms in Canada", "Family Offices in Toronto Real Estate".
-    2. Check "About Us" or "Investment Criteria" pages.
-    3. If they say "We provide debt/financing", SKIP THEM.
-    4. If they say "We partner with developers" or "We invest equity", KEEP THEM.`;
-
-    // MERGE INSTRUCTIONS: Hardcoded Base + User Overrides
-    let finalFinderInst = finderInst;
-    if (agentConfigs['company_finder']?.instructions) {
-        finalFinderInst += `\n\n[USER INSTRUCTIONS & FILTERS]:\n${agentConfigs['company_finder'].instructions}`;
-    } else if (agentPrompts['company_finder']) {
-        // Fallback to DB prompt if no config override, but append to base to keep validation rules
-        finalFinderInst += `\n\n[USER INSTRUCTIONS]:\n${agentPrompts['company_finder']}`;
-    }
-
-    const companyFinder = new Agent({
-        name: "Company Finder",
-        instructions: finalFinderInst,
-        model: AGENT_MODELS.company_finder,
-        tools: getToolsForAgent('company_finder'),
-        outputType: CompanyFinderSchema,
-    });
-
-    // 2. Company Profiler
-    const profilerInst = `You are the "Evaluator" Agent.
-    GOAL: Verify if the provided companies are TRUE Equity Investors for Real Estate.
-    
-    STRICT VALIDATION RULES:
-    1. **CHECK THE WEBSITE**: You MUST visit the domain or search for the company to confirm it exists.
-    2. **NO FAKE DOMAINS**: If the domain is "example.com" or missing, REJECT IT.
-    3. **EQUITY ONLY**: If the site says "Lender" or "Debt", REJECT IT.
-    
-    Output JSON with 'company_profile' (summary) and 'domain'.`;
-
-    let finalProfilerInst = profilerInst;
-    if (agentConfigs['company_profiler']?.instructions) {
-        finalProfilerInst += `\n\n[USER INSTRUCTIONS]:\n${agentConfigs['company_profiler'].instructions}`;
-    }
-
-    const companyProfiler = new Agent({
-        name: "Company Profiler",
-        instructions: finalProfilerInst,
-        model: AGENT_MODELS.company_profiler,
-        tools: getToolsForAgent('company_profiler'),
-        outputType: CompanyProfilerSchema,
-    });
-
-    // 3. Lead Finder
-    // NEW: Active Learning - Fetch latest user feedback
-    let feedbackExamples = "";
-    try {
-        const fbRows = await query(`
-            SELECT reason FROM lead_feedback 
-            WHERE user_id = $1 AND new_status = 'NEW' 
-            ORDER BY created_at DESC LIMIT 5
-        `, [userId]);
-
-        if (fbRows.rows.length > 0) {
-            feedbackExamples = "\n\n[USER FEEDBACK - EXAMPLES OF QUALIFIED LEADS]:\n" +
-                fbRows.rows.map(r => `- "${r.reason}"`).join("\n") +
-                "\n(Prioritize leads similar to these examples.)";
-            logStep('Workflow', `🧠 Injected ${fbRows.rows.length} user feedback examples into Lead Finder.`);
-        }
-    } catch (e) {
-        console.warn("Failed to load feedback", e);
-    }
-
-    let leadInst = `You are the Apollo Headhunter Agent for Fifth Avenue Properties.
-    Goal: Find decision-makers (Partner, Principal, Director of Acquisitions) at real estate investment firms.
-    CRITICAL:
-    1. ROLES: Partner, Principal, Managing Director, Head of Acquisitions, VP Development.
-    2. EXCLUDE: Debt, Lending, Mortgage, Brokerage, Analyst, Associate.
-    3. ACTION: Use 'people_enrichment' or 'get_person_email' to REVEAL emails. DO NOT return "email_not_unlocked".${feedbackExamples}`;
-
-    if (agentConfigs['apollo_lead_finder']?.instructions) {
-        leadInst += `\n\n[USER FILTERS]:\n${agentConfigs['apollo_lead_finder'].instructions}`;
-    } else if (agentPrompts['apollo_lead_finder']) {
-        leadInst = agentPrompts['apollo_lead_finder'] + feedbackExamples; // Append feedback even to custom prompts
-    }
-    const apolloLeadFinder = new Agent({
-        name: "Apollo Lead Finder",
-        instructions: leadInst,
-        model: AGENT_MODELS.apollo_lead_finder,
-        tools: getToolsForAgent('apollo_lead_finder'),
-        outputType: ApolloLeadFinderSchema,
-    });
-
-    // 4. Outreach Creator
-    const outreachInst = agentPrompts['outreach_creator'] || `You are the Setup Expert... (Default)`;
-    const outreachCreator = new Agent({
-        name: "Outreach Creator",
-        instructions: outreachInst,
-        model: AGENT_MODELS.outreach_creator,
-        tools: getToolsForAgent('outreach_creator'),
-        outputType: OutreachCreatorSchema,
-    });
-
-    // --- Runner Execution ---
-
-    return await withTrace("Lead Gen OS (In-House)", async () => {
-        const runner = new Runner({
-            traceMetadata: {
-                __trace_source__: "in-house-agent",
-            }
-        });
-
-        // Initialize Cost Tracker for this run
-        const costTracker = new CostTracker(`workflow_${Date.now()}`);
-
-        // Initialize Execution Timeline for comprehensive logging
-        const executionTimeline = [];
-        const addTimelineEvent = (stage, status, details = {}) => {
-            executionTimeline.push({
-                timestamp: new Date().toISOString(),
-                stage,
-                status, // 'started', 'completed', 'failed', 'partial'
-                duration: details.duration || null,
-                ...details
-            });
-        };
-        addTimelineEvent('workflow', 'started', { target_leads: targetLeads });
-
-        // 0. Parse Target Parameters from Input
-        // Extract targetLeads and maxLeadsPerCompany from user prompt
-        // Examples: "Find me 100 leads", "50 leads with max 5 per company"
-        const leadsMatch = input.input_as_text.match(/(\d+)\s*leads?/i);
-        if (leadsMatch) {
-            const parsedLeads = parseInt(leadsMatch[1], 10);
-            if (parsedLeads > 0) {
-                targetLeads = parsedLeads;
-            }
-        }
-
-        const maxPerCompanyMatch = input.input_as_text.match(/max(?:imum)?\s*(\d+)\s*(?:leads?\s*)?per\s*company/i);
-        if (maxPerCompanyMatch) {
-            const parsedMax = parseInt(maxPerCompanyMatch[1], 10);
-            if (parsedMax > 0) {
-                maxLeadsPerCompany = parsedMax;
-            }
-        }
-
-        // Enforce Hard Limits
-        // targetLeads is already clamped by configuration at start of function
-        if (maxLeadsPerCompany > 10) {
-            maxLeadsPerCompany = 10;
-            logStep('Workflow', 'Max leads per company capped at 10.');
-        }
-
-        logStep('Workflow', `🎯 Targeting ${targetLeads} total leads (max ${maxLeadsPerCompany} per company).`);
-
-        // Get company exclusion list from database
-        const excludedDomains = await getExcludedDomains(userId);
-        const excludedNames = await getExcludedCompanyNames(userId);
-        logStep('Workflow', `📊 Excluded ${excludedDomains.length} previously researched companies.`);
-
-        let qualifiedCompanies = [];
-        let globalLeads = [];
-        let scrapedNamesSet = new Set();
-        console.log("DEBUG: Initialized globalLeads and scrapedNamesSet"); // Explicit debug log
-        let totalLeadsCollected = 0; // NEW: Track total leads instead of companies
-        let leadsPerCompany = {}; // NEW: Track leads collected per company
-        let attempts = 0;
-        const MAX_ATTEMPTS = 5; // Allow multiple discovery rounds to meet target
-        const originalPrompt = input.input_as_text;
-
-        let lastRoundFound = 0;
-        const debugLog = { discovery: [], qualification: [], apollo: [], leadDistribution: {} };
-
-        // Track any errors that occur during workflow (for graceful failure)
-        let workflowErrors = [];
-
-        // --- LOOP: Discovery & Profiling ---
-        // NEW: Loop continues until we have enough LEADS (not companies)
-        const leadScraper = new LeadScraperService();
-
-        while (totalLeadsCollected < targetLeads && attempts < MAX_ATTEMPTS) {
-            attempts++;
-            const roundStartTime = Date.now();
-            addTimelineEvent(`discovery_round_${attempts}`, 'started', {
-                leads_so_far: totalLeadsCollected,
-                target: targetLeads
-            });
-
-            // OPTIMIZATION: Early exit if target already met
-            if (totalLeadsCollected >= targetLeads) {
-                logStep('Optimization', `✅ Target of ${targetLeads} leads already met (${totalLeadsCollected} collected). Skipping attempt ${attempts}.`);
-                addTimelineEvent(`discovery_round_${attempts}`, 'skipped', { reason: 'target_already_met' });
-                break;
-            }
-            // Calculate how many more LEADS we need
-            const leadsNeeded = targetLeads - totalLeadsCollected;
-
-            // Estimate companies needed (assuming each gives ~maxLeadsPerCompany)
-            // If we have history of low yield, we could increase this multiplier.
-            // For now, simple math: leads / max_per_company
-            let companiesNeeded = Math.ceil(leadsNeeded / maxLeadsPerCompany);
-
-            // Minimum batch size to avoid tiny runs
-            if (companiesNeeded < minBatchSize) companiesNeeded = minBatchSize;
-
-            logStep('Workflow', `Round ${attempts}/${MAX_ATTEMPTS}: Need ${leadsNeeded} more leads. Target: ${companiesNeeded} new qualified companies.`);
-
-            // Track companies found in previous round for diminishing returns detection
-            const companiesBeforeThisRound = qualifiedCompanies.length;
-
-            // --- STEP 1: ACCUMULATION PHASE ---
-            let accumulatedCandidates = []; // Companies found in this round
-            let discoveryAttempts = 0;
-
-            while (accumulatedCandidates.length < companiesNeeded && discoveryAttempts < maxDiscoveryAttempts) {
-                discoveryAttempts++;
-
-                // OPTIMIZATION: Check if we've already met target (leads may have been collected from previous companies)
-                if (totalLeadsCollected >= targetLeads) {
-                    logStep('Optimization', `Target already met (${totalLeadsCollected}/${targetLeads}). Stopping company discovery early.`);
-                    break;
-                }
-
-                logStep('Company Finder', `🔎 Discovery Sub-Round ${discoveryAttempts}/${maxDiscoveryAttempts}: Seeking ${companiesNeeded - accumulatedCandidates.length} more companies...`);
-
-                // ENHANCED: Use 4 distinct keyword searches for comprehensive coverage
-                // OPTIMIZATION: Removed hardcoded "Canada" and "Real Estate" to allow dynamic user queries.
-                // The agent will generate queries based on User Input.
-                const searchPrompt = `
-[SYSTEM]: Find Investment Firms, Funds, or Companies based on User Criteria.
-USER CRITERIA: "${input.input_as_text}"
-
-PROTOCOL:
-1. GENERATE 4 DISTINCT SEARCH QUERIES.
-   - Query 1: Broad search for target company type + location.
-   - Query 2: Specific niche keywords (e.g. "equity", "development", "SaaS").
-   - Query 3: Competitor/Market list search (e.g. "Top [Industry] firms in [Location]").
-   - Query 4: Exclusion-focused search (e.g. "[Industry] investors -debt -lenders").
-
-2. EXECUTE ALL 4 QUERIES using the 'web_search' tool.
-3. AVOID: ${[...excludedNames, ...qualifiedCompanies.map(c => c.company_name), ...accumulatedCandidates.map(c => c.company_name)].slice(0, 50).join(', ')}
-
-OUTPUT: JSON list (company_name, website, capital_role, description). Target 20+ candidates.
-`;
-
-                const finderInput = [{ role: "user", content: searchPrompt }];
-                // TIMEOUT ADJUSTMENT: Web searches take time, especially with 4 queries. 
-                // Increased from 120s to 300s (5m) to prevent premature timeouts.
-                const AGENT_TIMEOUT_MS = 300000;
-
-                let finderResults = [];
-                try {
-                    const finderStartTime = Date.now();
-                    const finderRes = await logTiming('Company Finder Agent', logStep)(async () => {
-                        return await retryWithBackoff(() =>
-                            runWithTimeout(
-                                () => runner.run(companyFinder, finderInput),
-                                AGENT_TIMEOUT_MS,
-                                'Company Finder Agent'
-                            )
-                        );
-                    });
-
-                    // Track cost for Company Finder
-                    const finderDuration = (Date.now() - finderStartTime) / 1000;
-                    const finderUsage = extractTokenUsage(finderRes);
-                    costTracker.recordCall({
-                        agent: 'Company Finder',
-                        model: AGENT_MODELS.company_finder,
-                        inputTokens: finderUsage.inputTokens,
-                        outputTokens: finderUsage.outputTokens,
-                        duration: finderDuration,
-                        success: true,
-                        metadata: { round: attempts, subRound: discoveryAttempts }
-                    });
-
-                    if (finderRes.finalOutput && finderRes.finalOutput.results) {
-                        finderResults = finderRes.finalOutput.results;
-                    }
-                } catch (e) {
-                    logStep('Company Finder', `⚠️ Agent failed: ${e.message} `);
-                }
-
-                if (finderResults.length === 0) {
-                    logStep('Company Finder', 'No candidates found in this sub-round.');
-                } else {
-                    // Filter Duplicates (Global and Local)
-                    const newInThisBatch = finderResults.filter(c => {
-                        const name = c.company_name;
-                        const isResearched = excludedNames.includes(name) ||
-                            qualifiedCompanies.some(q => q.company_name === name) ||
-                            accumulatedCandidates.some(a => a.company_name === name) ||
-                            scrapedNamesSet.has(name);
-                        return !isResearched;
-                    });
-
-                    logStep('Company Finder', `Found ${finderResults.length} raw.${newInThisBatch.length} are new unique candidates.`);
-                    accumulatedCandidates = [...accumulatedCandidates, ...newInThisBatch];
-                }
-
-                if (accumulatedCandidates.length >= companiesNeeded) {
-                    logStep('Company Finder', `✅ Target met: ${accumulatedCandidates.length}/${companiesNeeded} companies accumulated.`);
-                    break;
-                }
-            }
-
-            if (accumulatedCandidates.length === 0) {
-                logStep('Workflow', '⚠️ Could not find any new companies after max attempts. Stopping workflow.');
-                break;
-            }
-
-            // --- STEP 2: PROFILING PHASE ---
-            logStep('Company Profiler', `Analyzing ${accumulatedCandidates.length} companies...`);
-
-            logStep('Company Profiler', `❌ Rejected (No Domain): ${merged.company_name}`);
-        }
-    }
-    }
-} catch (e) {
-    logStep('Company Profiler', `⚠️ Profiling failed: ${e.message}`);
-    // Fallback: Skip profiling or accept all? 
-    // Let's safe fail and continue with un-profiled accumulation if needed, but better to skip this batch to avoid bad data.
-    continue;
-}
-
-if (qualifiedInBatch.length === 0) {
-    logStep('Workflow', 'No companies passed profiling. Retrying discovery...');
-    continue;
-}
-
-qualifiedCompanies = [...qualifiedCompanies, ...qualifiedInBatch];
-
-// --- STEP 3: LEAD FINDING PHASE ---
-logStep('Lead Finder', `Enriching leads from ${qualifiedInBatch.length} qualified companies...`);
-
-const activeFilters = config.filters || {};
-
-// DO NOT set default job_titles here; let apify.js handle defaults to ensure comprehensive coverage.
-
-try {
-    // logStep('Lead Finder', `DEBUG: Sending domains: ${qualifiedInBatch.map(c => c.domain).join(', ')}`);
-    let leads = await leadScraper.fetchLeads(qualifiedInBatch, activeFilters, logStep);
-    logStep('Lead Finder', `Scrape complete. Retrieved ${leads.length} raw leads.`);
-
-    // --- AGENT FILTERING STEP ---
-    // If we have custom instructions for the lead finder, we use the Agent to valid/filter the raw scraper results.
-    // This ensures that "Agent Instructions" (like "Must be a visible minority" or "Focus on Texas") are respected.
-    if (agentConfigs['apollo_lead_finder']?.instructions || agentPrompts['apollo_lead_finder']) {
-        logStep('Lead Finder', 'Refining leads with AI Agent based on your instructions...');
-        const instructionsUsed = agentConfigs['apollo_lead_finder']?.instructions || agentPrompts['apollo_lead_finder'];
-
-        try {
-            const BATCH_SIZE = 15;
-            const chunks = [];
-            for (let i = 0; i < leads.length; i += BATCH_SIZE) {
-                chunks.push(leads.slice(i, i + BATCH_SIZE));
-            }
-
-            logStep('Lead Finder', `Processing ${leads.length} leads in ${chunks.length} batches to avoid rate limits...`);
-
-            let filteredLeads = [];
-
-            for (let i = 0; i < chunks.length; i++) {
-                const chunk = chunks[i];
-                const filterInput = [{
-                    role: "user",
-                    content: JSON.stringify({
-                        task: "FILTERING TASK: Return matching leads from the provided list.",
-                        context: `User Instructions: ${instructionsUsed}`,
-                        instruction: "Review key params (Title, Company). Keep leads that match the user's criteria. If criteria are broad, KEEP THEM ALL. Return the full JSON objects.",
-                        leads: chunk
-                    })
-                }];
-
-                try {
-                    const filterStartTime = Date.now();
-                    const filterRes = await retryWithBackoff(() => runner.run(apolloLeadFinder, filterInput));
-
-                    // Track cost for Lead Filter
-                    const filterDuration = (Date.now() - filterStartTime) / 1000;
-                    const filterUsage = extractTokenUsage(filterRes);
-                    costTracker.recordCall({
-                        agent: 'Apollo Lead Finder',
-                        model: AGENT_MODELS.apollo_lead_finder,
-                        inputTokens: filterUsage.inputTokens,
-                        outputTokens: filterUsage.outputTokens,
-                        duration: filterDuration,
-                        success: true,
-                        metadata: { batch: i + 1, leadsInBatch: chunk.length }
-                    });
-
-                    if (filterRes.finalOutput && filterRes.finalOutput.leads) {
-                        const kept = filterRes.finalOutput.leads;
-                        filteredLeads.push(...kept);
-
-                        // Identify dropped leads
-                        const keptEmails = new Set(kept.map(k => k.email).filter(Boolean));
-                        const droppedInBatch = chunk.filter(l => !keptEmails.has(l.email));
-
-                        // Save dropped leads immediately with DISQUALIFIED status
-                        if (droppedInBatch.length > 0) {
-                            // Modify leads to have DISQUALIFIED status before saving
-                            const disqualifiedLeads = droppedInBatch.map(l => ({ ...l, status: 'DISQUALIFIED', source_notes: 'Dropped by AI Filter' }));
-                            logStep('Lead Finder', `ℹ️ Saving ${droppedInBatch.length} disqualified leads for review...`);
-                            // Use a non-blocking save to not slow down the main loop
-                            saveLeadsToDB(disqualifiedLeads, userId, icpId, () => { }).catch(e => console.error("Failed to save dropped leads", e));
-                        }
-
-                    } else {
-                        console.warn(`[LeadFilter] Batch ${i + 1} returned invalid structure. API Error or hallucination. DROPPING batch to avoid bad data.`);
-                        // SAFETY: If filter fails, better to drop than to pollute DB with 100s of irrelevant leads
-                        // filteredLeads.push(...chunk); // <-- REMOVED THIS DANGEROUS FALLBACK
-                    }
-                } catch (batchErr) {
-                    console.error(`[LeadFilter] Batch ${i + 1} failed: ${batchErr.message}. DROPPING batch to safety.`);
-                    // SAFETY: Same here - drop if agent crashed
-                }
-            }
-
-            const originalCount = leads.length;
-            leads = filteredLeads;
-            logStep('Lead Finder', `Agent filtered leads: ${leads.length} remaining (dropped ${originalCount - leads.length}).`);
-
-        } catch (filterErr) {
-            logStep('Lead Finder', `⚠️ Agent filtering setup failed: ${filterErr.message}. Utilizing raw scraper results.`);
-        }
-    }
-
-    // Filter for Emails (or keep all based on requirements?)
-    // Requirement: "attempts to meet target lead count... contains as many emails as reasonably obtainable"
-    // We should prioritize emails but keep LinkedIn-only if that's all we have?
-    // The prompt says "Emails are currently the weakest point... LinkedIn profiles and emails are both desired".
-
-    // Let's count emails stats
-    const withEmail = leads.filter(l => l.email);
-    const withoutEmail = leads.filter(l => !l.email);
-
-    logStep('Lead Finder', `📧 Email Yield: ${withEmail.length}/${leads.length} (${((withEmail.length / leads.length) * 100).toFixed(0)}%)`);
-
-    // If email yield is low, we might want to trigger the "Unstrict" search immediately or flag it.
-    // The current scraper logic usually does internal retries if implemented in `fetchLeads`, but `LeadScraperService` implementation 
-    // maps standard Apify behavior. 
-
-    // --- Track lead counts per company for debugging ---
-    for (const company of qualifiedInBatch) {
-        const leadsFromCompany = globalLeads.filter(l => l.company_name === company.company_name).length;
-        leadsPerCompany[company.company_name] = leadsFromCompany;
-    }
-
-    // NOTE: totalLeadsCollected is updated AFTER leads are added (see line ~758)
-    // --- END OF DISCOVERY & SCRAPING FOR THIS ROUND ---
-    logStep('Workflow', `Round ${attempts} complete: collecting leads...`);
-
-    // OPTIMIZATION: Diminishing returns check
-    const companiesFoundThisRound = qualifiedCompanies.length - companiesBeforeThisRound;
-    const diminishingReturnsThreshold = Math.max(2, Math.ceil(companiesNeeded * 0.2)); // At least 2 or 20% of target
-
-    if (attempts > 1 && companiesFoundThisRound < diminishingReturnsThreshold) {
-        logStep('Optimization', `⚠️ Diminishing returns detected: Only ${companiesFoundThisRound} new companies found (threshold: ${diminishingReturnsThreshold}). Stopping early to save API costs.`);
-        break;
-    }
-
-    // OPTIMIZATION: Early exit if target met mid-loop
-    if (totalLeadsCollected >= targetLeads) {
-        logStep('Optimization', `✅ Target reached! ${totalLeadsCollected}/${targetLeads} leads collected after ${attempts} attempts. Skipping remaining attempts to save costs.`);
-        break;
-    }
-
-    // Group by company to enforce limits
-    const leadsByCompany = {};
-    for (const lead of leads) {
-        const domain = lead.company_domain || lead.company_name;
-        if (!leadsByCompany[domain]) leadsByCompany[domain] = [];
-        leadsByCompany[domain].push(lead);
-    }
-
-    for (const [domain, companyLeads] of Object.entries(leadsByCompany)) {
-        // Sorting: Put emails first
-        companyLeads.sort((a, b) => (b.email ? 1 : 0) - (a.email ? 1 : 0));
-
-        const limited = companyLeads.slice(0, maxLeadsPerCompany);
-        globalLeads.push(...limited);
-
-        const companyName = companyLeads[0].company_name;
-        // Track in DB
-        try {
-            await markCompaniesAsResearched(userId, [{
-                name: companyName,
-                domain: domain,
-                leadCount: limited.length,
-                metadata: { total_found: companyLeads.length }
-            }]);
-        } catch (err) { /* ignore */ }
-
-        scrapedNamesSet.add(companyName);
-    }
-
-    const previousCount = totalLeadsCollected || 0;
-    totalLeadsCollected = globalLeads.length;
-    const leadsAddedThisRound = totalLeadsCollected - previousCount;
-    logStep('Lead Finder', `Stats: ${leadsAddedThisRound} leads added this round (${leads.length} found by AI, limited by max ${maxLeadsPerCompany}/company). Total Pipeline: ${totalLeadsCollected}/${targetLeads}`);
-
-} catch (err) {
-    logStep('Lead Finder', `❌ Enrichment failed: ${err.message}`);
-}
-
-if (totalLeadsCollected >= targetLeads) {
-    logStep('Workflow', `✅ Target reached: ${totalLeadsCollected}/${targetLeads} leads`);
-    break;
-}
-
-const leadsStillNeeded = targetLeads - totalLeadsCollected;
-logStep('Workflow', `🔄 Need ${leadsStillNeeded} more leads. Starting next discovery round...`);
-
-        } // END OF MAIN DISCOVERY LOOP
-
-
-// --- Post-Loop Logic ---
-if (globalLeads.length === 0) {
-    throw new Error("Workflow failed: No leads collected.");
-}
-
-// 4. Outreach Creator
-logStep('Outreach Creator', 'Drafting personalized messages...');
-
-let finalOutreachLeads = [];
-const OUTREACH_BATCH_SIZE = 10; // Keep small for high-quality generation
-
-// Strip heavy fields before sending to Agent
-const lightweightLeads = globalLeads.map(l => {
-    const { raw_data, ...rest } = l;
-    return rest;
-});
-
-const outreachChunks = [];
-for (let i = 0; i < lightweightLeads.length; i += OUTREACH_BATCH_SIZE) {
-    outreachChunks.push(lightweightLeads.slice(i, i + OUTREACH_BATCH_SIZE));
-}
-
-logStep('Outreach Creator', `Generating content for ${globalLeads.length} leads in ${outreachChunks.length} batches...`);
-
-for (let i = 0; i < outreachChunks.length; i++) {
-    const chunk = outreachChunks[i];
-    const outreachInput = [{
-        role: "user",
-        content: JSON.stringify({
-            task: "Draft outreach messages for these leads.",
-            leads: chunk
-        })
-    }];
-
-    try {
-        logStep('Outreach Creator', `Batch ${i + 1}/${outreachChunks.length} generating...`);
-        const outreachStartTime = Date.now();
-        const outreachRes = await retryWithBackoff(() => runner.run(outreachCreator, outreachInput));
-
-        // Track cost for Outreach Creator
-        const outreachDuration = (Date.now() - outreachStartTime) / 1000;
-        const outreachUsage = extractTokenUsage(outreachRes);
-        costTracker.recordCall({
-            agent: 'Outreach Creator',
-            model: AGENT_MODELS.outreach_creator,
-            inputTokens: outreachUsage.inputTokens,
-            outputTokens: outreachUsage.outputTokens,
-            duration: outreachDuration,
-            success: true,
-            metadata: { batch: i + 1, leadsInBatch: chunk.length }
-        });
-
-        if (outreachRes.finalOutput && outreachRes.finalOutput.leads) {
-            finalOutreachLeads.push(...outreachRes.finalOutput.leads);
-        } else {
-            console.warn(`[Outreach] Batch ${i + 1} failed to return structured leads. Using input leads with 'failed' status.`);
-            // Fallback: push original leads but MARK them so user knows outreach failed
-            finalOutreachLeads.push(...chunk.map(l => ({
-                ...l,
-                outreach_status: 'failed_generation',
-                source_notes: 'Outreach generation failed'
-            })));
-        }
-    } catch (err) {
-        console.error(`[Outreach] Batch ${i + 1} crashed: ${err.message}`);
-        // Fallback: push original leads marked as failed
-        finalOutreachLeads.push(...chunk.map(l => ({
-            ...l,
-            outreach_status: 'failed_generation',
-            source_notes: `Outreach crashed: ${err.message}`
-        })));
-    }
-}
-
-const outreachOutput = { leads: finalOutreachLeads };
-const msgCount = outreachOutput.leads ? outreachOutput.leads.length : 0;
-logStep('Outreach Creator', `Drafted messages for ${msgCount} leads.`);
-
-// 5. Save to CRM (Database)
-logStep('CRM Sync', 'Saving leads to database...');
-try {
-    if (outreachOutput.leads && outreachOutput.leads.length > 0) {
-        // Now calling the external function
-        await saveLeadsToDB(outreachOutput.leads, userId, icpId, logStep);
-    }
-    logStep('CRM Sync', `Successfully saved ${outreachOutput.leads ? outreachOutput.leads.length : 0} leads to CRM.`);
-} catch (dbErr) {
-    logStep('CRM Sync', `Failed to save leads to DB: ${dbErr.message}`);
-}
-
-// Calculate email yield percentage
-const calculateEmailYield = (leads) => {
-    if (!leads || leads.length === 0) return 0;
-    const withEmail = leads.filter(l => l.email).length;
-    return Math.round((withEmail / leads.length) * 100);
-};
-
-// Get final cost summary BEFORE any target validation
-// This ensures cost data is available regardless of success/failure
-const costSummary = costTracker.getSummary();
-logStep('Cost Summary', `💰 Total API Cost: ${costSummary.cost.formatted} | Tokens: ${costSummary.tokens.total.toLocaleString()} | Calls: ${costSummary.totalCalls}`);
-
-// Determine if target was met
-const targetMet = globalLeads.length >= targetLeads;
-const workflowStatus = targetMet ? 'success' : 'partial_success';
-
-// If target not met, log the shortfall but DON'T throw - we'll save partial results
-if (!targetMet) {
-    const shortfall = targetLeads - globalLeads.length;
-    const warningMsg = `Target not fully met: Found ${globalLeads.length}/${targetLeads} leads after ${attempts} discovery rounds. ` +
-        `Qualified ${qualifiedCompanies.length} companies. Saving partial results.`;
-    logStep('Workflow', `⚠️ ${warningMsg}`);
-    addTimelineEvent('target_validation', 'partial', {
-        message: warningMsg,
-        leads_found: globalLeads.length,
-        target: targetLeads,
-        shortfall
-    });
-    workflowErrors.push({ type: 'target_shortfall', message: warningMsg, leads_found: globalLeads.length, target: targetLeads });
-} else {
-    addTimelineEvent('target_validation', 'completed', { leads_found: globalLeads.length, target: targetLeads });
-}
-
-// Log the cost report
-logStep('Cost Report', costTracker.getReport());
-
-// Finalize timeline
-addTimelineEvent('workflow', targetMet ? 'completed' : 'partial', {
-    duration: `${((Date.now() - costTracker.startTime) / 1000).toFixed(2)}s`,
-    leads_collected: globalLeads.length,
-    companies_qualified: qualifiedCompanies.length
-});
-
-return {
-    status: workflowStatus,
-    leads: globalLeads,
-    debug: debugLog,
-    execution_timeline: executionTimeline,
-    errors: workflowErrors.length > 0 ? workflowErrors : null,
-    stats: {
-        companies_discovered: qualifiedCompanies.length,
-        leads_returned: globalLeads.length,
-        target_leads: targetLeads,
-        target_met: targetMet,
-        email_yield_percentage: calculateEmailYield(globalLeads),
-        filtering_breakdown: {
-            total_scraped: scrapedNamesSet.size,
-            qualified: globalLeads.length,
-            dropped: scrapedNamesSet.size - globalLeads.length
-        },
-        // OPTIMIZATION METRICS
-        optimization: {
-            attempts_used: attempts,
-            attempts_available: MAX_ATTEMPTS,
-            early_exit: attempts < MAX_ATTEMPTS && totalLeadsCollected >= targetLeads,
-            companies_per_attempt: attempts > 0 ? (qualifiedCompanies.length / attempts).toFixed(1) : '0',
-            leads_per_attempt: attempts > 0 ? (globalLeads.length / attempts).toFixed(1) : '0'
-        },
-        // API COST TRACKING
-        api_costs: {
-            total_cost: costSummary.cost.formatted,
-            total_tokens: costSummary.tokens.total,
-            input_tokens: costSummary.tokens.input,
-            output_tokens: costSummary.tokens.output,
-            total_calls: costSummary.totalCalls,
-            by_agent: costSummary.breakdown.byAgent,
-            by_model: costSummary.breakdown.byModel,
-            detailed_calls: costSummary.calls
-        }
-    }
-};
-    });
-};
-
-// --- Runner Execution ---
-
-/**
- * Enriches a specific lead with phone numbers using Apollo MCP.
- * @param {Object} lead - Lead object ({ first_name, last_name, company_name, email, linkedin_url })
- */
-export const enrichLeadWithPhone = async (lead) => {
-    // Schema for phone enrichment
-    const PhoneSchema = z.object({
-        phone_numbers: z.array(z.object({
-            sanitized_number: z.string(),
-            type: z.string()
-        })).optional()
-    });
-
+const getToolsForAgent = (agentName) => {
     const apolloMcp = hostedMcpTool({
         serverLabel: "Apollo_Lead_Finder",
         serverUrl: "https://apollo-mcp-v4-production.up.railway.app/sse?apiKey=apollo-mcp-client-key-01",
         authorization: "apollo-mcp-client-key-01"
     });
 
-    const enricherAgent = new Agent({
-        name: "Phone Enricher",
-        instructions: `You are an expert helper. Your ONLY goal is to find phone numbers for the provided person.
-        
-        STRATEGY:
-        1. Use 'people_enrichment' tool.
-        2. Pass the EXACT parameters from the input:
-           - email: "${lead.email}" (Primary Identifier)
-           - linkedin_url: "${lead.linkedin_url}" (Secondary Identifier)
-           - first_name: "${lead.first_name}"
-           - last_name: "${lead.last_name}"
-           - organization_name: "${lead.company_name}"
-        3. If 'people_enrichment' returns phone numbers, output them immediately.
-        
-        Input Data: ${JSON.stringify(lead)}
-        RETURN ONLY JSON with a list of phone numbers found.`,
-        model: "gpt-4o",
-        tools: [apolloMcp],
-        outputType: PhoneSchema
-    });
-
-    const runner = new Runner();
-    const result = await runner.run(enricherAgent, [
-        { role: "user", content: "Enrich this person with phone numbers." }
-    ]);
-
-    return result.finalOutput?.phone_numbers || [];
+    if (agentName === 'company_finder') return [webSearchTool];
+    if (agentName === 'company_profiler') return [webSearchTool];
+    if (agentName === 'apollo_lead_finder') return [apolloMcp];
+    if (agentName === 'outreach_creator') return [];
+    return [];
 };
 
 /**
- * Save leads to the database
- * @param {Array} leads - List of leads
- * @param {string} userId - User ID
- * @param {string} icpId - ICP ID (optional context)
- * @param {Function} logStep - Logger
+ * Main Workflow Execution
  */
-const saveLeadsToDB = async (leads, userId, icpId, logStep) => {
-    if (!leads || leads.length === 0) return;
+export const runAgentWorkflow = async (input, config) => {
+    let {
+        agentConfigs = {},
+        listeners,
+        userId,
+        targetLeads = 50,
+        maxLeadsPerCompany = 3,
+        minBatchSize = 5,
+        maxDiscoveryAttempts = 5,
+        filters = {}, // Default empty
+        idempotencyKey = null,
+        icpId
+    } = config;
 
-    let savedCount = 0;
-    let errorCount = 0;
+    if (!userId) throw new Error('userId is required');
 
-    for (const lead of leads) {
+    const logStep = (step, detail) => {
+        if (listeners?.onLog) listeners.onLog({ step, detail });
+        else console.log(`[${step}] ${detail}`);
+    };
+
+    // --- Testing Limits ---
+    const effectiveMaxLeads = getEffectiveMaxLeads();
+    if (WORKFLOW_CONFIG.IS_TESTING && targetLeads > effectiveMaxLeads) {
+        logStep('System', `🧪 Testing Mode: Capping target to ${effectiveMaxLeads}`);
+        targetLeads = effectiveMaxLeads;
+    }
+
+    // --- Dynamic Context Injection ---
+    let companyContext = { name: "The User's Company", goal: "Expand client base." };
+    if (icpId) {
         try {
-            // Check if exists by email
-            const { rows } = await query(
-                "SELECT id FROM leads WHERE email = $1 AND user_id = $2",
-                [lead.email, userId]
-            );
+            const icpRes = await query(`SELECT config FROM icps WHERE id = $1`, [icpId]);
+            if (icpRes.rows.length > 0 && icpRes.rows[0].config) {
+                const cfg = icpRes.rows[0].config;
+                if (cfg.companyName) companyContext.name = cfg.companyName;
+                if (cfg.userName) companyContext.goal = `${cfg.userName}'s Goal: ${companyContext.goal}`;
+            }
+        } catch (e) { console.warn("Context fetch failed", e); }
+    }
 
-            if (rows.length > 0) {
-                continue;
+    // --- Dual-Loop Learning ---
+    let leadLearning = { pass: "", reject: "" };
+    try {
+        const [passRows, rejectRows] = await Promise.all([
+            query(`SELECT reason FROM lead_feedback WHERE user_id = $1 AND new_status = 'NEW' ORDER BY created_at DESC LIMIT 5`, [userId]),
+            query(`SELECT reason FROM lead_feedback WHERE user_id = $1 AND new_status = 'DISQUALIFIED' ORDER BY created_at DESC LIMIT 5`, [userId])
+        ]);
+        if (passRows.rows.length > 0) leadLearning.pass = "Likes: " + passRows.rows.map(r => r.reason).join(", ");
+        if (rejectRows.rows.length > 0) leadLearning.reject = "Avoid: " + rejectRows.rows.map(r => r.reason).join(", ");
+    } catch (e) { console.warn("Learning loop failed", e); }
+
+    const runner = new Runner();
+    const costTracker = new CostTracker(`wf_${Date.now()}`);
+
+    // --- OPTIMIZATION 1: LLM Filter Refiner ---
+    logStep('System', '🧠 Refining scraper filters based on user request...');
+    try {
+        const refinerAgent = new Agent({
+            name: "Filter Refiner",
+            instructions: `Extract tactical lead filters from the user's request.
+            Context: ${companyContext.goal}
+            Constraints: Be precise. Exclude 'intern', 'assistant' unless requested.
+            Input: "${input.input_as_text}"`,
+            model: "gpt-4o-mini", // Fast & Cheap
+            outputType: FilterRefinerSchema
+        });
+
+        const refinement = await runner.run(refinerAgent, [{ role: "user", content: "Generate filters." }]);
+        const AI_Filters = refinement.finalOutput || {};
+
+        // Merge AI filters with existing ones (User overrides take precedence if strict, but here we append)
+        if (AI_Filters.job_titles?.length) {
+            filters.job_titles = [...(filters.job_titles || []), ...AI_Filters.job_titles];
+            logStep('Filter Refiner', `➕ Added Job Titles: ${AI_Filters.job_titles.join(', ')}`);
+        }
+        if (AI_Filters.excluded_keywords?.length) {
+            filters.excluded_functions = [...(filters.excluded_functions || []), ...AI_Filters.excluded_keywords];
+            logStep('Filter Refiner', `⛔ Added Exclusions: ${AI_Filters.excluded_keywords.join(', ')}`);
+        }
+        if (AI_Filters.seniority?.length) {
+            filters.seniority = [...(filters.seniority || []), ...AI_Filters.seniority];
+        }
+    } catch (e) {
+        logStep('Filter Refiner', `⚠️ Refinement skipped: ${e.message}`);
+    }
+
+    // --- Agent Definitions ---
+    const companyFinder = new Agent({
+        name: "Company Finder",
+        instructions: `Hunter for ${companyContext.name}. Find 20+ companies for: ${input.input_as_text}. PASS: ${leadLearning.pass}. AVOID: ${leadLearning.reject}.`,
+        model: AGENT_MODELS.company_finder,
+        tools: getToolsForAgent('company_finder'),
+        outputType: CompanyFinderSchema,
+    });
+
+    // OPTIMIZATION 3: Updated Profiler Inst to ask for Score
+    const companyProfiler = new Agent({
+        name: "Company Profiler",
+        instructions: `Evaluator. Visit domains to verify match for: ${companyContext.goal}. 
+        Assign 'match_score' (0-10).
+        CRITICAL: 
+        - Score < 4: Mismatch / Fake.
+        - Score > 7: Strong Match.
+        Reject parked domains (Score 0).`,
+        model: AGENT_MODELS.company_profiler,
+        tools: getToolsForAgent('company_profiler'),
+        outputType: CompanyProfilerSchema,
+    });
+
+    const apolloLeadFinder = new Agent({
+        name: "Apollo Lead Finder",
+        instructions: `Headhunter. Goal: ${companyContext.goal}. Assign match_score (1-10) to each lead. PASS: ${leadLearning.pass}. REJECT: ${leadLearning.reject}.`,
+        model: AGENT_MODELS.apollo_lead_finder,
+        tools: getToolsForAgent('apollo_lead_finder'),
+        outputType: ApolloLeadFinderSchema,
+    });
+
+    const outreachCreator = new Agent({
+        name: "Outreach Creator",
+        instructions: `Draft outreach for ${companyContext.name}.`,
+        model: AGENT_MODELS.outreach_creator,
+        tools: [],
+        outputType: OutreachCreatorSchema,
+    });
+
+    // --- Main Workflow Loop ---
+    let globalLeads = [];
+    let scrapedNamesSet = new Set();
+    const excludedNames = await getExcludedCompanyNames(userId);
+    const leadScraper = new LeadScraperService();
+    let attempts = 0;
+    const MAX_ATTEMPTS = 5;
+
+    while (globalLeads.length < targetLeads && attempts < MAX_ATTEMPTS) {
+        attempts++;
+        logStep('Workflow', `Round ${attempts}: Need ${targetLeads - globalLeads.length} more.`);
+
+        // 1. Discovery
+        let candidates = [];
+        try {
+            const finderRes = await runner.run(companyFinder, [{ role: "user", content: `Find companies for: ${input.input_as_text}. Avoid: ${[...scrapedNamesSet, ...excludedNames].slice(0, 30).join(', ')}` }]);
+            candidates = (finderRes.finalOutput?.results || []).filter(c => !scrapedNamesSet.has(c.company_name));
+        } catch (e) { logStep('Company Finder', `Failed: ${e.message}`); }
+
+        if (candidates.length === 0) break;
+
+        // 2. Profiling & Filtering
+        let validCandidates = [];
+        try {
+            logStep('Company Profiler', `Analyzing ${candidates.length} candidates...`);
+            const profilerRes = await runner.run(companyProfiler, [{ role: "user", content: JSON.stringify(candidates) }]);
+            const profiled = profilerRes.finalOutput?.results || [];
+
+            // OPTIMIZATION 3: Confidence Threshold
+            validCandidates = profiled.filter(c => {
+                const isHighQuality = (c.match_score || 0) >= 7;
+                if (!isHighQuality) logStep('Profiler', `🗑️ Dropped ${c.company_name} (Score: ${c.match_score}/10)`);
+                return isHighQuality;
+            });
+            logStep('Company Profiler', `✅ ${validCandidates.length}/${candidates.length} Qualified (Score >= 7).`);
+        } catch (e) {
+            logStep('Company Profiler', `Failed: ${e.message}. Fallback to all candidates.`);
+            validCandidates = candidates;
+        }
+
+        if (validCandidates.length === 0) continue;
+
+        // 3. Sequential Scraping (Short-Circuit)
+        // OPTIMIZATION 2: Process in small batches to save budget
+        const SCRAPE_BATCH_SIZE = 3;
+        for (let i = 0; i < validCandidates.length; i += SCRAPE_BATCH_SIZE) {
+            // STOP condition
+            if (globalLeads.length >= targetLeads) {
+                logStep('Optimization', `✅ Target met (${globalLeads.length}/${targetLeads}). Stopping scrape early.`);
+                break;
             }
 
-            // Insert
-            await query(
-                `INSERT INTO leads (
-                company_name, person_name, email, job_title, linkedin_url, 
-                status, source, user_id, custom_data, phone_numbers
-            ) VALUES ($1, $2, $3, $4, $5, 'NEW', 'Outbound Agent', $6, $7, $8)`,
-                [
-                    lead.company_name,
-                    `${lead.first_name} ${lead.last_name}`.trim(),
-                    lead.email,
-                    lead.title,
-                    lead.linkedin_url,
-                    userId,
-                    { icp_id: icpId, ...lead }, // Store ICP ID in custom_data
-                    JSON.stringify(lead.phone_numbers || [])
-                ]
-            );
-            savedCount++;
-        } catch (err) {
-            console.error("Insert failed for lead:", lead.email, err);
-            errorCount++;
+            const batch = validCandidates.slice(i, i + SCRAPE_BATCH_SIZE);
+            logStep('Lead Finder', `Scraping batch of ${batch.length} companies...`);
+
+            try {
+                const leads = await leadScraper.fetchLeads(batch, filters, logStep);
+                if (leads.length > 0) {
+                    const rankRes = await runner.run(apolloLeadFinder, [{ role: "user", content: `Rank these leads (Match 1-10) for ${companyContext.goal}: ${JSON.stringify(leads.slice(0, 30))}` }]);
+                    const ranked = rankRes.finalOutput?.leads || leads;
+                    const sorted = ranked.sort((a, b) => (b.match_score || 0) - (a.match_score || 0));
+
+                    const perCompany = {};
+                    sorted.forEach(l => {
+                        if (!perCompany[l.company_name]) perCompany[l.company_name] = [];
+                        if (perCompany[l.company_name].length < maxLeadsPerCompany) perCompany[l.company_name].push(l);
+                    });
+
+                    const added = Object.values(perCompany).flat();
+                    globalLeads.push(...added);
+                    logStep('Workflow', `+${added.length} leads. Total: ${globalLeads.length}/${targetLeads}`);
+                }
+
+                // Mark processed
+                batch.forEach(c => scrapedNamesSet.add(c.company_name));
+
+            } catch (e) { logStep('Lead Finder', `Batch failed: ${e.message}`); }
         }
     }
 
-    if (logStep) {
-        logStep('CRM Sync', `Finalized DB Sync: ${savedCount} saved, ${errorCount} errors, ${leads.length - savedCount - errorCount} duplicates skipped.`);
+    // --- Outreach Generation ---
+    logStep('Outreach Creator', `Drafting messages for ${globalLeads.length} leads...`);
+    let finalLeads = [];
+    try {
+        const outreachRes = await runner.run(outreachCreator, [{ role: "user", content: JSON.stringify(globalLeads.slice(0, 20)) }]);
+        finalLeads = outreachRes.finalOutput?.leads || globalLeads;
+    } catch (e) { logStep('Outreach Creator', `Failed: ${e.message}`); finalLeads = globalLeads; }
+
+    // --- Save to CRM ---
+    await saveLeadsToDB(finalLeads, userId, icpId, logStep);
+
+    return {
+        status: globalLeads.length >= targetLeads ? 'success' : 'partial',
+        leads: finalLeads,
+        stats: { total: globalLeads.length, attempts }
+    };
+};
+
+/**
+ * DB Persistence
+ */
+const saveLeadsToDB = async (leads, userId, icpId, logStep) => {
+    if (!leads || leads.length === 0) return;
+    let count = 0;
+    for (const lead of leads) {
+        try {
+            const exists = await query("SELECT id FROM leads WHERE email = $1 AND user_id = $2", [lead.email, userId]);
+            if (exists.rows.length > 0) continue;
+
+            await query(`INSERT INTO leads (company_name, person_name, email, job_title, linkedin_url, status, source, user_id, custom_data) 
+                         VALUES ($1, $2, $3, $4, $5, 'NEW', 'Outbound Agent', $6, $7)`,
+                [lead.company_name, `${lead.first_name} ${lead.last_name}`, lead.email, lead.title, lead.linkedin_url, userId, { icp_id: icpId, score: lead.match_score, profile: lead.company_profile }]);
+            count++;
+        } catch (e) { console.error("Save error", e); }
     }
+    logStep('CRM', `Saved ${count} new leads to database.`);
+};
+
+/**
+ * Manual Enrichment (Helper)
+ */
+export const enrichLeadWithPhone = async (lead) => {
+    return [];
 };

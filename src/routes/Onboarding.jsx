@@ -822,9 +822,28 @@ const Onboarding = () => {
                 await saveAgentPrompts(generatedPrompts)
                 await saveCrmColumns(crmColumns, icpConfig.job_titles) // Pass filters if needed
 
-                // Add filters to config for specific agents (Company Finder / Lead Finder)
-                // This updates the 'agent_prompts' table directly (legacy behavior)
-                // We keep this for the "Default" ICP if we treat the first run as such.
+                // [FIX]: Create a DEFAULT ICP record so the workflow can find it!
+                // The workflow looks for an ICP ID or falls back. 
+                // But for the best experience, we should define the "Default Strategy".
+                try {
+                    const defaultIcpName = `${userData.companyName || 'Default'} Strategy`;
+                    await fetch('/api/icps', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            name: defaultIcpName,
+                            config: {
+                                ...icpConfig,
+                                companyName: userData.companyName, // Explicitly save company context
+                                userName: userData.userName
+                            },
+                            agent_config: generatedPrompts
+                        })
+                    });
+                } catch (err) {
+                    console.error("Failed to create default ICP, continuing...", err);
+                    // Non-blocking, but strictly speaking this should succeed.
+                }
 
                 await completeOnboarding()
                 setStep('completion')
