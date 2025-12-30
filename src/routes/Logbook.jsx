@@ -179,13 +179,18 @@ const Logbook = () => {
         const leads = outputData.leads || metadata.leads || []
         const apiCosts = stats.api_costs || {}
 
+        // Extract execution timeline (new format) or execution logs (old format)
+        const executionTimeline = outputData.execution_timeline || metadata.execution_timeline || []
+        const executionLogs = outputData.execution_logs || metadata.execution_logs || outputData.executionLogs || metadata.executionLogs || []
+
         return {
             companies: stats.companies_discovered || stats.companiesFound || 0,
             totalLeads: stats.leads_returned || stats.leadsGenerated || 0,
             qualified: filtering.qualified || stats.qualified || stats.leadsQualified || 0,
             disqualified: filtering.dropped || stats.dropped || stats.leadsDisqualified || 0,
             emailYield: stats.email_yield_percentage || stats.emailYield || 0,
-            logs: outputData.execution_logs || metadata.execution_logs || outputData.executionLogs || metadata.executionLogs || [],
+            logs: executionLogs.length > 0 ? executionLogs : executionTimeline,
+            timeline: executionTimeline,
             leads: leads,
             companies_list: Array.from(new Set(leads.map(l => l.company_name).filter(Boolean))),
             // API Cost tracking
@@ -406,20 +411,67 @@ const Logbook = () => {
                                                         </div>
                                                     )}
 
-                                                    {/* Execution Logs */}
+                                                    {/* Execution Timeline */}
                                                     <div className="bg-black/20 rounded-xl p-6 border border-white/10">
-                                                        <h4 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-4">Execution Timeline</h4>
+                                                        <h4 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-4 flex items-center gap-2">
+                                                            <Clock className="w-4 h-4" />
+                                                            Execution Timeline
+                                                        </h4>
                                                         {stats.logs && stats.logs.length > 0 ? (
-                                                            <div className="space-y-2 max-h-96 overflow-y-auto">
-                                                                {stats.logs.map((log, idx) => (
-                                                                    <div key={idx} className="flex gap-3 text-sm">
-                                                                        <span className="text-gray-500 font-mono text-xs flex-shrink-0">
-                                                                            {new Date(log.timestamp).toLocaleTimeString()}
-                                                                        </span>
-                                                                        <span className="text-gray-400">[{log.stage}]</span>
-                                                                        <span className="text-white">{log.message}</span>
-                                                                    </div>
-                                                                ))}
+                                                            <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                                                                {stats.logs.map((log, idx) => {
+                                                                    // Determine status color
+                                                                    const statusColor =
+                                                                        log.status === 'completed' ? 'bg-green-400' :
+                                                                            log.status === 'started' ? 'bg-blue-400' :
+                                                                                log.status === 'partial' ? 'bg-orange-400' :
+                                                                                    log.status === 'failed' ? 'bg-red-400' :
+                                                                                        log.status === 'skipped' ? 'bg-gray-500' :
+                                                                                            'bg-gray-400';
+
+                                                                    return (
+                                                                        <div key={idx} className="flex gap-3 text-sm bg-black/20 rounded-lg p-3 border border-white/5">
+                                                                            <div className="flex-shrink-0 flex flex-col items-center">
+                                                                                <span className={`w-2 h-2 rounded-full ${statusColor}`}></span>
+                                                                                <div className="w-0.5 h-full bg-white/10 mt-1"></div>
+                                                                            </div>
+                                                                            <div className="flex-1">
+                                                                                <div className="flex items-center justify-between">
+                                                                                    <div className="flex items-center gap-2">
+                                                                                        <span className="font-medium text-white">{log.stage || log.step}</span>
+                                                                                        {log.status && (
+                                                                                            <span className={`text-xs px-2 py-0.5 rounded ${log.status === 'completed' ? 'bg-green-500/20 text-green-400' :
+                                                                                                    log.status === 'started' ? 'bg-blue-500/20 text-blue-400' :
+                                                                                                        log.status === 'partial' ? 'bg-orange-500/20 text-orange-400' :
+                                                                                                            log.status === 'failed' ? 'bg-red-500/20 text-red-400' :
+                                                                                                                'bg-gray-500/20 text-gray-400'
+                                                                                                }`}>
+                                                                                                {log.status}
+                                                                                            </span>
+                                                                                        )}
+                                                                                    </div>
+                                                                                    <span className="text-gray-500 font-mono text-xs">
+                                                                                        {log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : ''}
+                                                                                    </span>
+                                                                                </div>
+                                                                                {log.message && (
+                                                                                    <p className="text-gray-400 text-xs mt-1">{log.message}</p>
+                                                                                )}
+                                                                                {log.duration && (
+                                                                                    <p className="text-gray-600 text-xs mt-1">Duration: {log.duration}</p>
+                                                                                )}
+                                                                                {log.details && typeof log.details === 'object' && Object.keys(log.details).length > 0 && (
+                                                                                    <div className="mt-2 text-xs text-gray-600">
+                                                                                        {Object.entries(log.details)
+                                                                                            .filter(([k]) => !['timestamp', 'stage', 'status', 'duration', 'message'].includes(k))
+                                                                                            .map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`)
+                                                                                            .join(' • ')}
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
+                                                                    );
+                                                                })}
                                                             </div>
                                                         ) : (
                                                             <p className="text-sm text-gray-500">No execution logs available</p>
@@ -501,31 +553,54 @@ const Logbook = () => {
                                                                 </div>
                                                             )}
 
-                                                            {/* Detailed Calls (Collapsible) */}
+                                                            {/* Detailed Calls - ALWAYS VISIBLE for full transparency */}
                                                             {stats.apiCosts.detailedCalls && stats.apiCosts.detailedCalls.length > 0 && (
-                                                                <details className="group">
-                                                                    <summary className="text-xs font-semibold text-gray-400 mb-3 cursor-pointer hover:text-gray-300 flex items-center gap-2">
-                                                                        <ChevronDown className="w-3 h-3 group-open:rotate-180 transition-transform" />
-                                                                        Individual API Calls ({stats.apiCosts.detailedCalls.length})
-                                                                    </summary>
-                                                                    <div className="space-y-1 max-h-64 overflow-y-auto mt-3">
+                                                                <div>
+                                                                    <h5 className="text-xs font-semibold text-gray-400 mb-3 flex items-center gap-2">
+                                                                        <Activity className="w-3 h-3" />
+                                                                        All API Calls ({stats.apiCosts.detailedCalls.length} calls)
+                                                                    </h5>
+                                                                    <div className="space-y-2 max-h-[500px] overflow-y-auto">
                                                                         {stats.apiCosts.detailedCalls.map((call, idx) => (
-                                                                            <div key={idx} className="flex items-center justify-between text-xs bg-black/30 rounded p-2 border border-white/5">
-                                                                                <div className="flex items-center gap-2">
-                                                                                    <span className={`w-2 h-2 rounded-full ${call.success ? 'bg-green-400' : 'bg-red-400'}`}></span>
-                                                                                    <span className="text-gray-400">{call.agent}</span>
-                                                                                    <span className="text-gray-600">•</span>
-                                                                                    <span className="text-gray-500 font-mono">{call.model}</span>
+                                                                            <div key={idx} className="bg-black/30 rounded-lg p-3 border border-white/5">
+                                                                                <div className="flex items-center justify-between mb-2">
+                                                                                    <div className="flex items-center gap-2">
+                                                                                        <span className={`w-2 h-2 rounded-full ${call.success ? 'bg-green-400' : 'bg-red-400'}`}></span>
+                                                                                        <span className="text-sm font-medium text-white">{call.agent}</span>
+                                                                                        <span className="text-xs text-gray-600">•</span>
+                                                                                        <span className="text-xs font-mono text-purple-400">{call.model}</span>
+                                                                                    </div>
+                                                                                    <span className="text-sm font-bold text-yellow-300">${call.cost?.toFixed(6)}</span>
                                                                                 </div>
-                                                                                <div className="flex items-center gap-3">
-                                                                                    <span className="text-gray-500">{call.inputTokens}→{call.outputTokens}</span>
-                                                                                    <span className="text-yellow-400 font-mono">${call.cost?.toFixed(6)}</span>
-                                                                                    <span className="text-gray-600">{call.duration?.toFixed(1)}s</span>
+                                                                                <div className="grid grid-cols-4 gap-4 text-xs">
+                                                                                    <div>
+                                                                                        <p className="text-gray-500">Input Tokens</p>
+                                                                                        <p className="text-blue-300 font-mono">{call.inputTokens?.toLocaleString() || 0}</p>
+                                                                                    </div>
+                                                                                    <div>
+                                                                                        <p className="text-gray-500">Output Tokens</p>
+                                                                                        <p className="text-green-300 font-mono">{call.outputTokens?.toLocaleString() || 0}</p>
+                                                                                    </div>
+                                                                                    <div>
+                                                                                        <p className="text-gray-500">Duration</p>
+                                                                                        <p className="text-gray-300 font-mono">{call.duration?.toFixed(2)}s</p>
+                                                                                    </div>
+                                                                                    <div>
+                                                                                        <p className="text-gray-500">Total Tokens</p>
+                                                                                        <p className="text-white font-mono">{((call.inputTokens || 0) + (call.outputTokens || 0)).toLocaleString()}</p>
+                                                                                    </div>
                                                                                 </div>
+                                                                                {call.metadata && Object.keys(call.metadata).length > 0 && (
+                                                                                    <div className="mt-2 pt-2 border-t border-white/5">
+                                                                                        <p className="text-xs text-gray-600">
+                                                                                            {Object.entries(call.metadata).map(([k, v]) => `${k}: ${v}`).join(' • ')}
+                                                                                        </p>
+                                                                                    </div>
+                                                                                )}
                                                                             </div>
                                                                         ))}
                                                                     </div>
-                                                                </details>
+                                                                </div>
                                                             )}
                                                         </div>
                                                     )}
