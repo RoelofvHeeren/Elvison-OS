@@ -191,25 +191,19 @@ export const runAgentWorkflow = async (input, config) => {
     const runner = new Runner();
     const costTracker = new CostTracker(`wf_${Date.now()}`);
 
-    // --- Model Initialization ---
-    const googleKey = process.env.GOOGLE_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-    const anthropicKey = process.env.ANTHROPIC_API_KEY;
+    // --- Dynamic Fallback State ---
+    let useGoogleFallback = !googleKey;
+    let useAnthropicFallback = !anthropicKey;
 
-    // Fallback Logic: Revert to GPT-4o if specialized keys are missing
-    if (!googleKey) {
-        logStep('System', '💡 Note: GOOGLE_API_KEY missing. Falling back to GPT-4o for discovery (Higher cost).');
-    }
-    if (!anthropicKey) {
-        logStep('System', '💡 Note: ANTHROPIC_API_KEY missing. Falling back to GPT-4o for profiling (Higher cost).');
-    }
-
-    // 5-Agent Model Assignments with Robust Fallbacks
-    const finderModel = googleKey ? new GeminiModel(googleKey, 'gemini-1.5-flash') : 'gpt-4o';
-    const profilerModel = anthropicKey ? new ClaudeModel(anthropicKey, 'claude-3-5-sonnet-20240620') : 'gpt-4o';
-    const apolloModel = AGENT_MODELS.apollo_lead_finder; // gpt-4-turbo
-    const outreachModel = googleKey ? new GeminiModel(googleKey, 'gemini-1.5-flash') : 'gpt-4o';
-    const architectModel = anthropicKey ? new ClaudeModel(anthropicKey, 'claude-3-5-sonnet-20240620') : 'gpt-4o';
-    const defaultModel = googleKey ? new GeminiModel(googleKey, 'gemini-1.5-flash') : 'gpt-4o';
+    const getSafeModel = (type) => {
+        if (type === 'discovery' || type === 'outreach' || type === 'refiner') {
+            return useGoogleFallback ? 'gpt-4o' : finderModel;
+        }
+        if (type === 'profiler' || type === 'architect') {
+            return useAnthropicFallback ? 'gpt-4o' : profilerModel;
+        }
+        return 'gpt-4o';
+    };
 
     // --- OPTIMIZATION 1: LLM Filter Refiner ---
     logStep('System', '🧠 Refining scraper filters based on user request...');
@@ -222,7 +216,7 @@ export const runAgentWorkflow = async (input, config) => {
             - Only add new titles if they are strictly missing and highly relevant to the goal: ${companyContext.goal}
             Constraints: Be precise. Exclude 'intern', 'assistant' unless requested.
             Input: "${input.input_as_text}"`,
-            model: defaultModel, // Using Gemini 1.5 Flash as default (cheaper, safe)
+            model: getSafeModel('refiner'),
             outputType: FilterRefinerSchema
         });
 
@@ -242,27 +236,28 @@ export const runAgentWorkflow = async (input, config) => {
             filters.seniority = [...(filters.seniority || []), ...AI_Filters.seniority];
         }
     } catch (e) {
-        logStep('Filter Refiner', `⚠️ Refinement skipped: ${e.message}`);
+        if (e.message?.includes("API key not valid") || e.message?.includes("400")) {
+            logStep('Filter Refiner', `🔄 Gemini Key Rejected. Auto-switching to OpenAI fallback.`);
+            useGoogleFallback = true;
+        } else {
+            logStep('Filter Refiner', `⚠️ Refinement skipped: ${e.message}`);
+        }
     }
 
-
-    // --- Agent Definitions ---
-
-    // 1. Company Finder: Gemini 1.5 Flash
-    const companyFinder = new Agent({
+    // --- Agent Definitions with Dynamic Models ---
+    const getFinderAgent = () => new Agent({
         name: "Company Finder",
         instructions: `GOAL: Discover real companies via Google search.
 PROTOCOL: Use google_search_and_extract to find organic results.
 STRICTURE: Extract ONLY: Company name, Primary domain, One-line description. 
 REJECT: Ambiguous or directory-style results (LinkedIn, Yelp, etc).
 CONTEXT: ${input.input_as_text}. PASS: ${leadLearning.pass}.`,
-        model: finderModel,
+        model: getSafeModel('discovery'),
         tools: getToolsForAgent('company_finder'),
         outputType: CompanyFinderSchema,
     });
 
-    // 2. Company Profiler: Claude 3.5 Sonnet
-    const companyProfiler = new Agent({
+    const getProfilerAgent = () => new Agent({
         name: "Company Profiler",
         instructions: `GOAL: Deep research and business inference. 
 PROTOCOL: Use 'scrape_company_website' for each domain.
@@ -274,41 +269,41 @@ STRICTURE: Output a strict structured profile:
 - Buying signals: Expansion, hiring, pain points.
 NO creative writing. NO outreach content.
 Assign 'match_score' (1-10) against goal: ${companyContext.goal}.`,
-        model: profilerModel,
+        model: getSafeModel('profiler'),
         tools: getToolsForAgent('company_profiler'),
         outputType: CompanyProfilerSchema,
     });
 
     // 3. Apollo (Lead Finder): GPT-4 Turbo
-    const apolloLeadFinder = new Agent({
+    const getApolloAgent = () => new Agent({
         name: "Apollo Agent",
         instructions: `GOAL: Generate precise Apollo filters only. 
 PROTOCOL: Take domain + company profile. Generate filters for contacts.
 STRICTURE: Use GPT-4 Turbo logic to be reliable. Do NOT improvise filters.
 CONTEXT: Goal for ${companyContext.name} is ${companyContext.goal}. Match these types: ${companyContext.baselineTitles.join(', ')}.`,
-        model: apolloModel,
+        model: AGENT_MODELS.apollo_lead_finder, // GPT-4 Turbo is always safe
         tools: getToolsForAgent('apollo_lead_finder'),
         outputType: ApolloLeadFinderSchema,
     });
 
     // 4. Outreach Creator: Gemini 1.5 Flash
-    const outreachCreator = new Agent({
+    const getOutreachAgent = () => new Agent({
         name: "Outreach Creator",
         instructions: `GOAL: Generate personalized outreach.
 PROTOCOL: Use strict message templates. Inject personalization fields only. 
 STRICTURE: No decision-making. No research. No tone exploration.`,
-        model: outreachModel,
+        model: getSafeModel('outreach'),
         tools: [],
         outputType: OutreachCreatorSchema,
     });
 
     // 5. Data Architect: Claude 3.5 Sonnet (Fallback)
-    const dataArchitect = new Agent({
+    const getArchitectAgent = () => new Agent({
         name: "Data Architect",
         instructions: `GOAL: Normalize, validate, and store data.
 PROTOCOL: Use strict schema. Normalize names (CapitalCase), fix broken URLs, and validate emails.
 STRICTURE: LLM is fallback only. Zero creativity. If data is unsalvageable, mark is_valid: false.`,
-        model: architectModel,
+        model: getSafeModel('architect'),
         outputType: DataArchitectSchema,
     });
 
@@ -327,9 +322,21 @@ STRICTURE: LLM is fallback only. Zero creativity. If data is unsalvageable, mark
         // 1. Discovery
         let candidates = [];
         try {
-            const finderRes = await runAgentWithTracking(runner, companyFinder, [{ role: "user", content: `Find companies for: ${input.input_as_text}. Avoid: ${[...scrapedNamesSet, ...excludedNames].slice(0, 30).join(', ')}` }], costTracker, { maxTurns: 20 });
+            const finderRes = await runAgentWithTracking(runner, getFinderAgent(), [{ role: "user", content: `Find companies for: ${input.input_as_text}. Avoid: ${[...scrapedNamesSet, ...excludedNames].slice(0, 30).join(', ')}` }], costTracker, { maxTurns: 20 });
             candidates = (finderRes.finalOutput?.results || []).filter(c => !scrapedNamesSet.has(c.company_name));
-        } catch (e) { logStep('Company Finder', `Failed: ${e.message}`); }
+        } catch (e) {
+            if (e.message?.includes("API key not valid") || e.message?.includes("400")) {
+                logStep('Company Finder', `🔄 Gemini Key Rejected. Auto-switching to OpenAI for Discovery.`);
+                useGoogleFallback = true;
+                // Re-try once with fallback
+                try {
+                    const finderRes = await runAgentWithTracking(runner, getFinderAgent(), [{ role: "user", content: `Find companies for: ${input.input_as_text}.` }], costTracker, { maxTurns: 20 });
+                    candidates = (finderRes.finalOutput?.results || []).filter(c => !scrapedNamesSet.has(c.company_name));
+                } catch (e2) { logStep('Company Finder', `Fallback failed: ${e2.message}`); }
+            } else {
+                logStep('Company Finder', `Failed: ${e.message}`);
+            }
+        }
 
         if (candidates.length === 0) break;
 
@@ -337,7 +344,7 @@ STRICTURE: LLM is fallback only. Zero creativity. If data is unsalvageable, mark
         let validCandidates = [];
         try {
             logStep('Company Profiler', `Analyzing ${candidates.length} candidates...`);
-            const profilerRes = await runAgentWithTracking(runner, companyProfiler, [{ role: "user", content: JSON.stringify(candidates) }], costTracker, { maxTurns: 20 });
+            const profilerRes = await runAgentWithTracking(runner, getProfilerAgent(), [{ role: "user", content: JSON.stringify(candidates) }], costTracker, { maxTurns: 20 });
             const profiled = profilerRes.finalOutput?.results || [];
 
             // OPTIMIZATION 3: Confidence Threshold
@@ -348,8 +355,15 @@ STRICTURE: LLM is fallback only. Zero creativity. If data is unsalvageable, mark
             });
             logStep('Company Profiler', `✅ ${validCandidates.length}/${candidates.length} Qualified (Score >= 7).`);
         } catch (e) {
-            logStep('Company Profiler', `Failed: ${e.message}. Fallback to all candidates.`);
-            validCandidates = candidates;
+            if (e.message?.includes("API key not valid") || e.message?.includes("401") || e.message?.includes("Anthropic")) {
+                logStep('Company Profiler', `🔄 Anthropic Key Rejected. Auto-switching to OpenAI for Profiling.`);
+                useAnthropicFallback = true;
+                // Fallback to all candidates for this round to save time
+                validCandidates = candidates;
+            } else {
+                logStep('Company Profiler', `Failed: ${e.message}. Fallback to all candidates.`);
+                validCandidates = candidates;
+            }
         }
 
         if (validCandidates.length === 0) continue;
@@ -379,15 +393,20 @@ STRICTURE: LLM is fallback only. Zero creativity. If data is unsalvageable, mark
                     const ambiguousLeads = leads.filter(l => !l.first_name || !l.last_name || !l.email);
                     let fixedLeads = [];
                     if (ambiguousLeads.length > 0) {
-                        const architectRes = await runAgentWithTracking(runner, dataArchitect, [{ role: "user", content: `Normalize these ambiguous leads: ${JSON.stringify(ambiguousLeads)}` }], costTracker);
-                        fixedLeads = (architectRes.finalOutput?.leads || []).filter(l => l.is_valid);
+                        try {
+                            const architectRes = await runAgentWithTracking(runner, getArchitectAgent(), [{ role: "user", content: `Normalize these ambiguous leads: ${JSON.stringify(ambiguousLeads)}` }], costTracker);
+                            fixedLeads = (architectRes.finalOutput?.leads || []).filter(l => l.is_valid);
+                        } catch (e) {
+                            if (e.message?.includes("API key not valid")) useAnthropicFallback = true;
+                            logStep('Data Architect', `Normalization failed: ${e.message}`);
+                        }
                     }
 
                     const validatedLeads = [...deterministicLeads, ...fixedLeads];
 
                     // Proceed with ranking on validated data
                     if (validatedLeads.length > 0) {
-                        const rankRes = await runAgentWithTracking(runner, apolloLeadFinder, [{ role: "user", content: `Rank these leads (Match 1-10) for ${companyContext.goal}: ${JSON.stringify(validatedLeads.slice(0, 30))}` }], costTracker);
+                        const rankRes = await runAgentWithTracking(runner, getApolloAgent(), [{ role: "user", content: `Rank these leads (Match 1-10) for ${companyContext.goal}: ${JSON.stringify(validatedLeads.slice(0, 30))}` }], costTracker);
                         const ranked = rankRes.finalOutput?.leads || validatedLeads;
                         // ... rest of logic uses ranked ...
                         const sorted = ranked.sort((a, b) => (b.match_score || 0) - (a.match_score || 0));
@@ -415,9 +434,13 @@ STRICTURE: LLM is fallback only. Zero creativity. If data is unsalvageable, mark
     logStep('Outreach Creator', `Drafting messages for ${globalLeads.length} leads...`);
     let finalLeads = [];
     try {
-        const outreachRes = await runAgentWithTracking(runner, outreachCreator, [{ role: "user", content: JSON.stringify(globalLeads.slice(0, 20)) }], costTracker);
+        const outreachRes = await runAgentWithTracking(runner, getOutreachAgent(), [{ role: "user", content: JSON.stringify(globalLeads.slice(0, 20)) }], costTracker);
         finalLeads = outreachRes.finalOutput?.leads || globalLeads;
-    } catch (e) { logStep('Outreach Creator', `Failed: ${e.message}`); finalLeads = globalLeads; }
+    } catch (e) {
+        logStep('Outreach Creator', `Failed: ${e.message}`);
+        if (e.message?.includes("API key not valid")) useGoogleFallback = true;
+        finalLeads = globalLeads;
+    }
 
     // --- Save to CRM ---
     await saveLeadsToDB(finalLeads, userId, icpId, logStep);
