@@ -19,18 +19,14 @@ const MODEL_PRICING = {
     'gpt-4o-mini': { input: 0.15, output: 0.60 },
     'gpt-4o-mini-2024-07-18': { input: 0.15, output: 0.60 },
 
-    // GPT-4.1 Models
-    'gpt-4.1': { input: 2.00, output: 8.00 },
-    'gpt-4.1-mini': { input: 0.40, output: 1.60 },
-    'gpt-4.1-nano': { input: 0.10, output: 0.40 },
+    // Gemini Models (Studio / Vertex)
+    'gemini-1.5-flash': { input: 0.075, output: 0.30 },
+    'gemini-1.5-pro': { input: 3.50, output: 10.50 },
 
-    // GPT-5 Models (estimated based on tier)
-    'gpt-5': { input: 5.00, output: 15.00 },
-    'gpt-5-mini': { input: 0.30, output: 1.20 },
-    'gpt-5-nano': { input: 0.10, output: 0.40 },
-    'gpt-5-pro': { input: 10.00, output: 30.00 },
-    'gpt-5.1': { input: 5.00, output: 15.00 },
-    'gpt-5.2': { input: 5.00, output: 15.00 },
+    // Claude Models (Anthropic)
+    'claude-3-5-sonnet': { input: 3.00, output: 15.00 },
+    'claude-3-opus': { input: 15.00, output: 75.00 },
+    'claude-3-haiku': { input: 0.25, output: 1.25 },
 
     // Legacy/Other
     'gpt-4-turbo': { input: 10.00, output: 30.00 },
@@ -283,9 +279,9 @@ export function extractTokenUsage(runResult) {
     let outputTokens = 0;
 
     if (runResult.usage) {
-        // Direct usage object (if available)
-        inputTokens = runResult.usage.prompt_tokens || 0;
-        outputTokens = runResult.usage.completion_tokens || 0;
+        // Direct usage object (if available) - Handle both snake_case (OpenAI) and camelCase (Custom)
+        inputTokens = runResult.usage.prompt_tokens || runResult.usage.promptTokens || 0;
+        outputTokens = runResult.usage.completion_tokens || runResult.usage.completionTokens || 0;
     } else if (runResult.rawResponses) {
         // Sum up from raw responses
         for (const response of runResult.rawResponses) {

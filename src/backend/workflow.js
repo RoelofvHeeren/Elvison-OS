@@ -11,7 +11,7 @@ import {
 } from "./company-tracker.js";
 import { LeadScraperService } from "./services/lead-scraper-service.js";
 import { WORKFLOW_CONFIG, getEffectiveMaxLeads, AGENT_MODELS } from "../config/workflow.js";
-import { CostTracker } from "./services/cost-tracker.js";
+import { CostTracker, runAgentWithTracking } from "./services/cost-tracker.js";
 
 // --- Schema Definitions ---
 const CompanyFinderSchema = z.object({
@@ -206,7 +206,7 @@ export const runAgentWorkflow = async (input, config) => {
             outputType: FilterRefinerSchema
         });
 
-        const refinement = await runner.run(refinerAgent, [{ role: "user", content: "Generate filters." }]);
+        const refinement = await runAgentWithTracking(runner, refinerAgent, [{ role: "user", content: "Generate filters." }], costTracker);
         const AI_Filters = refinement.finalOutput || {};
 
         // Merge AI filters with existing ones (User overrides take precedence if strict, but here we append)
@@ -317,7 +317,7 @@ STRICTURE: LLM is fallback only. Zero creativity. If data is unsalvageable, mark
         // 1. Discovery
         let candidates = [];
         try {
-            const finderRes = await runner.run(companyFinder, [{ role: "user", content: `Find companies for: ${input.input_as_text}. Avoid: ${[...scrapedNamesSet, ...excludedNames].slice(0, 30).join(', ')}` }], { maxTurns: 20 });
+            const finderRes = await runAgentWithTracking(runner, companyFinder, [{ role: "user", content: `Find companies for: ${input.input_as_text}. Avoid: ${[...scrapedNamesSet, ...excludedNames].slice(0, 30).join(', ')}` }], costTracker, { maxTurns: 20 });
             candidates = (finderRes.finalOutput?.results || []).filter(c => !scrapedNamesSet.has(c.company_name));
         } catch (e) { logStep('Company Finder', `Failed: ${e.message}`); }
 
@@ -327,7 +327,7 @@ STRICTURE: LLM is fallback only. Zero creativity. If data is unsalvageable, mark
         let validCandidates = [];
         try {
             logStep('Company Profiler', `Analyzing ${candidates.length} candidates...`);
-            const profilerRes = await runner.run(companyProfiler, [{ role: "user", content: JSON.stringify(candidates) }], { maxTurns: 20 });
+            const profilerRes = await runAgentWithTracking(runner, companyProfiler, [{ role: "user", content: JSON.stringify(candidates) }], costTracker, { maxTurns: 20 });
             const profiled = profilerRes.finalOutput?.results || [];
 
             // OPTIMIZATION 3: Confidence Threshold
@@ -369,7 +369,7 @@ STRICTURE: LLM is fallback only. Zero creativity. If data is unsalvageable, mark
                     const ambiguousLeads = leads.filter(l => !l.first_name || !l.last_name || !l.email);
                     let fixedLeads = [];
                     if (ambiguousLeads.length > 0) {
-                        const architectRes = await runner.run(dataArchitect, [{ role: "user", content: `Normalize these ambiguous leads: ${JSON.stringify(ambiguousLeads)}` }]);
+                        const architectRes = await runAgentWithTracking(runner, dataArchitect, [{ role: "user", content: `Normalize these ambiguous leads: ${JSON.stringify(ambiguousLeads)}` }], costTracker);
                         fixedLeads = (architectRes.finalOutput?.leads || []).filter(l => l.is_valid);
                     }
 
@@ -377,7 +377,7 @@ STRICTURE: LLM is fallback only. Zero creativity. If data is unsalvageable, mark
 
                     // Proceed with ranking on validated data
                     if (validatedLeads.length > 0) {
-                        const rankRes = await runner.run(apolloLeadFinder, [{ role: "user", content: `Rank these leads (Match 1-10) for ${companyContext.goal}: ${JSON.stringify(validatedLeads.slice(0, 30))}` }]);
+                        const rankRes = await runAgentWithTracking(runner, apolloLeadFinder, [{ role: "user", content: `Rank these leads (Match 1-10) for ${companyContext.goal}: ${JSON.stringify(validatedLeads.slice(0, 30))}` }], costTracker);
                         const ranked = rankRes.finalOutput?.leads || validatedLeads;
                         // ... rest of logic uses ranked ...
                         const sorted = ranked.sort((a, b) => (b.match_score || 0) - (a.match_score || 0));
@@ -405,7 +405,7 @@ STRICTURE: LLM is fallback only. Zero creativity. If data is unsalvageable, mark
     logStep('Outreach Creator', `Drafting messages for ${globalLeads.length} leads...`);
     let finalLeads = [];
     try {
-        const outreachRes = await runner.run(outreachCreator, [{ role: "user", content: JSON.stringify(globalLeads.slice(0, 20)) }]);
+        const outreachRes = await runAgentWithTracking(runner, outreachCreator, [{ role: "user", content: JSON.stringify(globalLeads.slice(0, 20)) }], costTracker);
         finalLeads = outreachRes.finalOutput?.leads || globalLeads;
     } catch (e) { logStep('Outreach Creator', `Failed: ${e.message}`); finalLeads = globalLeads; }
 
@@ -415,7 +415,11 @@ STRICTURE: LLM is fallback only. Zero creativity. If data is unsalvageable, mark
     return {
         status: globalLeads.length >= targetLeads ? 'success' : 'partial',
         leads: finalLeads,
-        stats: { total: globalLeads.length, attempts }
+        stats: {
+            total: globalLeads.length,
+            attempts,
+            cost: costTracker.getSummary()
+        }
     };
 };
 
