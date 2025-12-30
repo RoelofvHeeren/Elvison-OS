@@ -1225,17 +1225,43 @@ app.post('/api/agents/run', requireAuth, async (req, res) => {
             }
         })
 
-        // 4. Success Completion
-        // Extract stats from result for logbook display
+        // Handle both 'success' and 'partial_success' status
+        const isPartialSuccess = result.status === 'partial_success';
+        const dbStatus = isPartialSuccess ? 'PARTIAL' : 'COMPLETED';
+
+        // Extract stats from result for logbook display (always available now)
         const stats = result.stats || {};
+        const executionLogs = result.execution_timeline || [];
+
+        // Store execution timeline in output_data for logbook display
+        const outputDataForStorage = {
+            ...result,
+            execution_logs: executionLogs.map(event => ({
+                timestamp: event.timestamp,
+                stage: event.stage,
+                message: `${event.status}${event.message ? ': ' + event.message : ''}`,
+                status: event.status,
+                details: event
+            }))
+        };
+
         await query(
-            `UPDATE workflow_runs SET status = 'COMPLETED', completed_at = NOW(), stats = $2 WHERE id = $1`,
-            [runId, JSON.stringify(stats)]
+            `UPDATE workflow_runs SET status = $2, completed_at = NOW(), stats = $3 WHERE id = $1`,
+            [runId, dbStatus, JSON.stringify(stats)]
         )
         await query(
             `INSERT INTO agent_results (run_id, output_data) VALUES ($1, $2)`,
-            [runId, JSON.stringify(result)]
+            [runId, JSON.stringify(outputDataForStorage)]
         )
+
+        // If partial success, also save an error log with the warning message
+        if (isPartialSuccess && result.errors && result.errors.length > 0) {
+            const errorMessages = result.errors.map(e => e.message).join('; ');
+            await query(
+                `UPDATE workflow_runs SET error_log = $2 WHERE id = $1`,
+                [runId, errorMessages]
+            );
+        }
 
         res.write(`event: result\ndata: ${JSON.stringify(result)}\n\n`)
         res.write(`event: done\ndata: {}\n\n`)

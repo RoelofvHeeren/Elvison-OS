@@ -283,9 +283,14 @@ const Logbook = () => {
                                     const stats = parseRunStats(run)
                                     const isExpanded = expandedRunId === run.id
                                     const statusColor = run.status === 'COMPLETED' ? 'text-green-400'
-                                        : run.status === 'FAILED' ? 'text-red-400'
-                                            : run.status === 'RUNNING' ? 'text-yellow-400'
-                                                : 'text-gray-400'
+                                        : run.status === 'PARTIAL' ? 'text-orange-400'
+                                            : run.status === 'FAILED' ? 'text-red-400'
+                                                : run.status === 'RUNNING' ? 'text-yellow-400'
+                                                    : 'text-gray-400'
+                                    const statusIcon = run.status === 'COMPLETED' ? '✓'
+                                        : run.status === 'PARTIAL' ? '⚠'
+                                            : run.status === 'FAILED' ? '✗'
+                                                : ''
 
                                     return (
                                         <div key={run.id} className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl overflow-hidden">
@@ -310,10 +315,10 @@ const Logbook = () => {
                                                     </div>
                                                     <div className="flex items-center gap-3">
                                                         <span className={`text-sm font-medium ${statusColor}`}>
-                                                            {run.status === 'COMPLETED' && '✓ '}
-                                                            {run.status === 'FAILED' && '✗ '}
+                                                            {statusIcon && `${statusIcon} `}
                                                             {run.status}
-                                                            {run.status === 'COMPLETED' && run.completed_at && (
+                                                            {run.status === 'PARTIAL' && ' (Target Not Met)'}
+                                                            {(run.status === 'COMPLETED' || run.status === 'PARTIAL') && run.completed_at && (
                                                                 <span className="text-gray-400 ml-2">
                                                                     in {formatDuration(run.started_at, run.completed_at)}
                                                                 </span>

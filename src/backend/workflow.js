@@ -393,6 +393,19 @@ export const runAgentWorkflow = async (input, config) => {
         // Initialize Cost Tracker for this run
         const costTracker = new CostTracker(`workflow_${Date.now()}`);
 
+        // Initialize Execution Timeline for comprehensive logging
+        const executionTimeline = [];
+        const addTimelineEvent = (stage, status, details = {}) => {
+            executionTimeline.push({
+                timestamp: new Date().toISOString(),
+                stage,
+                status, // 'started', 'completed', 'failed', 'partial'
+                duration: details.duration || null,
+                ...details
+            });
+        };
+        addTimelineEvent('workflow', 'started', { target_leads: targetLeads });
+
         // 0. Parse Target Parameters from Input
         // Extract targetLeads and maxLeadsPerCompany from user prompt
         // Examples: "Find me 100 leads", "50 leads with max 5 per company"
@@ -439,16 +452,25 @@ export const runAgentWorkflow = async (input, config) => {
         let lastRoundFound = 0;
         const debugLog = { discovery: [], qualification: [], apollo: [], leadDistribution: {} };
 
+        // Track any errors that occur during workflow (for graceful failure)
+        let workflowErrors = [];
+
         // --- LOOP: Discovery & Profiling ---
         // NEW: Loop continues until we have enough LEADS (not companies)
         const leadScraper = new LeadScraperService();
 
         while (totalLeadsCollected < targetLeads && attempts < MAX_ATTEMPTS) {
             attempts++;
+            const roundStartTime = Date.now();
+            addTimelineEvent(`discovery_round_${attempts}`, 'started', {
+                leads_so_far: totalLeadsCollected,
+                target: targetLeads
+            });
 
             // OPTIMIZATION: Early exit if target already met
             if (totalLeadsCollected >= targetLeads) {
                 logStep('Optimization', `✅ Target of ${targetLeads} leads already met (${totalLeadsCollected} collected). Skipping attempt ${attempts}.`);
+                addTimelineEvent(`discovery_round_${attempts}`, 'skipped', { reason: 'target_already_met' });
                 break;
             }
             // Calculate how many more LEADS we need
@@ -908,52 +930,54 @@ OUTPUT: JSON list (company_name, website, capital_role, description). Target 20+
             return Math.round((withEmail / leads.length) * 100);
         };
 
-        // CRITICAL: Validate target lead count was met
-        if (globalLeads.length < targetLeads) {
-            const shortfall = targetLeads - globalLeads.length;
-            const errorMsg = `Could not meet target: Found ${globalLeads.length}/${targetLeads} leads after ${attempts} discovery rounds. ` +
-                `Qualified ${qualifiedCompanies.length} companies but insufficient decision-makers available with current filters.`;
-
-            // Prepare partial stats before throwing error
-            const partialStats = {
-                companies_discovered: qualifiedCompanies.length,
-                leads_returned: globalLeads.length,
-                target_leads: targetLeads,
-                filtering_breakdown: {
-                    companies_found_raw: qualifiedCompanies.length + (debugLog.discovery?.length || 0),
-                    companies_qualified: qualifiedCompanies.length,
-                    leads_scraped: globalLeads.length,
-                    leads_after_filtering: outreachOutput.leads ? outreachOutput.leads.length : 0,
-                    leads_disqualified: globalLeads.length - (outreachOutput.leads ? outreachOutput.leads.length : 0)
-                },
-                discovery_rounds: attempts,
-                email_yield_percentage: calculateEmailYield(globalLeads || []),
-                error_message: errorMsg,
-                partial_results: true
-            };
-
-            // Attach stats to error for error handler to save
-            const error = new Error(errorMsg);
-            error.partialStats = partialStats;
-            throw error;
-        }
-
-        // Get final cost summary
+        // Get final cost summary BEFORE any target validation
+        // This ensures cost data is available regardless of success/failure
         const costSummary = costTracker.getSummary();
+        logStep('Cost Summary', `💰 Total API Cost: ${costSummary.cost.formatted} | Tokens: ${costSummary.tokens.total.toLocaleString()} | Calls: ${costSummary.totalCalls}`);
+
+        // Determine if target was met
+        const targetMet = globalLeads.length >= targetLeads;
+        const workflowStatus = targetMet ? 'success' : 'partial_success';
+
+        // If target not met, log the shortfall but DON'T throw - we'll save partial results
+        if (!targetMet) {
+            const shortfall = targetLeads - globalLeads.length;
+            const warningMsg = `Target not fully met: Found ${globalLeads.length}/${targetLeads} leads after ${attempts} discovery rounds. ` +
+                `Qualified ${qualifiedCompanies.length} companies. Saving partial results.`;
+            logStep('Workflow', `⚠️ ${warningMsg}`);
+            addTimelineEvent('target_validation', 'partial', {
+                message: warningMsg,
+                leads_found: globalLeads.length,
+                target: targetLeads,
+                shortfall
+            });
+            workflowErrors.push({ type: 'target_shortfall', message: warningMsg, leads_found: globalLeads.length, target: targetLeads });
+        } else {
+            addTimelineEvent('target_validation', 'completed', { leads_found: globalLeads.length, target: targetLeads });
+        }
 
         // Log the cost report
         logStep('Cost Report', costTracker.getReport());
-        logStep('Cost Summary', `💰 Total API Cost: ${costSummary.cost.formatted} | Tokens: ${costSummary.tokens.total.toLocaleString()} | Calls: ${costSummary.totalCalls}`);
+
+        // Finalize timeline
+        addTimelineEvent('workflow', targetMet ? 'completed' : 'partial', {
+            duration: `${((Date.now() - costTracker.startTime) / 1000).toFixed(2)}s`,
+            leads_collected: globalLeads.length,
+            companies_qualified: qualifiedCompanies.length
+        });
 
         return {
-            status: 'success',
+            status: workflowStatus,
             leads: globalLeads,
             debug: debugLog,
+            execution_timeline: executionTimeline,
+            errors: workflowErrors.length > 0 ? workflowErrors : null,
             stats: {
                 companies_discovered: qualifiedCompanies.length,
                 leads_returned: globalLeads.length,
                 target_leads: targetLeads,
-                email_yield_percentage: Math.round((globalLeads.filter(l => l.email).length / globalLeads.length) * 100),
+                target_met: targetMet,
+                email_yield_percentage: calculateEmailYield(globalLeads),
                 filtering_breakdown: {
                     total_scraped: scrapedNamesSet.size,
                     qualified: globalLeads.length,
@@ -964,8 +988,8 @@ OUTPUT: JSON list (company_name, website, capital_role, description). Target 20+
                     attempts_used: attempts,
                     attempts_available: MAX_ATTEMPTS,
                     early_exit: attempts < MAX_ATTEMPTS && totalLeadsCollected >= targetLeads,
-                    companies_per_attempt: (qualifiedCompanies.length / attempts).toFixed(1),
-                    leads_per_attempt: (globalLeads.length / attempts).toFixed(1)
+                    companies_per_attempt: attempts > 0 ? (qualifiedCompanies.length / attempts).toFixed(1) : '0',
+                    leads_per_attempt: attempts > 0 ? (globalLeads.length / attempts).toFixed(1) : '0'
                 },
                 // API COST TRACKING
                 api_costs: {
