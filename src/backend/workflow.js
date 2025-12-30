@@ -89,7 +89,7 @@ const getToolsForAgent = (agentName) => {
             const token = process.env.APIFY_API_TOKEN;
             if (!token) throw new Error("Missing APIFY_API_TOKEN");
             const results = await performGoogleSearch(query, token);
-            return JSON.stringify(results.slice(0, 5)); // Return top 5 results as context
+            return JSON.stringify(results.slice(0, 10)); // Increased to 10 results for better context
         }
     });
 
@@ -132,7 +132,7 @@ export const runAgentWorkflow = async (input, config) => {
     }
 
     // --- Dynamic Context Injection ---
-    let companyContext = { name: "The User's Company", goal: "Expand client base." };
+    let companyContext = { name: "The User's Company", goal: "Expand client base.", baselineTitles: [] };
     if (icpId) {
         try {
             const icpRes = await query(`SELECT config FROM icps WHERE id = $1`, [icpId]);
@@ -140,6 +140,10 @@ export const runAgentWorkflow = async (input, config) => {
                 const cfg = icpRes.rows[0].config;
                 if (cfg.companyName) companyContext.name = cfg.companyName;
                 if (cfg.userName) companyContext.goal = `${cfg.userName}'s Goal: ${companyContext.goal}`;
+                // Capture baseline titles from ICP to prevent hallucinations
+                if (cfg.jobTitles && Array.isArray(cfg.jobTitles)) {
+                    companyContext.baselineTitles = cfg.jobTitles;
+                }
             }
         } catch (e) { console.warn("Context fetch failed", e); }
     }
@@ -163,11 +167,13 @@ export const runAgentWorkflow = async (input, config) => {
     try {
         const refinerAgent = new Agent({
             name: "Filter Refiner",
-            instructions: `Extract tactical lead filters from the user's request.
-            Context: ${companyContext.goal}
+            instructions: `Extract tactical lead filters. 
+            BASELINE TITLES (from User Onboarding): ${companyContext.baselineTitles.join(', ') || 'None selected'}
+            - If baseline titles exist, use them as the primary list.
+            - Only add new titles if they are strictly missing and highly relevant to the goal: ${companyContext.goal}
             Constraints: Be precise. Exclude 'intern', 'assistant' unless requested.
             Input: "${input.input_as_text}"`,
-            model: "gpt-4o-mini", // Fast & Cheap
+            model: "gpt-4o-mini", // Keep mini for this simple logic task
             outputType: FilterRefinerSchema
         });
 
@@ -244,7 +250,7 @@ export const runAgentWorkflow = async (input, config) => {
         // 1. Discovery
         let candidates = [];
         try {
-            const finderRes = await runner.run(companyFinder, [{ role: "user", content: `Find companies for: ${input.input_as_text}. Avoid: ${[...scrapedNamesSet, ...excludedNames].slice(0, 30).join(', ')}` }]);
+            const finderRes = await runner.run(companyFinder, [{ role: "user", content: `Find companies for: ${input.input_as_text}. Avoid: ${[...scrapedNamesSet, ...excludedNames].slice(0, 30).join(', ')}` }], { maxTurns: 20 });
             candidates = (finderRes.finalOutput?.results || []).filter(c => !scrapedNamesSet.has(c.company_name));
         } catch (e) { logStep('Company Finder', `Failed: ${e.message}`); }
 
@@ -254,7 +260,7 @@ export const runAgentWorkflow = async (input, config) => {
         let validCandidates = [];
         try {
             logStep('Company Profiler', `Analyzing ${candidates.length} candidates...`);
-            const profilerRes = await runner.run(companyProfiler, [{ role: "user", content: JSON.stringify(candidates) }]);
+            const profilerRes = await runner.run(companyProfiler, [{ role: "user", content: JSON.stringify(candidates) }], { maxTurns: 20 });
             const profiled = profilerRes.finalOutput?.results || [];
 
             // OPTIMIZATION 3: Confidence Threshold

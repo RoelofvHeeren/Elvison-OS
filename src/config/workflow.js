@@ -20,10 +20,10 @@ export const WORKFLOW_CONFIG = {
 };
 
 export const AGENT_MODELS = {
-    company_finder: "gpt-4o-mini",      // Switched for cost savings (web search + JSON)
-    company_profiler: "gpt-4o-mini",    // Switched for cost savings (validation)
-    apollo_lead_finder: "gpt-4o-mini",  // Switched for cost savings (filtering)
-    outreach_creator: "gpt-4o",         // Keep gpt-4o for quality messaging
+    company_finder: "gpt-4o",           // Upgraded from mini for search reliability
+    company_profiler: "gpt-4o",         // Upgraded from mini for better validation
+    apollo_lead_finder: "gpt-4o-mini",   // Keep mini for cost-effective lead filtering
+    outreach_creator: "gpt-4o",          // Keep gpt-4o for quality messaging
     default: "gpt-4o-mini"
 };
 
