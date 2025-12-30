@@ -20,10 +20,10 @@ export const WORKFLOW_CONFIG = {
 };
 
 export const AGENT_MODELS = {
-    company_finder: "gpt-4o",           // Upgraded from mini for search reliability
-    company_profiler: "gpt-4o",         // Upgraded from mini for better validation
-    apollo_lead_finder: "gpt-4o-mini",   // Keep mini for cost-effective lead filtering
-    outreach_creator: "gpt-4o",          // Keep gpt-4o for quality messaging
+    company_finder: "gemini-1.5-flash",    // Drastically cheaper & 1M context
+    company_profiler: "gemini-1.5-flash",  // ideal for high-volume verification
+    apollo_lead_finder: "gpt-4o-mini",      // keep mini for low-stakes search logic
+    outreach_creator: "gpt-4o",             // keep gpt-4o for premium copy
     default: "gpt-4o-mini"
 };
 

@@ -1,5 +1,6 @@
 import { fileSearchTool, hostedMcpTool, Agent, Runner, withTrace, tool } from "@openai/agents";
 import { startApifyScrape, checkApifyRun, getApifyResults, performGoogleSearch } from "./services/apify.js"; // Import performGoogleSearch
+import { GeminiModel } from "./services/gemini.js"; // Import GeminiModel
 import { z } from "zod";
 import { query } from "../../db/index.js";
 import {
@@ -196,11 +197,19 @@ export const runAgentWorkflow = async (input, config) => {
         logStep('Filter Refiner', `⚠️ Refinement skipped: ${e.message}`);
     }
 
+    // --- Model Initialization ---
+    const googleKey = process.env.GOOGLE_API_KEY;
+    const geminiFlash = googleKey ? new GeminiModel(googleKey, 'gemini-1.5-flash') : null;
+
+    // Fallback logic: If Google Key missing, use GPT-4o-mini for discovery
+    const discoveryModel = geminiFlash || AGENT_MODELS.company_finder;
+    const profilerModel = geminiFlash || AGENT_MODELS.company_profiler;
+
     // --- Agent Definitions ---
     const companyFinder = new Agent({
         name: "Company Finder",
         instructions: `Hunter for ${companyContext.name}. Find 20+ companies for: ${input.input_as_text}. PASS: ${leadLearning.pass}. AVOID: ${leadLearning.reject}. USES: web_search tool.`,
-        model: AGENT_MODELS.company_finder,
+        model: discoveryModel,
         tools: getToolsForAgent('company_finder'),
         outputType: CompanyFinderSchema,
     });
@@ -214,7 +223,7 @@ export const runAgentWorkflow = async (input, config) => {
         - Score < 4: Mismatch / Fake.
         - Score > 7: Strong Match.
         Reject parked domains (Score 0).`,
-        model: AGENT_MODELS.company_profiler,
+        model: profilerModel,
         tools: getToolsForAgent('company_profiler'),
         outputType: CompanyProfilerSchema,
     });
