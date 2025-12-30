@@ -1,4 +1,4 @@
-import { google } from '@ai-sdk/google';
+import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { generateText } from 'ai';
 
 /**
@@ -7,10 +7,14 @@ import { generateText } from 'ai';
  */
 export class GeminiModel {
     constructor(apiKey, modelName = 'gemini-1.5-flash') {
-        if (!apiKey) throw new Error("Missing GOOGLE_API_KEY for GeminiModel");
-        this.google = google;
+        if (!apiKey) throw new Error("Missing API Key for GeminiModel");
         this.modelName = modelName;
         this.apiKey = apiKey;
+
+        // Initialize the provider with the specific key
+        this.googleProvider = createGoogleGenerativeAI({
+            apiKey: this.apiKey
+        });
     }
 
     /**
@@ -19,14 +23,13 @@ export class GeminiModel {
     async getResponse(request) {
         const { systemInstructions, input, tools, outputType } = request;
 
-        // Convert input to Vercel AI SDK format (messages)
+        // ... (messages conversion logic stays the same)
         const messages = [];
         if (systemInstructions) {
             messages.push({ role: 'system', content: systemInstructions });
         }
 
         if (Array.isArray(input)) {
-            // Convert AgentInputItem to message
             input.forEach(item => {
                 if (item.type === 'message') {
                     messages.push({ role: item.role, content: item.content[0].text });
@@ -36,30 +39,20 @@ export class GeminiModel {
             messages.push({ role: 'user', content: input });
         }
 
-        // Convert tools to Vercel AI SDK format
         const vercelTools = {};
         if (tools && tools.length > 0) {
             tools.forEach(t => {
                 if (t.type === 'function') {
                     vercelTools[t.name] = {
                         description: t.description,
-                        parameters: t.parameters,
-                        execute: async (args) => {
-                            // This part is tricky because Runner handles tool execution usually.
-                            // But for Vercel AI SDK 'generateText', it can auto-execute if provided.
-                            // However, @openai/agents handles the loop itself.
-                            // So we just return tool calls to the Runner.
-                            return null;
-                        }
+                        parameters: t.parameters
                     };
                 }
             });
         }
 
         try {
-            const modelInstance = this.google(this.modelName, {
-                apiKey: this.apiKey
-            });
+            const modelInstance = this.googleProvider(this.modelName);
 
             // Use generateText from Vercel AI SDK
             const result = await generateText({

@@ -1,4 +1,4 @@
-import { anthropic } from '@ai-sdk/anthropic';
+import { createAnthropic } from '@ai-sdk/anthropic';
 import { generateText } from 'ai';
 
 /**
@@ -7,10 +7,14 @@ import { generateText } from 'ai';
  */
 export class ClaudeModel {
     constructor(apiKey, modelName = 'claude-3-5-sonnet-20240620') {
-        if (!apiKey) throw new Error("Missing ANTHROPIC_API_KEY for ClaudeModel");
-        this.anthropic = anthropic;
+        if (!apiKey) throw new Error("Missing API Key for ClaudeModel");
         this.modelName = modelName;
         this.apiKey = apiKey;
+
+        // Initialize the provider with the specific key
+        this.anthropicProvider = createAnthropic({
+            apiKey: this.apiKey
+        });
     }
 
     /**
@@ -49,9 +53,7 @@ export class ClaudeModel {
         }
 
         try {
-            const modelInstance = this.anthropic(this.modelName, {
-                apiKey: this.apiKey
-            });
+            const modelInstance = this.anthropicProvider(this.modelName);
 
             const result = await generateText({
                 model: modelInstance,
