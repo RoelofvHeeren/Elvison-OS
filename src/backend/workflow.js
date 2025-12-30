@@ -191,6 +191,27 @@ export const runAgentWorkflow = async (input, config) => {
     const runner = new Runner();
     const costTracker = new CostTracker(`wf_${Date.now()}`);
 
+    // --- Model Initialization & Hardening ---
+    const rawGoogleKey = process.env.GOOGLE_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+    const rawAnthropicKey = process.env.ANTHROPIC_API_KEY;
+
+    // Sanitize and validate keys
+    const googleKey = (typeof rawGoogleKey === 'string' && rawGoogleKey.length > 10) ? rawGoogleKey.trim() : null;
+    const anthropicKey = (typeof rawAnthropicKey === 'string' && rawAnthropicKey.length > 10) ? rawAnthropicKey.trim() : null;
+
+    if (googleKey) {
+        logStep('System', `🔑 Google Key detected: ${googleKey.substring(0, 7)}...`);
+    } else if (rawGoogleKey) {
+        logStep('System', '⚠️ Warning: GOOGLE_API_KEY looks invalid (too short or not a string).');
+    }
+
+    if (anthropicKey) {
+        logStep('System', `🔑 Anthropic Key detected: ${anthropicKey.substring(0, 7)}...`);
+    }
+
+    const finderModel = googleKey ? new GeminiModel(googleKey, 'gemini-1.5-flash') : 'gpt-4o';
+    const profilerModel = anthropicKey ? new ClaudeModel(anthropicKey, 'claude-3-5-sonnet-20240620') : 'gpt-4o';
+
     // --- Dynamic Fallback State ---
     let useGoogleFallback = !googleKey;
     let useAnthropicFallback = !anthropicKey;
