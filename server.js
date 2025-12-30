@@ -40,6 +40,47 @@ app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() })
 })
 
+// TEMP: Cleanup Endpoint
+app.post('/api/admin/cleanup', async (req, res) => {
+    try {
+        console.log('Starting cleanup...');
+
+        // 1. Delete Blackstone leads with missing outreach
+        const blackstoneRes = await query(`
+            DELETE FROM leads 
+            WHERE company_name ILIKE '%blackstone%' 
+            AND (outreach_status IS NULL OR outreach_status = 'failed_generation')
+            RETURNING id;
+        `);
+
+        // 2. Delete obvious bad titles created in last 24h
+        const badKeywords = [
+            'intern', 'student', 'assistant', 'coordinator', 'hr', 'human resources',
+            'talent', 'recruiting', 'events', 'operations', 'cybersecurity',
+            'technician', 'support', 'administrative', 'admin', 'clerk'
+        ];
+
+        const titleConditions = badKeywords.map(k => `title ILIKE '%${k}%'`).join(' OR ');
+
+        const badTitleRes = await query(`
+            DELETE FROM leads 
+            WHERE created_at > NOW() - INTERVAL '24 hours'
+            AND (${titleConditions})
+            returning id;
+        `);
+
+        res.json({
+            success: true,
+            deletedBlackstone: blackstoneRes.rowCount,
+            deletedBadTitles: badTitleRes.rowCount,
+            message: `Cleaned ${blackstoneRes.rowCount} Blackstone leads and ${badTitleRes.rowCount} bad title leads.`
+        });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // --- AUTHENTICATION ENDPOINTS ---
 
 // Sign Up

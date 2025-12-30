@@ -735,12 +735,13 @@ OUTPUT: JSON list (company_name, website, capital_role, description). Target 20+
                                     }
 
                                 } else {
-                                    console.warn(`[LeadFilter] Batch ${i + 1} returned invalid structure. Keeping all.`);
-                                    filteredLeads.push(...chunk);
+                                    console.warn(`[LeadFilter] Batch ${i + 1} returned invalid structure. API Error or hallucination. DROPPING batch to avoid bad data.`);
+                                    // SAFETY: If filter fails, better to drop than to pollute DB with 100s of irrelevant leads
+                                    // filteredLeads.push(...chunk); // <-- REMOVED THIS DANGEROUS FALLBACK
                                 }
                             } catch (batchErr) {
-                                console.error(`[LeadFilter] Batch ${i + 1} failed: ${batchErr.message}. Keeping all.`);
-                                filteredLeads.push(...chunk);
+                                console.error(`[LeadFilter] Batch ${i + 1} failed: ${batchErr.message}. DROPPING batch to safety.`);
+                                // SAFETY: Same here - drop if agent crashed
                             }
                         }
 
@@ -897,13 +898,22 @@ OUTPUT: JSON list (company_name, website, capital_role, description). Target 20+
                 if (outreachRes.finalOutput && outreachRes.finalOutput.leads) {
                     finalOutreachLeads.push(...outreachRes.finalOutput.leads);
                 } else {
-                    console.warn(`[Outreach] Batch ${i + 1} failed to return structured leads. Using input leads without messages.`);
-                    // Fallback: push original leads without messages so we don't lose them in CRM
-                    finalOutreachLeads.push(...chunk);
+                    console.warn(`[Outreach] Batch ${i + 1} failed to return structured leads. Using input leads with 'failed' status.`);
+                    // Fallback: push original leads but MARK them so user knows outreach failed
+                    finalOutreachLeads.push(...chunk.map(l => ({
+                        ...l,
+                        outreach_status: 'failed_generation',
+                        source_notes: 'Outreach generation failed'
+                    })));
                 }
             } catch (err) {
                 console.error(`[Outreach] Batch ${i + 1} crashed: ${err.message}`);
-                finalOutreachLeads.push(...chunk);
+                // Fallback: push original leads marked as failed
+                finalOutreachLeads.push(...chunk.map(l => ({
+                    ...l,
+                    outreach_status: 'failed_generation',
+                    source_notes: `Outreach crashed: ${err.message}`
+                })));
             }
         }
 
