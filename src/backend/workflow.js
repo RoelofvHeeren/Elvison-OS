@@ -532,7 +532,9 @@ OUTPUT: JSON list (company_name, website, capital_role, description). Target 20+
 `;
 
                 const finderInput = [{ role: "user", content: searchPrompt }];
-                const AGENT_TIMEOUT_MS = 120000;
+                // TIMEOUT ADJUSTMENT: Web searches take time, especially with 4 queries. 
+                // Increased from 120s to 300s (5m) to prevent premature timeouts.
+                const AGENT_TIMEOUT_MS = 300000;
 
                 let finderResults = [];
                 try {
@@ -600,7 +602,8 @@ OUTPUT: JSON list (company_name, website, capital_role, description). Target 20+
 
             // We might need to chunk this if it is too huge, but Agent usually handles ~20 okay.
             const profilerInput = [{ role: "user", content: JSON.stringify({ results: accumulatedCandidates }) }];
-            const PROFILER_TIMEOUT_MS = 120000;
+            // TIMEOUT ADJUSTMENT: Processing 20 companies with validation takes time. Increased to 5m.
+            const PROFILER_TIMEOUT_MS = 300000;
 
             let qualifiedInBatch = [];
             try {
