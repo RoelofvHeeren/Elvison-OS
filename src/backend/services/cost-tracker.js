@@ -307,14 +307,14 @@ export function extractTokenUsage(runResult) {
 /**
  * Wrapper to run an agent with cost tracking
  */
-export async function runAgentWithTracking(runner, agent, input, costTracker, metadata = {}) {
+export async function runAgentWithTracking(runner, agent, input, costTracker, settings = {}, metadata = {}) {
     const startTime = Date.now();
     let success = true;
     let error = null;
     let result = null;
 
     try {
-        result = await runner.run(agent, input);
+        result = await runner.run(agent, input, settings);
     } catch (e) {
         success = false;
         error = e.message;
