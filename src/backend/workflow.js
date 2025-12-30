@@ -192,23 +192,24 @@ export const runAgentWorkflow = async (input, config) => {
     const costTracker = new CostTracker(`wf_${Date.now()}`);
 
     // --- Model Initialization ---
-    const googleKey = process.env.GOOGLE_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY; // Support both names
+    const googleKey = process.env.GOOGLE_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
     const anthropicKey = process.env.ANTHROPIC_API_KEY;
 
+    // Fallback Logic: Revert to GPT-4o if specialized keys are missing
     if (!googleKey) {
-        logStep('System', '⚠️ Warning: GOOGLE_API_KEY is missing. Discovery and Outreach agents will fail or revert to more expensive OpenAI models.');
+        logStep('System', '💡 Note: GOOGLE_API_KEY missing. Falling back to GPT-4o for discovery (Higher cost).');
     }
     if (!anthropicKey) {
-        logStep('System', '⚠️ Warning: ANTHROPIC_API_KEY is missing. Company Profiling will fail.');
+        logStep('System', '💡 Note: ANTHROPIC_API_KEY missing. Falling back to GPT-4o for profiling (Higher cost).');
     }
 
-    // 5-Agent Model Assignments
-    const finderModel = googleKey ? new GeminiModel(googleKey, 'gemini-1.5-flash') : AGENT_MODELS.company_finder;
-    const profilerModel = anthropicKey ? new ClaudeModel(anthropicKey, 'claude-3-5-sonnet-20240620') : AGENT_MODELS.company_profiler;
+    // 5-Agent Model Assignments with Robust Fallbacks
+    const finderModel = googleKey ? new GeminiModel(googleKey, 'gemini-1.5-flash') : 'gpt-4o';
+    const profilerModel = anthropicKey ? new ClaudeModel(anthropicKey, 'claude-3-5-sonnet-20240620') : 'gpt-4o';
     const apolloModel = AGENT_MODELS.apollo_lead_finder; // gpt-4-turbo
-    const outreachModel = googleKey ? new GeminiModel(googleKey, 'gemini-1.5-flash') : AGENT_MODELS.outreach_creator;
-    const architectModel = anthropicKey ? new ClaudeModel(anthropicKey, 'claude-3-5-sonnet-20240620') : AGENT_MODELS.data_architect;
-    const defaultModel = googleKey ? new GeminiModel(googleKey, 'gemini-1.5-flash') : AGENT_MODELS.default;
+    const outreachModel = googleKey ? new GeminiModel(googleKey, 'gemini-1.5-flash') : 'gpt-4o';
+    const architectModel = anthropicKey ? new ClaudeModel(anthropicKey, 'claude-3-5-sonnet-20240620') : 'gpt-4o';
+    const defaultModel = googleKey ? new GeminiModel(googleKey, 'gemini-1.5-flash') : 'gpt-4o';
 
     // --- OPTIMIZATION 1: LLM Filter Refiner ---
     logStep('System', '🧠 Refining scraper filters based on user request...');
