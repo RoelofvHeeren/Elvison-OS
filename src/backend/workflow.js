@@ -209,7 +209,7 @@ export const runAgentWorkflow = async (input, config) => {
         logStep('System', `🔑 Anthropic Key detected: ${anthropicKey.substring(0, 7)}...`);
     }
 
-    const finderModel = googleKey ? new GeminiModel(googleKey, 'gemini-1.5-flash') : 'gpt-4o';
+    const finderModel = googleKey ? new GeminiModel(googleKey, 'gemini-2.0-flash') : 'gpt-4o';
     const profilerModel = anthropicKey ? new ClaudeModel(anthropicKey, 'claude-3-5-sonnet-20240620') : 'gpt-4o';
 
     // --- Dynamic Fallback State ---

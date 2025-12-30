@@ -20,12 +20,13 @@ export const WORKFLOW_CONFIG = {
 };
 
 export const AGENT_MODELS = {
-    company_finder: "gemini-1.5-flash",    // Cheap, fast, great extraction
+    company_finder: "gemini-2.0-flash",    // Cheap, fast, 2025 standard
     company_profiler: "claude-3-5-sonnet",  // Best research brain per dollar
     apollo_lead_finder: "gpt-4-turbo",      // Reliable structured query generation
-    outreach_creator: "gemini-1.5-flash",   // Scales copy cheaply
+    outreach_creator: "gemini-2.0-flash",   // Scales copy cheaply
     data_architect: "claude-3-5-sonnet",    // Fallback for validaton
-    default: "gemini-1.5-flash"
+    refiner: "gemini-2.0-flash",
+    default: "gemini-2.0-flash"
 };
 
 export const getEffectiveMaxLeads = () => {

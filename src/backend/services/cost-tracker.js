@@ -20,6 +20,7 @@ const MODEL_PRICING = {
     'gpt-4o-mini-2024-07-18': { input: 0.15, output: 0.60 },
 
     // Gemini Models (Studio / Vertex)
+    'gemini-2.0-flash': { input: 0.10, output: 0.40 },
     'gemini-1.5-flash': { input: 0.075, output: 0.30 },
     'gemini-1.5-pro': { input: 3.50, output: 10.50 },
 

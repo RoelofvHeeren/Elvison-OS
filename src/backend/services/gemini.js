@@ -6,7 +6,7 @@ import { generateText } from 'ai';
  * This wraps the Vercel AI SDK Gemini provider to satisfy the Model interface.
  */
 export class GeminiModel {
-    constructor(apiKey, modelName = 'gemini-1.5-flash') {
+    constructor(apiKey, modelName = 'gemini-2.0-flash') {
         if (!apiKey) throw new Error("Missing API Key for GeminiModel");
         this.modelName = modelName;
         this.apiKey = apiKey;
