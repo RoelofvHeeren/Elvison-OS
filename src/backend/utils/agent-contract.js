@@ -35,6 +35,9 @@ function normalizeFilterRefiner(output) {
  * Ensures: results is an array
  */
 function normalizeCompanyFinder(output) {
+    if (Array.isArray(output)) {
+        return { results: output };
+    }
     const safeOutput = output || {};
     return {
         results: Array.isArray(safeOutput.results) ? safeOutput.results : []
