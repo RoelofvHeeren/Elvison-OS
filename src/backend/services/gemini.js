@@ -3,89 +3,114 @@ import { generateText } from 'ai';
 import { z } from 'zod';
 
 /**
- * Strip invalid keys that Gemini doesn't accept
+ * Hardcoded Gemini tool schemas
+ * Gemini requires boring and explicit. No dynamic schemas.
  */
-function stripInvalidKeys(schema) {
-    if (!schema || typeof schema !== 'object') return schema;
-
-    const clean = { ...schema };
-    delete clean.$schema;
-    delete clean.additionalProperties;
-
-    // Recursively clean nested properties
-    if (clean.properties && typeof clean.properties === 'object') {
-        const cleanedProps = {};
-        for (const [key, value] of Object.entries(clean.properties)) {
-            cleanedProps[key] = stripInvalidKeys(value);
-        }
-        clean.properties = cleanedProps;
+function buildGeminiParametersSchema(toolName) {
+    if (toolName === 'google_search_and_extract') {
+        return {
+            type: "object",
+            properties: {
+                query: {
+                    type: "string",
+                    description: "Google search query"
+                }
+            },
+            required: ["query"]
+        };
     }
 
-    return clean;
-}
-
-/**
- * Sanitize schema for Gemini function calling
- * Gemini strictly requires:
- * - Root type MUST be "object"
- * - Only type, properties, and required should be present
- * - No $schema key
- * - No top-level arrays or primitives
- */
-function sanitizeGeminiFunctionSchema(schema) {
-    const stripped = stripInvalidKeys(schema);
-
-    return {
-        type: "object",
-        properties: stripped?.properties ?? {},
-        required: Array.isArray(stripped?.required) ? stripped.required : []
-    };
-}
-
-/**
- * Convert a Zod schema to a clean JSON Schema for Gemini
- * Simple conversion that handles the basic cases
- */
-function zodToCleanJsonSchema(zodSchema) {
-    // If it's already a JSON Schema object (from @openai/agents), use it
-    if (zodSchema && typeof zodSchema === 'object' && zodSchema.type) {
-        return sanitizeGeminiFunctionSchema(zodSchema);
+    if (toolName === 'scrape_company_website') {
+        return {
+            type: "object",
+            properties: {
+                domain: {
+                    type: "string",
+                    description: "Domain to scrape"
+                }
+            },
+            required: ["domain"]
+        };
     }
 
-    // If it's a Zod schema, we need to manually extract the shape
-    // For our use case, we know the tools use simple string inputs
+    // Default fallback
     return {
         type: "object",
         properties: {
-            query: {
+            input: {
                 type: "string",
-                description: "The search query or input"
+                description: "Input value"
             }
         },
-        required: ["query"]
+        required: ["input"]
     };
+}
+
+/**
+ * Hard validator - prevents silent future regressions
+ */
+function assertValidGeminiSchema(schema, toolName) {
+    if (!schema || schema.type !== "object") {
+        throw new Error(`Gemini schema invalid for ${toolName}: root type must be object`);
+    }
+
+    if (typeof schema.properties !== "object") {
+        throw new Error(`Gemini schema invalid for ${toolName}: properties missing`);
+    }
+
+    if (schema.required && !Array.isArray(schema.required)) {
+        throw new Error(`Gemini schema invalid for ${toolName}: required must be array`);
+    }
+}
+
+/**
+ * Convert hardcoded JSON Schema to Zod for Vercel AI SDK
+ */
+function jsonSchemaToZod(schema) {
+    const shape = {};
+
+    for (const [key, prop] of Object.entries(schema.properties || {})) {
+        let zodType;
+        switch (prop.type) {
+            case 'string':
+                zodType = z.string();
+                break;
+            case 'number':
+            case 'integer':
+                zodType = z.number();
+                break;
+            case 'boolean':
+                zodType = z.boolean();
+                break;
+            default:
+                zodType = z.any();
+        }
+
+        if (prop.description) {
+            zodType = zodType.describe(prop.description);
+        }
+
+        if (!schema.required?.includes(key)) {
+            zodType = zodType.optional();
+        }
+
+        shape[key] = zodType;
+    }
+
+    return z.object(shape);
 }
 
 /**
  * GeminiModel Implementation for @openai/agents
- * This wraps the Vercel AI SDK Gemini provider to satisfy the Model interface.
  */
 export class GeminiModel {
     constructor(apiKey, modelName = 'gemini-2.0-flash') {
         if (!apiKey) throw new Error("Missing API Key for GeminiModel");
         this.modelName = modelName;
-        // Strip any hidden characters/newlines that might come from env variables
         this.apiKey = typeof apiKey === 'string' ? apiKey.trim().replace(/[\s\r\n\t]/g, '') : apiKey;
-
-        // Initialize the provider with the specific key
-        this.googleProvider = createGoogleGenerativeAI({
-            apiKey: this.apiKey
-        });
+        this.googleProvider = createGoogleGenerativeAI({ apiKey: this.apiKey });
     }
 
-    /**
-     * satisfy the Model interface from @openai/agents-core
-     */
     async getResponse(request) {
         const { systemInstructions, input, tools, outputType } = request;
 
@@ -110,57 +135,25 @@ export class GeminiModel {
             messages.push({ role: 'user', content: input });
         }
 
-        // Convert @openai/agents tools to Vercel AI SDK format
-        // Apply strict Gemini schema sanitization
+        // Build Gemini-compatible tools using HARDCODED schemas only
         let vercelTools = undefined;
         if (tools && tools.length > 0) {
             vercelTools = {};
             for (const t of tools) {
                 if (t.type === 'function') {
-                    // Sanitize the schema for Gemini compatibility
-                    const sanitizedSchema = sanitizeGeminiFunctionSchema(t.parameters);
+                    // Use hardcoded schema - NO dynamic schemas
+                    const params = buildGeminiParametersSchema(t.name);
 
-                    // Defensive: Validate schema before sending
-                    if (sanitizedSchema.type !== "object") {
-                        throw new Error(`Gemini tool schema invalid: root type must be object, got ${sanitizedSchema.type}`);
-                    }
+                    // Validate before sending
+                    assertValidGeminiSchema(params, t.name);
 
-                    // Log the final sanitized schema for debugging
-                    console.log(`[Gemini Tool Schema] ${t.name}:`, JSON.stringify(sanitizedSchema, null, 2));
+                    // Log the exact schema being used
+                    console.log(`[Gemini Tool] ${t.name}:`, JSON.stringify(params));
 
-                    // Convert to Zod for Vercel AI SDK (it expects Zod schemas)
-                    const zodSchema = z.object(
-                        Object.fromEntries(
-                            Object.entries(sanitizedSchema.properties || {}).map(([key, prop]) => {
-                                let zodType;
-                                switch (prop.type) {
-                                    case 'string':
-                                        zodType = z.string();
-                                        break;
-                                    case 'number':
-                                    case 'integer':
-                                        zodType = z.number();
-                                        break;
-                                    case 'boolean':
-                                        zodType = z.boolean();
-                                        break;
-                                    default:
-                                        zodType = z.any();
-                                }
-                                if (prop.description) {
-                                    zodType = zodType.describe(prop.description);
-                                }
-                                if (!sanitizedSchema.required?.includes(key)) {
-                                    zodType = zodType.optional();
-                                }
-                                return [key, zodType];
-                            })
-                        )
-                    );
-
+                    // Convert to Zod for Vercel AI SDK
                     vercelTools[t.name] = {
                         description: t.description || "No description",
-                        parameters: zodSchema
+                        parameters: jsonSchemaToZod(params)
                     };
                 }
             }
@@ -169,13 +162,11 @@ export class GeminiModel {
         try {
             const modelInstance = this.googleProvider(this.modelName);
 
-            // Build generateText options
             const generateOptions = {
                 model: modelInstance,
                 messages: messages,
             };
 
-            // Only add tools if we have any
             if (vercelTools && Object.keys(vercelTools).length > 0) {
                 generateOptions.tools = vercelTools;
                 generateOptions.toolChoice = 'auto';
@@ -183,7 +174,6 @@ export class GeminiModel {
 
             const result = await generateText(generateOptions);
 
-            // Convert back to ModelResponse format
             const output = [];
 
             if (result.text) {
