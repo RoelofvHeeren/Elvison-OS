@@ -62,6 +62,10 @@ export class GeminiModel {
         try {
             const modelInstance = this.googleProvider(this.modelName);
 
+            if (process.env.NODE_ENV !== 'production' || process.env.DEBUG_AI) {
+                console.log(`[GeminiModel] Requesting ${this.modelName} with ${messages.length} messages.`);
+            }
+
             // Use generateText from Vercel AI SDK
             const result = await generateText({
                 model: modelInstance,

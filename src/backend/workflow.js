@@ -215,9 +215,9 @@ export const runAgentWorkflow = async (input, config) => {
     const anthropicKey = (typeof rawAnthropicKey === 'string' && rawAnthropicKey.length > 10) ? rawAnthropicKey.trim() : null;
 
     if (googleKey) {
-        logStep('System', `🔑 Google Key detected: ${googleKey.substring(0, 7)}...`);
+        logStep('System', `🔑 Google Key: ${googleKey.substring(0, 7)}...${googleKey.substring(googleKey.length - 4)} (Len: ${googleKey.length})`);
     } else if (rawGoogleKey) {
-        logStep('System', '⚠️ Warning: GOOGLE_API_KEY looks invalid (too short or not a string).');
+        logStep('System', `⚠️ Warning: GOOGLE_API_KEY looks invalid (Type: ${typeof rawGoogleKey}, Len: ${rawGoogleKey?.length}).`);
     }
 
     if (anthropicKey) {
