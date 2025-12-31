@@ -1,5 +1,6 @@
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { generateText } from 'ai';
+import { z } from 'zod';
 
 /**
  * GeminiModel Implementation for @openai/agents
@@ -62,7 +63,6 @@ export class GeminiModel {
                     // This handles cases where parameters might be a raw string, etc.
                     if (!params || typeof params !== 'object' || !params._def || params._def.typeName !== 'ZodObject') {
                         // Fallback: create a simple zod object with the required args
-                        const { z } = require('zod');
                         params = z.object({ query: z.string().describe("The search query or input") });
                     }
 
