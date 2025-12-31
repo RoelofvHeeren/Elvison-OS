@@ -369,7 +369,8 @@ STRICTURE: LLM is fallback only. Zero creativity. If data is unsalvageable, mark
     let masterQualifiedList = [];
 
     // --- Phase 1: Discovery & Profiling Loop ---
-    while (masterQualifiedList.length < Math.ceil(targetLeads / 2) && attempts < MAX_ATTEMPTS) {
+    // User Requirement: Stop ONLY when 30 qualified companies are found (or target met)
+    while (masterQualifiedList.length < targetLeads && attempts < MAX_ATTEMPTS) {
         if (await checkCancellation()) break;
         attempts++;
         logStep('Workflow', `Discovery Round ${attempts}: Collecting companies...`);
@@ -423,13 +424,36 @@ STRICTURE: LLM is fallback only. Zero creativity. If data is unsalvageable, mark
         }
     }
 
+    // --- Phase 1 Check: Data Starvation Protection ---
+    if (masterQualifiedList.length === 0) {
+        logStep('Workflow', '❌ No qualified companies found after discovery. Stopping workflow to prevent hallucination.');
+        return {
+            status: 'failed',
+            leads: [],
+            stats: { total: 0, attempts, cost: costTracker.getSummary() },
+            error: "Discovery failed: No qualified companies found."
+        };
+    }
+
     // --- Phase 2: Consolidated Lead Scraping (ONE Pass) ---
+    // Already protected by the check above, but keeping structure
     if (masterQualifiedList.length > 0) {
         logStep('Lead Finder', `🚀 Triggering Scraper for ALL ${masterQualifiedList.length} qualified companies...`);
         try {
             if (await checkCancellation()) return;
 
             const leads = await leadScraper.fetchLeads(masterQualifiedList, filters, logStep, checkCancellation);
+
+            // --- Phase 2 Check: Data Starvation Protection ---
+            if (leads.length === 0) {
+                logStep('Workflow', '❌ No leads found from scraped companies. Stopping before Outreach.');
+                return {
+                    status: 'failed',
+                    leads: [],
+                    stats: { total: 0, attempts, cost: costTracker.getSummary() },
+                    error: "Scraping failed: No leads found."
+                };
+            }
 
             if (leads.length > 0) {
                 logStep('Data Architect', `Normalizing ${leads.length} leads...`);
