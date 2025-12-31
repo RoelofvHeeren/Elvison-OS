@@ -1333,7 +1333,7 @@ app.post('/api/agents/run', requireAuth, async (req, res) => {
  * Workflow Cancellation Endpoint
  * Updates run status to CANCELLED, which worker polls
  */
-app.post('/api/workflow/cancel', authMiddleware, async (req, res) => {
+app.post('/api/workflow/cancel', requireAuth, async (req, res) => {
     const { runId } = req.body;
     if (!runId) return res.status(400).json({ error: "Missing runId" });
 
