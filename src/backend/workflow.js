@@ -210,9 +210,9 @@ export const runAgentWorkflow = async (input, config) => {
     const rawGoogleKey = process.env.GOOGLE_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
     const rawAnthropicKey = process.env.ANTHROPIC_API_KEY;
 
-    // Sanitize and validate keys
-    const googleKey = (typeof rawGoogleKey === 'string' && rawGoogleKey.length > 10) ? rawGoogleKey.trim() : null;
-    const anthropicKey = (typeof rawAnthropicKey === 'string' && rawAnthropicKey.length > 10) ? rawAnthropicKey.trim() : null;
+    // Sanitize and validate keys (Removing all whitespace/newlines)
+    const googleKey = (typeof rawGoogleKey === 'string' && rawGoogleKey.length > 10) ? rawGoogleKey.trim().replace(/[\s\r\n\t]/g, '') : null;
+    const anthropicKey = (typeof rawAnthropicKey === 'string' && rawAnthropicKey.length > 10) ? rawAnthropicKey.trim().replace(/[\s\r\n\t]/g, '') : null;
 
     if (googleKey) {
         logStep('System', `🔑 Google Key: ${googleKey.substring(0, 7)}...${googleKey.substring(googleKey.length - 4)} (Len: ${googleKey.length})`);

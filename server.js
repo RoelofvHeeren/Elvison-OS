@@ -40,6 +40,24 @@ app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() })
 })
 
+// Connectivity Test
+app.get('/api/test/gemini', async (req, res) => {
+    try {
+        const key = process.env.GOOGLE_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+        if (!key) return res.status(400).json({ error: "Missing GOOGLE_API_KEY" });
+
+        const sanitizedKey = key.trim().replace(/[\s\r\n\t]/g, '');
+        const google = (await import('@ai-sdk/google')).createGoogleGenerativeAI({ apiKey: sanitizedKey });
+        const { text } = await (await import('ai')).generateText({
+            model: google('gemini-2.0-flash'),
+            prompt: 'Say "Gemini is connected!"',
+        });
+        res.json({ success: true, response: text, keySignature: `${sanitizedKey.substring(0, 7)}...${sanitizedKey.substring(sanitizedKey.length - 4)}` });
+    } catch (e) {
+        res.status(500).json({ error: e.message, data: e.data });
+    }
+});
+
 // TEMP: Cleanup Endpoint
 app.post('/api/admin/cleanup', async (req, res) => {
     try {

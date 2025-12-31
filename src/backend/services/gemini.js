@@ -9,7 +9,8 @@ export class GeminiModel {
     constructor(apiKey, modelName = 'gemini-2.0-flash') {
         if (!apiKey) throw new Error("Missing API Key for GeminiModel");
         this.modelName = modelName;
-        this.apiKey = apiKey;
+        // Strip any hidden characters/newlines that might come from env variables
+        this.apiKey = typeof apiKey === 'string' ? apiKey.trim().replace(/[\s\r\n\t]/g, '') : apiKey;
 
         // Initialize the provider with the specific key
         this.googleProvider = createGoogleGenerativeAI({
