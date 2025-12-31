@@ -55,20 +55,16 @@ export class GeminiModel {
         if (tools && tools.length > 0) {
             vercelTools = {};
             tools.forEach(t => {
+                console.log(`[GeminiModel] Tool: ${t.name}, Type: ${t.type}, Params type: ${typeof t.parameters}, Params keys: ${t.parameters ? Object.keys(t.parameters).join(',') : 'none'}`);
+
                 if (t.type === 'function') {
-                    // Ensure parameters is always a proper Zod object schema
-                    let params = t.parameters;
-
-                    // If parameters is not a Zod object, wrap it or provide a default
-                    // This handles cases where parameters might be a raw string, etc.
-                    if (!params || typeof params !== 'object' || !params._def || params._def.typeName !== 'ZodObject') {
-                        // Fallback: create a simple zod object with the required args
-                        params = z.object({ query: z.string().describe("The search query or input") });
-                    }
-
+                    // The @openai/agents tool() function should already provide Zod schemas
+                    // Directly use z.object() to ensure it's in the right format for Gemini
                     vercelTools[t.name] = {
-                        description: t.description,
-                        parameters: params
+                        description: t.description || "No description provided",
+                        parameters: z.object({
+                            query: z.string().describe("The search query")
+                        })
                     };
                 }
             });
