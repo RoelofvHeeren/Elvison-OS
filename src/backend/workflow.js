@@ -255,7 +255,8 @@ export const runAgentWorkflow = async (input, config) => {
             Constraints: Be precise. Exclude 'intern', 'assistant' unless requested.
             Input: "${input.input_as_text}"`,
             model: getSafeModel('refiner'),
-            outputType: FilterRefinerSchema
+            model: getSafeModel('refiner')
+            // outputType removed to prevent premature validation
         });
 
         const refinement = await runAgentWithTracking(runner, refinerAgent, [{ role: "user", content: "Generate filters." }], costTracker);
@@ -297,8 +298,9 @@ STRICTURE: Extract ONLY: Company name, Primary domain, One-line description.
 REJECT: Ambiguous or directory-style results (LinkedIn, Yelp, etc).
 CONTEXT: ${input.input_as_text}. PASS: ${leadLearning.pass}.`,
         model: getSafeModel('discovery'),
-        tools: getToolsForAgent('company_finder'),
-        outputType: CompanyFinderSchema,
+        model: getSafeModel('discovery'),
+        tools: getToolsForAgent('company_finder')
+        // outputType removed to prevent premature validation
     });
 
     const getProfilerAgent = () => new Agent({
@@ -314,8 +316,9 @@ STRICTURE: Output a strict structured profile:
 NO creative writing. NO outreach content.
 Assign 'match_score' (1-10) against goal: ${companyContext.goal}.`,
         model: getSafeModel('profiler'),
-        tools: getToolsForAgent('company_profiler'),
-        outputType: CompanyProfilerSchema,
+        model: getSafeModel('profiler'),
+        tools: getToolsForAgent('company_profiler')
+        // outputType removed to prevent premature validation
     });
 
     // 3. Apollo (Lead Finder): GPT-4 Turbo
@@ -326,8 +329,9 @@ PROTOCOL: Take domain + company profile. Generate filters for contacts.
 STRICTURE: Use GPT-4 Turbo logic to be reliable. Do NOT improvise filters.
 CONTEXT: Goal for ${companyContext.name} is ${companyContext.goal}. Match these types: ${companyContext.baselineTitles.join(', ')}.`,
         model: AGENT_MODELS.apollo_lead_finder, // GPT-4 Turbo is always safe
-        tools: getToolsForAgent('apollo_lead_finder'),
-        outputType: ApolloLeadFinderSchema,
+        model: AGENT_MODELS.apollo_lead_finder, // GPT-4 Turbo is always safe
+        tools: getToolsForAgent('apollo_lead_finder')
+        // outputType removed to prevent premature validation
     });
 
     // 4. Outreach Creator: Gemini 1.5 Flash
@@ -337,8 +341,9 @@ CONTEXT: Goal for ${companyContext.name} is ${companyContext.goal}. Match these 
 PROTOCOL: Use strict message templates. Inject personalization fields only. 
 STRICTURE: No decision-making. No research. No tone exploration.`,
         model: getSafeModel('outreach'),
-        tools: [],
-        outputType: OutreachCreatorSchema,
+        model: getSafeModel('outreach'),
+        tools: []
+        // outputType removed to prevent premature validation
     });
 
     // 5. Data Architect: Claude 3.5 Sonnet (Fallback)
@@ -348,7 +353,8 @@ STRICTURE: No decision-making. No research. No tone exploration.`,
 PROTOCOL: Use strict schema. Normalize names (CapitalCase), fix broken URLs, and validate emails.
 STRICTURE: LLM is fallback only. Zero creativity. If data is unsalvageable, mark is_valid: false.`,
         model: getSafeModel('architect'),
-        outputType: DataArchitectSchema,
+        model: getSafeModel('architect')
+        // outputType removed to prevent premature validation
     });
 
     // --- Main Workflow Loop ---
