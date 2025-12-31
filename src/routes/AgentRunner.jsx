@@ -23,6 +23,7 @@ const AgentRunner = () => {
     const [currentStep, setCurrentStep] = useState(null)
     const [result, setResult] = useState(null)
     const [error, setError] = useState(null)
+    const [activeRunId, setActiveRunId] = useState(null)
     const logsEndRef = useRef(null)
     const abortControllerRef = useRef(null)
 
@@ -168,6 +169,8 @@ const AgentRunner = () => {
                             if (type === 'log') {
                                 setLogs(prev => [...prev, data])
                                 if (data.step) setCurrentStep(data.step)
+                            } else if (type === 'run_id') {
+                                setActiveRunId(data.runId)
                             } else if (type === 'result') {
                                 setResult(data)
                                 setCurrentStep('Complete')
@@ -200,10 +203,23 @@ const AgentRunner = () => {
         }
     }
 
-    const handleCancel = () => {
+    const handleCancel = async () => {
         if (abortControllerRef.current) {
             abortControllerRef.current.abort()
             setLogs(prev => [...prev, { step: 'System', detail: '⛔ Cancelling run...', timestamp: new Date().toISOString() }])
+
+            // Also notify the backend
+            if (activeRunId) {
+                try {
+                    await fetch('/api/workflow/cancel', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ runId: activeRunId })
+                    });
+                } catch (e) {
+                    console.error("Cancel API failed", e);
+                }
+            }
         }
     }
 

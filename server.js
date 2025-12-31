@@ -1235,6 +1235,7 @@ app.post('/api/agents/run', requireAuth, async (req, res) => {
         )
         runId = rows[0].id
         // Send initial connection confirmation
+        res.write(`event: run_id\ndata: ${JSON.stringify({ runId })}\n\n`)
         res.write(`event: log\ndata: {"step": "System", "detail": "Workflow initialized. Run ID: ${runId}", "timestamp": "${new Date().toISOString()}"}\n\n`)
     } catch (err) {
         console.error('Failed to init run:', err)
@@ -1325,6 +1326,22 @@ app.post('/api/agents/run', requireAuth, async (req, res) => {
         res.write(`event: error\ndata: {"message": "${error.message || 'Workflow execution failed'}"}\n\n`)
     } finally {
         res.end()
+    }
+})
+
+/**
+ * Workflow Cancellation Endpoint
+ * Updates run status to CANCELLED, which worker polls
+ */
+app.post('/api/workflow/cancel', authMiddleware, async (req, res) => {
+    const { runId } = req.body;
+    if (!runId) return res.status(400).json({ error: "Missing runId" });
+
+    try {
+        await query(`UPDATE workflow_runs SET status = 'CANCELLED' WHERE id = $1`, [runId]);
+        res.json({ status: 'success', message: 'Run cancellation signaled.' });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
     }
 })
 

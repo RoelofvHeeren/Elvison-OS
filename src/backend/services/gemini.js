@@ -31,11 +31,19 @@ export class GeminiModel {
 
         if (Array.isArray(input)) {
             input.forEach(item => {
-                if (item.type === 'message') {
-                    messages.push({ role: item.role, content: item.content[0].text });
+                // OpenAI Agents SDK sends messages in this structure
+                if (item.content && Array.isArray(item.content)) {
+                    const textContent = item.content.find(c => c.type === 'text' || c.type === 'output_text')?.text || "";
+                    if (textContent) {
+                        messages.push({ role: item.role === 'assistant' ? 'assistant' : 'user', content: textContent });
+                    }
+                }
+                // Fallback for simpler message objects
+                else if (item.content && typeof item.content === 'string') {
+                    messages.push({ role: item.role === 'assistant' ? 'assistant' : 'user', content: item.content });
                 }
             });
-        } else {
+        } else if (typeof input === 'string') {
             messages.push({ role: 'user', content: input });
         }
 

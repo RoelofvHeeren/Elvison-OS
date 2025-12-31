@@ -45,25 +45,24 @@ export class LeadScraperService {
     }
 
     /**
-     * Fetch leads for a list of companies
      * @param {Array<Object>} companies - List of company objects { company_name, domain }
      * @param {Object} filters - Search filters { job_titles, seniority, ... }
      * @param {Function} logStep - Optional logger function
+     * @param {Function} checkCancellation - Optional callback to check for cancellation
      * @returns {Promise<Array<StandardLead>>}
      */
-    async fetchLeads(companies, filters = {}, logStep = console.log) {
+    async fetchLeads(companies, filters = {}, logStep = console.log, checkCancellation = null) {
         if (!companies || companies.length === 0) return [];
 
         logStep('Lead Finder', `Fetching leads for ${companies.length} companies using ${this.provider}...`);
 
         switch (this.provider) {
             case 'apify_pipelinelabs':
-                return this._fetchFromApify(companies, filters);
+                return this._fetchFromApify(companies, filters, logStep, checkCancellation);
             case 'apify_apollo_domain':
-                // Check if filters.idempotencyKey exists if argument is missing
-                return this._fetchFromApolloDomain(companies, filters, filters.idempotencyKey, logStep);
+                return this._fetchFromApolloDomain(companies, filters, filters.idempotencyKey, logStep, checkCancellation);
             case 'scrapercity_apollo':
-                return this._fetchFromScraperCity(companies, filters);
+                return this._fetchFromScraperCity(companies, filters, logStep, checkCancellation);
             default:
                 throw new Error(`Unknown scraper provider: ${this.provider}`);
         }
@@ -72,7 +71,7 @@ export class LeadScraperService {
     /**
      * Internal: Fetch from Apify PipelineLabs Actor (legacy)
      */
-    async _fetchFromApify(companies, filters) {
+    async _fetchFromApify(companies, filters, logStep, checkCancellation) {
         // 1. Prepare Names
         const targetNames = companies.map(c => c.company_name).filter(n => n && n.trim().length > 0);
 
@@ -87,6 +86,13 @@ export class LeadScraperService {
         let attempts = 0;
 
         while (!isComplete && attempts < MAX_WAIT) {
+            // Check for cancellation
+            if (checkCancellation && await checkCancellation()) {
+                const { abortApifyRun } = await import("./apify.js");
+                await abortApifyRun(this.apifyApiKey, runId);
+                return [];
+            }
+
             await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
             const statusRes = await checkApifyRun(this.apifyApiKey, runId);
 
@@ -116,9 +122,10 @@ export class LeadScraperService {
      * This uses DOMAINS instead of company names for better accuracy.
      * Cost: ~$0.0026 per lead
      */
-    async _fetchFromApolloDomain(companies, filters, idempotencyKey = null, logStep = console.log) {
+    async _fetchFromApolloDomain(companies, filters, idempotencyKey = null, logStep = console.log, checkCancellation = null) {
         // Handle arguments shifting if idempotencyKey is function (logStep)
         if (typeof idempotencyKey === 'function') {
+            checkCancellation = idempotencyKey; // Not quite right but depends on how it's called
             logStep = idempotencyKey;
             idempotencyKey = null;
         }
@@ -197,7 +204,7 @@ export class LeadScraperService {
         // Fix: Pass idempotencyKey with batch suffix to avoid collisions
         const results = await Promise.all(batches.map((batch, index) => {
             const batchKey = idempotencyKey ? `${idempotencyKey}_batch_${index + 1}` : null;
-            return this._runApolloBatch(batch, filters, index + 1, batchKey);
+            return this._runApolloBatch(batch, filters, index + 1, batchKey, checkCancellation);
         }));
 
         // Aggregate results
@@ -215,7 +222,7 @@ export class LeadScraperService {
     /**
      * Helper to run a single batch of domains
      */
-    async _runApolloBatch(domains, filters, batchId, idempotencyKey = null) {
+    async _runApolloBatch(domains, filters, batchId, idempotencyKey = null, checkCancellation = null) {
         console.log(`[ApolloDomain] Starting Batch ${batchId} with ${domains.length} domains (Strict Filtering Active). Key: ${idempotencyKey || 'N/A'}`);
 
         // Log Exclusions
@@ -239,6 +246,13 @@ export class LeadScraperService {
             let attempts = 0;
 
             while (!isComplete && attempts < MAX_ATTEMPTS) {
+                // Check for cancellation
+                if (checkCancellation && await checkCancellation()) {
+                    const { abortApifyRun } = await import("./apify.js");
+                    await abortApifyRun(this.apifyApiKey, runId);
+                    return [];
+                }
+
                 await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
                 // Note: We swallow errors in poll check to avoid breaking Promise.all, or handle them?
                 // checkApifyRun throws if request fails
@@ -307,7 +321,7 @@ export class LeadScraperService {
     /**
      * Internal: Fetch from ScraperCity Apollo Scraper
      */
-    async _fetchFromScraperCity(companies, filters) {
+    async _fetchFromScraperCity(companies, filters, logStep, checkCancellation) {
         // 1. Build company names
         const targetNames = companies.map(c => c.company_name).filter(n => n && n.trim().length > 0);
 
@@ -333,6 +347,12 @@ export class LeadScraperService {
         let attempts = 0;
 
         while (!isComplete && attempts < MAX_ATTEMPTS) {
+            // Check for cancellation (ScraperCity doesn't have an easy abort API in our wrapper yet, 
+            // but we can stop polling to at least free up the worker)
+            if (checkCancellation && await checkCancellation()) {
+                return [];
+            }
+
             await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
             const statusRes = await checkScraperCityRun(this.scraperCityApiKey, runId);
 

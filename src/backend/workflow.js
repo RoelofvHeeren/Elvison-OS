@@ -86,48 +86,7 @@ const FilterRefinerSchema = z.object({
 // --- Helper Functions ---
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-const getToolsForAgent = (agentName) => {
-    const apifyToken = process.env.APIFY_API_TOKEN;
-
-    if (agentName === 'company_finder') {
-        return [
-            tool({
-                name: "google_search_and_extract",
-                description: "Search using Google and return organic results (Title, URL, Snippet).",
-                parameters: z.object({ query: z.string() }),
-                execute: async ({ query }) => {
-                    const results = await performGoogleSearch(query, apifyToken);
-                    return results.map(r => `NAME: ${r.title}\nURL: ${r.link}\nDESC: ${r.snippet}`).join('\n\n');
-                }
-            })
-        ];
-    }
-
-    if (agentName === 'company_profiler') {
-        return [
-            tool({
-                name: "scrape_company_website",
-                description: "Deep research: Scrape home, about, services, and pricing pages for a domain.",
-                parameters: z.object({ domain: z.string() }),
-                execute: async ({ domain }) => {
-                    return await scrapeCompanyWebsite(domain, apifyToken);
-                }
-            })
-        ];
-    }
-
-    if (agentName === 'apollo_lead_finder') {
-        return [
-            hostedMcpTool({
-                serverLabel: "Apollo_Lead_Finder",
-                serverUrl: "https://apollo-mcp-v4-production.up.railway.app/sse?apiKey=apollo-mcp-client-key-01",
-                authorization: "apollo-mcp-client-key-01"
-            })
-        ];
-    }
-
-    return [];
-};
+// --- Moved inside runAgentWorkflow for context access ---
 
 /**
  * Main Workflow Execution
@@ -153,12 +112,68 @@ export const runAgentWorkflow = async (input, config) => {
         else console.log(`[${step}] ${detail}`);
     };
 
-    // --- Testing Limits ---
+    // --- Safety & Cost Controls ---
     const effectiveMaxLeads = getEffectiveMaxLeads();
     if (WORKFLOW_CONFIG.IS_TESTING && targetLeads > effectiveMaxLeads) {
         logStep('System', `🧪 Testing Mode: Capping target to ${effectiveMaxLeads}`);
         targetLeads = effectiveMaxLeads;
     }
+
+    const checkCancellation = async () => {
+        try {
+            const res = await query(`SELECT status FROM workflow_runs WHERE id = $1`, [idempotencyKey || runId]);
+            if (res.rows.length > 0 && res.rows[0].status === 'CANCELLED') {
+                logStep('System', '⛔ Run Cancellation Detected. Stopping workflow immediately.');
+                return true;
+            }
+        } catch (e) {
+            console.error("Cancellation check failed", e);
+        }
+        return false;
+    };
+
+    const getToolsForAgent = (agentName) => {
+        const apifyToken = process.env.APIFY_API_TOKEN;
+
+        if (agentName === 'company_finder') {
+            return [
+                tool({
+                    name: "google_search_and_extract",
+                    description: "Search using Google and return organic results (Title, URL, Snippet).",
+                    parameters: z.object({ query: z.string() }),
+                    execute: async ({ query }) => {
+                        const results = await performGoogleSearch(query, apifyToken, checkCancellation);
+                        return results.map(r => `NAME: ${r.title}\nURL: ${r.link}\nDESC: ${r.snippet}`).join('\n\n');
+                    }
+                })
+            ];
+        }
+
+        if (agentName === 'company_profiler') {
+            return [
+                tool({
+                    name: "scrape_company_website",
+                    description: "Deep research: Scrape home, about, services, and pricing pages for a domain.",
+                    parameters: z.object({ domain: z.string() }),
+                    execute: async ({ domain }) => {
+                        return await scrapeCompanyWebsite(domain, apifyToken, checkCancellation);
+                    }
+                })
+            ];
+        }
+
+        if (agentName === 'apollo_lead_finder') {
+            return [
+                hostedMcpTool({
+                    serverLabel: "Apollo_Lead_Finder",
+                    serverUrl: "https://apollo-mcp-v4-production.up.railway.app/sse?apiKey=apollo-mcp-client-key-01",
+                    authorization: "apollo-mcp-client-key-01"
+                })
+            ];
+        }
+
+        return [];
+    };
 
     // --- Dynamic Context Injection ---
     let companyContext = { name: "The User's Company", goal: "Expand client base.", baselineTitles: [] };
@@ -257,9 +272,9 @@ export const runAgentWorkflow = async (input, config) => {
             filters.seniority = [...(filters.seniority || []), ...AI_Filters.seniority];
         }
     } catch (e) {
-        if (e.message?.includes("API key not valid") || e.message?.includes("400")) {
-            logStep('Filter Refiner', `🔄 Gemini Key Rejected. Auto-switching to OpenAI fallback.`);
-            useGoogleFallback = true;
+        if (e.message?.includes("API key not valid") || e.message?.includes("400") || e.message?.includes("401")) {
+            logStep('Filter Refiner', `❌ Gemini/Anthropic Key Rejected. Stopping run to save costs.`);
+            throw new Error(`Authentication Error: ${e.message}`);
         } else {
             logStep('Filter Refiner', `⚠️ Refinement skipped: ${e.message}`);
         }
@@ -334,120 +349,107 @@ STRICTURE: LLM is fallback only. Zero creativity. If data is unsalvageable, mark
     const excludedNames = await getExcludedCompanyNames(userId);
     const leadScraper = new LeadScraperService();
     let attempts = 0;
-    const MAX_ATTEMPTS = 5;
+    const MAX_ATTEMPTS = 5; // Allow for thorough discovery
+    let totalSearches = 0;
+    const MAX_SEARCHES = 20;
+    let masterQualifiedList = [];
 
-    while (globalLeads.length < targetLeads && attempts < MAX_ATTEMPTS) {
+    // --- Phase 1: Discovery & Profiling Loop ---
+    while (masterQualifiedList.length < Math.ceil(targetLeads / 2) && attempts < MAX_ATTEMPTS) {
+        if (await checkCancellation()) break;
         attempts++;
-        logStep('Workflow', `Round ${attempts}: Need ${targetLeads - globalLeads.length} more.`);
+        logStep('Workflow', `Discovery Round ${attempts}: Collecting companies...`);
 
         // 1. Discovery
         let candidates = [];
         try {
-            const finderRes = await runAgentWithTracking(runner, getFinderAgent(), [{ role: "user", content: `Find companies for: ${input.input_as_text}. Avoid: ${[...scrapedNamesSet, ...excludedNames].slice(0, 30).join(', ')}` }], costTracker, { maxTurns: 20 });
+            if (totalSearches >= MAX_SEARCHES) {
+                logStep('Company Finder', `🛑 Search limit reached (${MAX_SEARCHES}). Stopping discovery.`);
+                break;
+            }
+            totalSearches++;
+            const finderRes = await runAgentWithTracking(runner, getFinderAgent(), [
+                { role: "user", content: `Find companies for: ${input.input_as_text}. Avoid: ${[...scrapedNamesSet, ...excludedNames, ...masterQualifiedList.map(c => c.company_name)].slice(0, 50).join(', ')}` }
+            ], costTracker, { maxTurns: 20 });
             candidates = (finderRes.finalOutput?.results || []).filter(c => !scrapedNamesSet.has(c.company_name));
         } catch (e) {
-            if (e.message?.includes("API key not valid") || e.message?.includes("400")) {
-                logStep('Company Finder', `🔄 Gemini Key Rejected. Auto-switching to OpenAI for Discovery.`);
-                useGoogleFallback = true;
-                // Re-try once with fallback
-                try {
-                    const finderRes = await runAgentWithTracking(runner, getFinderAgent(), [{ role: "user", content: `Find companies for: ${input.input_as_text}.` }], costTracker, { maxTurns: 20 });
-                    candidates = (finderRes.finalOutput?.results || []).filter(c => !scrapedNamesSet.has(c.company_name));
-                } catch (e2) { logStep('Company Finder', `Fallback failed: ${e2.message}`); }
-            } else {
-                logStep('Company Finder', `Failed: ${e.message}`);
-            }
+            logStep('Company Finder', `Failed: ${e.message}`);
         }
 
-        if (candidates.length === 0) break;
+        if (candidates.length === 0) {
+            logStep('Workflow', 'No new candidates found in this round.');
+            break;
+        }
 
         // 2. Profiling & Filtering
-        let validCandidates = [];
         try {
+            if (await checkCancellation()) break;
             logStep('Company Profiler', `Analyzing ${candidates.length} candidates...`);
             const profilerRes = await runAgentWithTracking(runner, getProfilerAgent(), [{ role: "user", content: JSON.stringify(candidates) }], costTracker, { maxTurns: 20 });
             const profiled = profilerRes.finalOutput?.results || [];
 
-            // OPTIMIZATION 3: Confidence Threshold
-            validCandidates = profiled.filter(c => {
+            const qualified = profiled.filter(c => {
                 const isHighQuality = (c.match_score || 0) >= 7;
                 if (!isHighQuality) logStep('Profiler', `🗑️ Dropped ${c.company_name} (Score: ${c.match_score}/10)`);
                 return isHighQuality;
             });
-            logStep('Company Profiler', `✅ ${validCandidates.length}/${candidates.length} Qualified (Score >= 7).`);
+
+            masterQualifiedList.push(...qualified);
+            logStep('Company Profiler', `Round ${attempts}: +${qualified.length} Qualified. Total: ${masterQualifiedList.length}`);
         } catch (e) {
-            if (e.message?.includes("API key not valid") || e.message?.includes("401") || e.message?.includes("Anthropic")) {
-                logStep('Company Profiler', `🔄 Anthropic Key Rejected. Auto-switching to OpenAI for Profiling.`);
-                useAnthropicFallback = true;
-                // Fallback to all candidates for this round to save time
-                validCandidates = candidates;
-            } else {
-                logStep('Company Profiler', `Failed: ${e.message}. Fallback to all candidates.`);
-                validCandidates = candidates;
-            }
+            logStep('Company Profiler', `Analysis failed: ${e.message}`);
         }
+    }
 
-        if (validCandidates.length === 0) continue;
+    // --- Phase 2: Consolidated Lead Scraping (ONE Pass) ---
+    if (masterQualifiedList.length > 0) {
+        logStep('Lead Finder', `🚀 Triggering Scraper for ALL ${masterQualifiedList.length} qualified companies...`);
+        try {
+            if (await checkCancellation()) return;
 
-        // 3. Sequential Scraping (Short-Circuit)
-        // OPTIMIZATION 2: Process in small batches to save budget
-        const SCRAPE_BATCH_SIZE = 3;
-        for (let i = 0; i < validCandidates.length; i += SCRAPE_BATCH_SIZE) {
-            // STOP condition
-            if (globalLeads.length >= targetLeads) {
-                logStep('Optimization', `✅ Target met (${globalLeads.length}/${targetLeads}). Stopping scrape early.`);
-                break;
-            }
+            const leads = await leadScraper.fetchLeads(masterQualifiedList, filters, logStep, checkCancellation);
 
-            const batch = validCandidates.slice(i, i + SCRAPE_BATCH_SIZE);
-            logStep('Lead Finder', `Scraping batch of ${batch.length} companies...`);
+            if (leads.length > 0) {
+                logStep('Data Architect', `Normalizing ${leads.length} leads...`);
 
-            try {
-                const leads = await leadScraper.fetchLeads(batch, filters, logStep);
                 // 4. Data Architect: Validation & Normalization
-                if (leads.length > 0) {
-                    logStep('Data Architect', `Normalizing ${leads.length} leads...`);
-                    // Deterministic normalization
-                    const deterministicLeads = leads.filter(l => l.first_name && l.last_name && l.email);
+                const deterministicLeads = leads.filter(l => l.first_name && l.last_name && l.email);
+                const ambiguousLeads = leads.filter(l => !l.first_name || !l.last_name || !l.email);
+                let fixedLeads = [];
 
-                    // Fallback to Claude only for ambiguous records
-                    const ambiguousLeads = leads.filter(l => !l.first_name || !l.last_name || !l.email);
-                    let fixedLeads = [];
-                    if (ambiguousLeads.length > 0) {
-                        try {
-                            const architectRes = await runAgentWithTracking(runner, getArchitectAgent(), [{ role: "user", content: `Normalize these ambiguous leads: ${JSON.stringify(ambiguousLeads)}` }], costTracker);
-                            fixedLeads = (architectRes.finalOutput?.leads || []).filter(l => l.is_valid);
-                        } catch (e) {
-                            if (e.message?.includes("API key not valid")) useAnthropicFallback = true;
-                            logStep('Data Architect', `Normalization failed: ${e.message}`);
-                        }
-                    }
-
-                    const validatedLeads = [...deterministicLeads, ...fixedLeads];
-
-                    // Proceed with ranking on validated data
-                    if (validatedLeads.length > 0) {
-                        const rankRes = await runAgentWithTracking(runner, getApolloAgent(), [{ role: "user", content: `Rank these leads (Match 1-10) for ${companyContext.goal}: ${JSON.stringify(validatedLeads.slice(0, 30))}` }], costTracker);
-                        const ranked = rankRes.finalOutput?.leads || validatedLeads;
-                        // ... rest of logic uses ranked ...
-                        const sorted = ranked.sort((a, b) => (b.match_score || 0) - (a.match_score || 0));
-
-                        const perCompany = {};
-                        sorted.forEach(l => {
-                            if (!perCompany[l.company_name]) perCompany[l.company_name] = [];
-                            if (perCompany[l.company_name].length < maxLeadsPerCompany) perCompany[l.company_name].push(l);
-                        });
-
-                        const added = Object.values(perCompany).flat();
-                        globalLeads.push(...added);
-                        logStep('Workflow', `+${added.length} leads. Total: ${globalLeads.length}/${targetLeads}`);
+                if (ambiguousLeads.length > 0) {
+                    try {
+                        const architectRes = await runAgentWithTracking(runner, getArchitectAgent(), [{ role: "user", content: `Normalize these ambiguous leads: ${JSON.stringify(ambiguousLeads)}` }], costTracker);
+                        fixedLeads = (architectRes.finalOutput?.leads || []).filter(l => l.is_valid);
+                    } catch (e) {
+                        logStep('Data Architect', `Normalization failed: ${e.message}`);
                     }
                 }
 
-                // Mark processed
-                batch.forEach(c => scrapedNamesSet.add(c.company_name));
+                const validatedLeads = [...deterministicLeads, ...fixedLeads];
 
-            } catch (e) { logStep('Lead Finder', `Batch failed: ${e.message}`); }
+                // 5. Ranking & Deduplication
+                if (validatedLeads.length > 0) {
+                    const rankRes = await runAgentWithTracking(runner, getApolloAgent(), [{ role: "user", content: `Rank these leads (Match 1-10) for ${companyContext.goal}: ${JSON.stringify(validatedLeads.slice(0, 50))}` }], costTracker);
+                    const ranked = rankRes.finalOutput?.leads || validatedLeads;
+                    const sorted = ranked.sort((a, b) => (b.match_score || 0) - (a.match_score || 0));
+
+                    const perCompany = {};
+                    sorted.forEach(l => {
+                        if (!perCompany[l.company_name]) perCompany[l.company_name] = [];
+                        if (perCompany[l.company_name].length < maxLeadsPerCompany) perCompany[l.company_name].push(l);
+                    });
+
+                    const added = Object.values(perCompany).flat();
+                    globalLeads.push(...added);
+                    logStep('Workflow', `✅ Finalized ${globalLeads.length} leads.`);
+                }
+            }
+
+            // Mark companies as processed
+            masterQualifiedList.forEach(c => scrapedNamesSet.add(c.company_name));
+        } catch (e) {
+            logStep('Lead Finder', `Scraping failed: ${e.message}`);
         }
     }
 

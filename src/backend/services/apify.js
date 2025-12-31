@@ -172,6 +172,24 @@ export const checkApifyRun = async (token, runId) => {
 };
 
 /**
+ * Aborts a running Apify job
+ * @param {string} token 
+ * @param {string} runId 
+ */
+export const abortApifyRun = async (token, runId) => {
+    try {
+        console.log(`[Apify] Aborting Run ${runId}...`);
+        await axios.post(
+            `${APIFY_API_URL}/actor-runs/${runId}/abort?token=${token}`
+        );
+        return true;
+    } catch (error) {
+        console.error('Apify Abort Error:', error.response?.data || error.message);
+        return false;
+    }
+};
+
+/**
  * Fetches results from the dataset
  * @param {string} token 
  * @param {string} datasetId 
@@ -319,8 +337,9 @@ export const startApolloDomainScrape = async (token, domains, filters = {}, idem
  * Scrape a company's key pages (Home, About, Services, Pricing)
  * @param {string} domain - The company domain (e.g. "greybrook.com")
  * @param {string} token - Apify API Token
+ * @param {Function} checkCancellation - Optional callback to check for cancellation
  */
-export const scrapeCompanyWebsite = async (domain, token) => {
+export const scrapeCompanyWebsite = async (domain, token, checkCancellation = null) => {
     const ACTOR_ID = 'apify~website-content-crawler';
     if (!domain) return "No domain provided.";
 
@@ -354,6 +373,12 @@ export const scrapeCompanyWebsite = async (domain, token) => {
         let attempts = 0;
         let datasetId = null;
         while (attempts < 60) {
+            // Check for cancellation
+            if (checkCancellation && await checkCancellation()) {
+                await abortApifyRun(token, runId);
+                return "Crawl cancelled.";
+            }
+
             await new Promise(r => setTimeout(r, 2000));
             const statusRes = await checkApifyRun(token, runId);
             if (statusRes.status === 'SUCCEEDED') {
@@ -388,8 +413,9 @@ export const scrapeCompanyWebsite = async (domain, token) => {
  * Perform a Google Search via Apify (apify/google-search-scraper)
  * @param {string} query - The search query
  * @param {string} token - Apify API Token
+ * @param {Function} checkCancellation - Optional callback to check for cancellation
  */
-export const performGoogleSearch = async (query, token) => {
+export const performGoogleSearch = async (query, token, checkCancellation = null) => {
     const ACTOR_ID = 'apify~google-search-scraper';
     const cleanQuery = query || "";
     if (!cleanQuery) return [];
@@ -418,6 +444,12 @@ export const performGoogleSearch = async (query, token) => {
         let datasetId = null;
 
         while (attempts < MAX_ATTEMPTS) {
+            // Check for cancellation
+            if (checkCancellation && await checkCancellation()) {
+                await abortApifyRun(token, runId);
+                return [];
+            }
+
             await new Promise(r => setTimeout(r, POLL_INTERVAL));
             const statusRes = await checkApifyRun(token, runId);
             if (statusRes.status === 'SUCCEEDED') {
