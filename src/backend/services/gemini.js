@@ -48,13 +48,27 @@ export class GeminiModel {
             messages.push({ role: 'user', content: input });
         }
 
-        const vercelTools = {};
+        // Convert @openai/agents tools to Vercel AI SDK format
+        // NOTE: Gemini 2.0 requires all tool parameters to be of type OBJECT
+        let vercelTools = undefined;
         if (tools && tools.length > 0) {
+            vercelTools = {};
             tools.forEach(t => {
                 if (t.type === 'function') {
+                    // Ensure parameters is always a proper Zod object schema
+                    let params = t.parameters;
+
+                    // If parameters is not a Zod object, wrap it or provide a default
+                    // This handles cases where parameters might be a raw string, etc.
+                    if (!params || typeof params !== 'object' || !params._def || params._def.typeName !== 'ZodObject') {
+                        // Fallback: create a simple zod object with the required args
+                        const { z } = require('zod');
+                        params = z.object({ query: z.string().describe("The search query or input") });
+                    }
+
                     vercelTools[t.name] = {
                         description: t.description,
-                        parameters: t.parameters
+                        parameters: params
                     };
                 }
             });
@@ -68,11 +82,11 @@ export class GeminiModel {
             }
 
             // Use generateText from Vercel AI SDK
+            // Only pass tools if we have any defined
             const result = await generateText({
                 model: modelInstance,
                 messages: messages,
-                tools: vercelTools,
-                toolChoice: 'auto',
+                ...(vercelTools && Object.keys(vercelTools).length > 0 && { tools: vercelTools, toolChoice: 'auto' }),
             });
 
             // Convert back to ModelResponse format
