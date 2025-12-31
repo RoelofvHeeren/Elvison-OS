@@ -2,8 +2,31 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { generateText } from 'ai';
 
 /**
+ * Extract JSON from text - strips markdown fences
+ */
+function extractJson(text) {
+    if (!text) return text;
+
+    return text
+        .replace(/```json/g, "")
+        .replace(/```tool_call/g, "")
+        .replace(/```/g, "")
+        .trim();
+}
+
+/**
+ * Hard fail-fast validator for JSON responses
+ */
+function assertJsonResponse(text, context) {
+    try {
+        JSON.parse(extractJson(text));
+    } catch (e) {
+        throw new Error(`Model returned non-JSON output in ${context}:\n${text?.substring(0, 200)}`);
+    }
+}
+
+/**
  * Build Gemini-native tools format
- * This bypasses ai-sdk's tool abstraction completely
  */
 function buildGeminiNativeTools(tools) {
     if (!tools || tools.length === 0) return undefined;
@@ -12,17 +35,13 @@ function buildGeminiNativeTools(tools) {
 
     for (const t of tools) {
         if (t.type === 'function') {
-            // Hardcoded schemas per tool - Gemini needs boring and explicit
             let parameters;
 
             if (t.name === 'google_search_and_extract') {
                 parameters = {
                     type: "object",
                     properties: {
-                        query: {
-                            type: "string",
-                            description: "Google search query"
-                        }
+                        query: { type: "string", description: "Google search query" }
                     },
                     required: ["query"]
                 };
@@ -30,10 +49,7 @@ function buildGeminiNativeTools(tools) {
                 parameters = {
                     type: "object",
                     properties: {
-                        domain: {
-                            type: "string",
-                            description: "Domain to scrape"
-                        }
+                        domain: { type: "string", description: "Domain to scrape" }
                     },
                     required: ["domain"]
                 };
@@ -41,10 +57,7 @@ function buildGeminiNativeTools(tools) {
                 parameters = {
                     type: "object",
                     properties: {
-                        input: {
-                            type: "string",
-                            description: "Input value"
-                        }
+                        input: { type: "string", description: "Input value" }
                     },
                     required: ["input"]
                 };
@@ -59,14 +72,11 @@ function buildGeminiNativeTools(tools) {
     }
 
     if (functionDeclarations.length === 0) return undefined;
-
-    // Return in Gemini-native format
     return [{ functionDeclarations }];
 }
 
 /**
  * GeminiModel Implementation for @openai/agents
- * Uses Gemini-native tool format to bypass ai-sdk wrapper issues
  */
 export class GeminiModel {
     constructor(apiKey, modelName = 'gemini-2.0-flash') {
@@ -79,8 +89,15 @@ export class GeminiModel {
     async getResponse(request) {
         const { systemInstructions, input, tools, outputType } = request;
 
-        // Build messages array
+        // Build messages array with JSON enforcement as FIRST instruction
         const messages = [];
+
+        // JSON enforcement - zero tolerance
+        messages.push({
+            role: 'system',
+            content: 'You must respond with ONLY valid JSON. Do not include explanations, markdown, code blocks, or any text before or after the JSON.'
+        });
+
         if (systemInstructions) {
             messages.push({ role: 'system', content: systemInstructions });
         }
@@ -110,20 +127,15 @@ export class GeminiModel {
         try {
             const modelInstance = this.googleProvider(this.modelName);
 
-            // Use generateText WITHOUT ai-sdk's tools abstraction
-            // Pass tools in Gemini-native format via providerOptions
             const generateOptions = {
                 model: modelInstance,
                 messages: messages,
             };
 
-            // If we have tools, pass them via experimental_providerMetadata
-            // This bypasses ai-sdk's tool wrapping
+            // Pass tools in Gemini-native format
             if (geminiTools) {
                 generateOptions.experimental_providerMetadata = {
-                    google: {
-                        tools: geminiTools
-                    }
+                    google: { tools: geminiTools }
                 };
             }
 
@@ -132,15 +144,17 @@ export class GeminiModel {
             const output = [];
 
             if (result.text) {
+                // Strip markdown before adding to output
+                const cleanText = extractJson(result.text);
+
                 output.push({
                     type: 'message',
                     role: 'assistant',
-                    content: [{ type: 'output_text', text: result.text }],
+                    content: [{ type: 'output_text', text: cleanText }],
                     status: 'completed'
                 });
             }
 
-            // Check for function calls in the response
             if (result.toolCalls && result.toolCalls.length > 0) {
                 result.toolCalls.forEach(tc => {
                     output.push({
@@ -178,3 +192,6 @@ export class GeminiModel {
         yield { type: 'message_completed', output: response.output };
     }
 }
+
+// Export utilities for use in workflow
+export { extractJson, assertJsonResponse };
