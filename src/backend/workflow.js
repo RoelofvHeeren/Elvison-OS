@@ -86,6 +86,43 @@ const FilterRefinerSchema = z.object({
 // --- Helper Functions ---
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+// --- Output Normalizers (apply BEFORE validation) ---
+function normalizeFilterRefinerOutput(output) {
+    return {
+        job_titles: Array.isArray(output?.job_titles) ? output.job_titles : [],
+        excluded_keywords: Array.isArray(output?.excluded_keywords) ? output.excluded_keywords : [],
+        seniority: Array.isArray(output?.seniority) ? output.seniority : []
+    };
+}
+
+function normalizeCompanyFinderOutput(output) {
+    return {
+        results: Array.isArray(output?.results) ? output.results : []
+    };
+}
+
+function normalizeOutreachCreatorOutput(output) {
+    if (Array.isArray(output)) {
+        return { leads: output };
+    }
+    return {
+        leads: Array.isArray(output?.leads) ? output.leads : []
+    };
+}
+
+function normalizeByAgent(agentName, output) {
+    switch (agentName) {
+        case "Filter Refiner":
+            return normalizeFilterRefinerOutput(output);
+        case "Company Finder":
+            return normalizeCompanyFinderOutput(output);
+        case "Outreach Creator":
+            return normalizeOutreachCreatorOutput(output);
+        default:
+            return output;
+    }
+}
+
 // --- Moved inside runAgentWorkflow for context access ---
 
 /**
@@ -224,8 +261,8 @@ export const runAgentWorkflow = async (input, config) => {
         logStep('System', `🔑 Anthropic Key detected: ${anthropicKey.substring(0, 7)}...`);
     }
 
-    const finderModel = googleKey ? new GeminiModel(googleKey, 'gemini-2.0-flash') : 'gpt-4o';
-    const profilerModel = anthropicKey ? new ClaudeModel(anthropicKey, 'claude-3-5-sonnet-20240620') : 'gpt-4o';
+    const finderModel = googleKey ? new GeminiModel(googleKey, 'gemini-2.0-flash') : 'gpt-4-turbo';
+    const profilerModel = anthropicKey ? new ClaudeModel(anthropicKey, 'claude-3-5-sonnet-20240620') : 'gpt-4-turbo';
 
     // --- Dynamic Fallback State ---
     let useGoogleFallback = !googleKey;
@@ -233,12 +270,12 @@ export const runAgentWorkflow = async (input, config) => {
 
     const getSafeModel = (type) => {
         if (type === 'discovery' || type === 'outreach' || type === 'refiner') {
-            return useGoogleFallback ? 'gpt-4o' : finderModel;
+            return useGoogleFallback ? 'gpt-4-turbo' : finderModel;
         }
         if (type === 'profiler' || type === 'architect') {
-            return useAnthropicFallback ? 'gpt-4o' : profilerModel;
+            return useAnthropicFallback ? 'gpt-4-turbo' : profilerModel;
         }
-        return 'gpt-4o';
+        return 'gpt-4-turbo';
     };
 
     // --- OPTIMIZATION 1: LLM Filter Refiner ---
@@ -257,7 +294,8 @@ export const runAgentWorkflow = async (input, config) => {
         });
 
         const refinement = await runAgentWithTracking(runner, refinerAgent, [{ role: "user", content: "Generate filters." }], costTracker);
-        const AI_Filters = refinement.finalOutput || {};
+        // Normalize before using - ensures required fields present
+        const AI_Filters = normalizeByAgent("Filter Refiner", refinement.finalOutput || {});
 
         // Merge AI filters with existing ones (User overrides take precedence if strict, but here we append)
         if (AI_Filters.job_titles?.length) {
@@ -371,7 +409,9 @@ STRICTURE: LLM is fallback only. Zero creativity. If data is unsalvageable, mark
             const finderRes = await runAgentWithTracking(runner, getFinderAgent(), [
                 { role: "user", content: `Find companies for: ${input.input_as_text}. Avoid: ${[...scrapedNamesSet, ...excludedNames, ...masterQualifiedList.map(c => c.company_name)].slice(0, 50).join(', ')}` }
             ], costTracker, { maxTurns: 20 });
-            candidates = (finderRes.finalOutput?.results || []).filter(c => !scrapedNamesSet.has(c.company_name));
+            // Normalize before using - ensures results array present
+            const normalizedFinder = normalizeByAgent("Company Finder", finderRes.finalOutput || {});
+            candidates = (normalizedFinder.results || []).filter(c => !scrapedNamesSet.has(c.company_name));
         } catch (e) {
             logStep('Company Finder', `Failed: ${e.message}`);
         }
@@ -458,7 +498,9 @@ STRICTURE: LLM is fallback only. Zero creativity. If data is unsalvageable, mark
     let finalLeads = [];
     try {
         const outreachRes = await runAgentWithTracking(runner, getOutreachAgent(), [{ role: "user", content: JSON.stringify(globalLeads.slice(0, 20)) }], costTracker);
-        finalLeads = outreachRes.finalOutput?.leads || globalLeads;
+        // Normalize before using - handles array-instead-of-object and missing leads
+        const normalizedOutreach = normalizeByAgent("Outreach Creator", outreachRes.finalOutput || {});
+        finalLeads = normalizedOutreach.leads?.length > 0 ? normalizedOutreach.leads : globalLeads;
     } catch (e) {
         logStep('Outreach Creator', `Failed: ${e.message}`);
         if (e.message?.includes("API key not valid")) useGoogleFallback = true;
