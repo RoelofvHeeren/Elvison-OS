@@ -85,12 +85,12 @@ Output the list in JSON format.`
         name: 'Company Profiler',
         description: 'Verify companies against your strict intent.',
         questions: [
-            questions: [
-                { id: 'key_attributes', label: 'Must-Have Attributes', placeholder: 'e.g. "Active blog", "Hiring for Sales", "Uses Shopify"', type: 'textarea' },
-                { id: 'red_flags', label: 'Deal-Breakers / Red Flags', placeholder: 'e.g. "Competitor products", "Negative reviews", "No website"', type: 'textarea' },
-                { id: 'depth', label: 'Analysis Depth', type: 'radio', options: ['Quick Scan (Homepage)', 'Deep Dive (News, LinkedIn, Reports)'] },
-            ],
-            template: (a) => `You are a Research Analyst. Profile these companies.
+            { id: 'key_attributes', label: 'Must-Have Attributes', placeholder: 'e.g. "Active blog", "Hiring for Sales", "Uses Shopify"', type: 'textarea' },
+            { id: 'red_flags', label: 'Deal-Breakers / Red Flags', placeholder: 'e.g. "Competitor products", "Negative reviews", "No website"', type: 'textarea' },
+            { id: 'depth', label: 'Analysis Depth', type: 'radio', options: ['Quick Scan (Homepage)', 'Deep Dive (News, LinkedIn, Reports)'] },
+            { id: 'manual_research', label: 'How would you manually research a site?', placeholder: 'Describe how you manually find info (e.g. "I look for a Portfolio page and count assets...")', type: 'textarea', helper: 'Give specific instructions on where to look and what to verify.' },
+        ],
+        template: (a) => `You are a Research Analyst. Profile these companies.
 Attributes: ${a.key_attributes}
 Red Flags: ${a.red_flags}
 Depth: ${a.depth}

@@ -1,5 +1,5 @@
 import { fileSearchTool, hostedMcpTool, Agent, Runner, withTrace, tool } from "@openai/agents";
-import { startApifyScrape, checkApifyRun, getApifyResults, performGoogleSearch, scrapeCompanyWebsite } from "./services/apify.js"; // Import performGoogleSearch and scrapeCompanyWebsite
+import { startApifyScrape, checkApifyRun, getApifyResults, performGoogleSearch, scrapeCompanyWebsite, scanSiteStructure, scrapeSpecificPages } from "./services/apify.js"; // Import dynamic tools
 import { GeminiModel } from "./services/gemini.js"; // Import GeminiModel
 import { ClaudeModel } from "./services/claude.js"; // Import ClaudeModel
 import { z } from "zod";
@@ -154,11 +154,19 @@ export const runAgentWorkflow = async (input, config) => {
         if (agentName === 'company_profiler') {
             return [
                 tool({
-                    name: "scrape_company_website",
-                    description: "Deep research: Scrape home, about, services, and pricing pages for a domain.",
+                    name: "scan_site_structure",
+                    description: "Step 1: Scan homepage/sitemap to discover available pages/links.",
                     parameters: z.object({ domain: z.string() }),
                     execute: async ({ domain }) => {
-                        return await scrapeCompanyWebsite(domain, apifyToken, checkCancellation);
+                        return await scanSiteStructure(domain, apifyToken, checkCancellation);
+                    }
+                }),
+                tool({
+                    name: "scrape_specific_pages",
+                    description: "Step 2: Scrape valid URLs found in the scan step.",
+                    parameters: z.object({ urls: z.array(z.string()) }),
+                    execute: async ({ urls }) => {
+                        return await scrapeSpecificPages(urls, apifyToken, checkCancellation);
                     }
                 })
             ];
@@ -189,6 +197,9 @@ export const runAgentWorkflow = async (input, config) => {
                 // Capture baseline titles from ICP to prevent hallucinations
                 if (cfg.jobTitles && Array.isArray(cfg.jobTitles)) {
                     companyContext.baselineTitles = cfg.jobTitles;
+                }
+                if (cfg.surveys && cfg.surveys.company_profiler && cfg.surveys.company_profiler.manual_research) {
+                    companyContext.manualResearch = cfg.surveys.company_profiler.manual_research;
                 }
             }
         } catch (e) { console.warn("Context fetch failed", e); }
@@ -306,7 +317,12 @@ CONTEXT: ${input.input_as_text}. PASS: ${leadLearning.pass}.`,
     const getProfilerAgent = () => new Agent({
         name: "Company Profiler",
         instructions: `GOAL: Deep research and business inference. 
-PROTOCOL: Use 'scrape_company_website' for each domain.
+PROTOCOL:
+1. Call 'scan_site_structure(domain)' to see available links.
+2. REASON: Compare links against manual instructions. Select 3-5 most relevant URLs (e.g. portfolio, projects, team).
+3. Call 'scrape_specific_pages([urls])' to get deep content.
+4. Output strict profile based on ALL gathered data.
+
 STRICTURE: Output a strict structured profile:
 - Core offer: What do they sell?
 - Target customer: Who do they sell to?
@@ -314,6 +330,7 @@ STRICTURE: Output a strict structured profile:
 - Company size estimate: Size based on web evidence.
 - Buying signals: Expansion, hiring, pain points.
 NO creative writing. NO outreach content.
+MANUAL RESEARCH INSTRUCTIONS: ${companyContext.manualResearch || "None provided."}
 Assign 'match_score' (1-10) against goal: ${companyContext.goal}.`,
         model: getSafeModel('profiler'),
         model: getSafeModel('profiler'),
