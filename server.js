@@ -444,6 +444,67 @@ app.post('/api/icps', requireAuth, async (req, res) => {
     }
 })
 
+
+// 5. Enrich Lead (LeadMagic)
+app.post('/api/leads/:id/enrich', requireAuth, async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        // 1. Get Lead
+        const { rows } = await query('SELECT * FROM leads WHERE id = $1', [id]);
+        if (rows.length === 0) return res.status(404).json({ error: 'Lead not found' });
+
+        const lead = rows[0];
+
+        // 2. Validate
+        if (!lead.linkedin_url) {
+            return res.status(400).json({ error: 'Lead is missing LinkedIn URL' });
+        }
+
+        // 3. Call LeadMagic
+        const enrichedData = await leadMagic.enrichByLinkedin(lead.linkedin_url);
+
+        if (!enrichedData) {
+            return res.json({ success: false, message: 'No mobile number found' });
+        }
+
+        // 4. Update Database
+        // Append new numbers to existing phone_numbers JSONB array
+        let existingPhones = lead.phone_numbers || [];
+        if (!Array.isArray(existingPhones)) existingPhones = [];
+
+        // Check if we already have this number to avoid dupes
+        const newNumber = enrichedData.mobile_phone;
+        const exists = existingPhones.some(p => p.number === newNumber);
+
+        if (!exists && newNumber) {
+            existingPhones.push({
+                type: 'mobile',
+                number: newNumber,
+                source: 'LeadMagic',
+                added_at: new Date().toISOString()
+            });
+
+            // Also add work phone if present
+            if (enrichedData.work_phone) {
+                existingPhones.push({ type: 'work', number: enrichedData.work_phone, source: 'LeadMagic' });
+            }
+
+            await query(
+                `UPDATE leads SET phone_numbers = $1, status = 'ENRICHED', updated_at = NOW() WHERE id = $2`,
+                [JSON.stringify(existingPhones), id]
+            );
+
+            return res.json({ success: true, phones: existingPhones });
+        } else {
+            return res.json({ success: true, message: 'Number already exists or invalid', phones: existingPhones });
+        }
+
+    } catch (err) {
+        console.error('Enrichment failed:', err);
+        res.status(500).json({ error: err.message || 'Enrichment failed' });
+    }
+});
 // --- Knowledge Base & Files ---
 
 // 1. Create Internal Strategy Guide & Vector Store

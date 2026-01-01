@@ -1,5 +1,5 @@
 import { fileSearchTool, hostedMcpTool, Agent, Runner, withTrace, tool } from "@openai/agents";
-import { startApifyScrape, checkApifyRun, getApifyResults, performGoogleSearch, scrapeCompanyWebsite, scanSiteStructure, scrapeSpecificPages } from "./services/apify.js"; // Import dynamic tools
+import { checkApifyRun, getApifyResults, performGoogleSearch, scrapeCompanyWebsite, scanSiteStructure, scrapeSpecificPages } from "./services/apify.js"; // Import dynamic tools
 import { GeminiModel } from "./services/gemini.js"; // Import GeminiModel
 import { ClaudeModel } from "./services/claude.js"; // Import ClaudeModel
 import { z } from "zod";

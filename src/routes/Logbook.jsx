@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Book, Clock, CheckCircle, AlertCircle, Trash2, ChevronDown, ChevronUp, RefreshCw, ThumbsUp, Building, Users, Filter, Check, DollarSign, Zap, Activity } from 'lucide-react'
-import { fetchRuns, fetchLeads, approveLead, deleteLead } from '../utils/api'
+import { fetchRuns, fetchLeads, approveLead, deleteLead, enrichLead } from '../utils/api'
 
 const Logbook = () => {
     const [activeTab, setActiveTab] = useState('history') // 'history' | 'disqualified'
@@ -21,6 +21,7 @@ const Logbook = () => {
     const [selectedLeadId, setSelectedLeadId] = useState(null)
     const [approvalReason, setApprovalReason] = useState('')
     const [submittingApproval, setSubmittingApproval] = useState(false)
+    const [enrichingId, setEnrichingId] = useState(null)
 
     useEffect(() => {
         if (activeTab === 'history') {
@@ -165,6 +166,24 @@ const Logbook = () => {
         } catch (error) {
             console.error('Failed to delete leads:', error)
             alert('Failed to delete some leads. Please try again.')
+        }
+    }
+
+    const handleEnrichLead = async (leadId) => {
+        setEnrichingId(leadId)
+        try {
+            const result = await enrichLead(leadId)
+            if (result.success) {
+                alert(`Enrichment Successful! Found ${result.phones?.length || 0} numbers.`)
+                // Refresh runs or local update could be complex, for now just alert
+            } else {
+                alert(`Enrichment result: ${result.message}`)
+            }
+        } catch (err) {
+            console.error(err)
+            alert('Enrichment failed.')
+        } finally {
+            setEnrichingId(null)
         }
     }
 
@@ -405,6 +424,15 @@ const Logbook = () => {
                                                                                 {lead.email}
                                                                             </a>
                                                                         )}
+                                                                        {lead.linkedin_url && (
+                                                                            <button
+                                                                                onClick={() => handleEnrichLead(lead.id)}
+                                                                                disabled={enrichingId === lead.id}
+                                                                                className="ml-auto text-xs bg-teal-500/10 text-teal-400 px-2 py-1 rounded hover:bg-teal-500/20 disabled:opacity-50"
+                                                                            >
+                                                                                {enrichingId === lead.id ? '...' : '+ Enrich Phone'}
+                                                                            </button>
+                                                                        )}
                                                                     </div>
                                                                 ))}
                                                             </div>
@@ -441,10 +469,10 @@ const Logbook = () => {
                                                                                         <span className="font-medium text-white">{log.stage || log.step}</span>
                                                                                         {log.status && (
                                                                                             <span className={`text-xs px-2 py-0.5 rounded ${log.status === 'completed' ? 'bg-green-500/20 text-green-400' :
-                                                                                                    log.status === 'started' ? 'bg-blue-500/20 text-blue-400' :
-                                                                                                        log.status === 'partial' ? 'bg-orange-500/20 text-orange-400' :
-                                                                                                            log.status === 'failed' ? 'bg-red-500/20 text-red-400' :
-                                                                                                                'bg-gray-500/20 text-gray-400'
+                                                                                                log.status === 'started' ? 'bg-blue-500/20 text-blue-400' :
+                                                                                                    log.status === 'partial' ? 'bg-orange-500/20 text-orange-400' :
+                                                                                                        log.status === 'failed' ? 'bg-red-500/20 text-red-400' :
+                                                                                                            'bg-gray-500/20 text-gray-400'
                                                                                                 }`}>
                                                                                                 {log.status}
                                                                                             </span>
