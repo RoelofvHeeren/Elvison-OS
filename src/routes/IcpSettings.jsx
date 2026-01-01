@@ -80,7 +80,6 @@ const IcpSettings = () => {
                 // Company Finder
                 geography: companyAnswers.geography || [],
                 org_types: companyAnswers.org_types || [],
-                allocator_types: companyAnswers.allocator_types || [],
                 intent: companyAnswers.intent,
 
                 surveys: surveys

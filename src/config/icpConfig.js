@@ -10,38 +10,31 @@ export const COUNTRY_SUGGESTIONS = [
 ]
 
 export const ORG_TYPE_OPTIONS = [
-    "Family Office",
-    "Private Equity Firm",
-    "Real Estate Investment Manager",
-    "Pension Fund",
-    "Institutional Asset Manager",
-    "Debt Fund / Mortgage Fund",
-    "Developer Operator",
-    "Venture Capital Firm",
-    "Hedge Fund",
-    "Sovereign Wealth Fund"
+    "Enterprise / Public Company",
+    "Small & Medium Business (SMB)",
+    "Startup / Scale-up",
+    "Private Equity / Venture Capital",
+    "Government / Public Sector",
+    "Non-Profit / NGO",
+    "Agency / Consultancy"
 ]
 
 export const JOB_FUNCTION_OPTIONS = [
-    "Investments",
-    "Acquisitions",
-    "Portfolio Management",
-    "Capital Markets",
-    "Private Equity",
-    "Fund Management",
-    "Development",
-    "Finance / Treasury"
+    "Executive / Leadership",
+    "Sales / Revenue",
+    "Marketing / Growth",
+    "Product / Engineering",
+    "Operations",
+    "Finance",
+    "HR / People",
+    "Legal"
 ]
 
 export const EXCLUDED_FUNCTION_OPTIONS = [
-    "HR / People",
-    "Marketing / Communications",
-    "Operations / Admin",
-    "IT / Technology",
-    "Legal / Compliance",
-    "Client Services / IR",
-    "Sales / Business Development",
-    "Enterprise Solutions"
+    "Entry Level / Interns",
+    "Support / Admin",
+    "Recruiting / Talent",
+    "Students"
 ]
 
 export const SENIORITY_OPTIONS = [
@@ -54,10 +47,10 @@ export const SENIORITY_OPTIONS = [
 ]
 
 export const INTENT_OPTIONS = [
-    "Direct Capital Allocation (High Strictness)",
-    "Strategic Partnerships (Medium Strictness)",
-    "Deal Sourcing (Medium Strictness)",
-    "Market Mapping (Low Strictness / Broad)"
+    "Direct Sales / Customer Acquisition (High Strictness)",
+    "Partnership / Channel Development (Medium Strictness)",
+    "Market Research / Analysis (Low Strictness)",
+    "Recruiting / Headhunting"
 ]
 
 export const DATA_FIELD_OPTIONS = [
@@ -75,16 +68,14 @@ export const AGENTS = [
         name: 'Company Finder',
         description: 'Define your strictly qualified Ideal Customer Profile (ICP).',
         questions: [
-            { id: 'org_types', label: 'Target Organization Types', type: 'multi-select', options: ORG_TYPE_OPTIONS, helper: 'Select all that apply.' },
-            { id: 'geography', label: 'Geographic Scope', type: 'multi-select', options: COUNTRY_SUGGESTIONS, helper: 'Where must they be based or investing?' },
-            { id: 'allocator_types', label: 'Institutional Allocators?', type: 'radio', options: ['Include Large Allocators (Pension/Sovereign)', 'Exclude Large Allocators (Private Capital Only)'] },
-            { id: 'intent', label: 'Outreach Intent Strategy', type: 'radio', options: INTENT_OPTIONS, helper: 'This determines how strict our filtering is.' },
-            { id: 'quality_bar', label: 'Quality / Niche Criteria', placeholder: 'e.g. "AUM > $100M", "Focus on Multifamily", "Must have ESG mandate"', type: 'textarea' },
+            { id: 'org_types', label: 'Target Industries / Sectors', type: 'multi-select', options: ORG_TYPE_OPTIONS, helper: 'Select all that apply.' },
+            { id: 'geography', label: 'Geographic Scope', type: 'multi-select', options: COUNTRY_SUGGESTIONS, helper: 'Where are they headquartered?' },
+            { id: 'intent', label: 'Campaign Goal', type: 'radio', options: INTENT_OPTIONS, helper: 'This determines how strict our filtering is.' },
+            { id: 'quality_bar', label: 'Specific Criteria', placeholder: 'e.g. "Revenue > $10M", "Using HubSpot", "Recently funded"', type: 'textarea' },
         ],
         template: (a) => `You are an expert lead researcher. Find companies matching this strict profile:
 Org Types: ${Array.isArray(a.org_types) ? a.org_types.join(', ') : a.org_types}
 Geo: ${Array.isArray(a.geography) ? a.geography.join(', ') : a.geography}
-Allocator Rule: ${a.allocator_types}
 Intent: ${a.intent}
 Quality Bar: ${a.quality_bar}
 Output the list in JSON format.`
@@ -94,14 +85,16 @@ Output the list in JSON format.`
         name: 'Company Profiler',
         description: 'Verify companies against your strict intent.',
         questions: [
-            { id: 'key_attributes', label: 'Must-Have Attributes', placeholder: 'e.g. "Must be an LP", "Must have invested in Canada"', type: 'textarea' },
-            { id: 'red_flags', label: 'Deal-Breakers / Red Flags', placeholder: 'e.g. "Focuses only on Tech", "Defunct website", "Broker/Intermediary only"', type: 'textarea' },
-            { id: 'depth', label: 'Analysis Depth', type: 'radio', options: ['Quick Scan (Homepage)', 'Deep Dive (News, LinkedIn, Reports)'] },
-        ],
-        template: (a) => `You are a Research Analyst. Profile these companies.
+            questions: [
+                { id: 'key_attributes', label: 'Must-Have Attributes', placeholder: 'e.g. "Active blog", "Hiring for Sales", "Uses Shopify"', type: 'textarea' },
+                { id: 'red_flags', label: 'Deal-Breakers / Red Flags', placeholder: 'e.g. "Competitor products", "Negative reviews", "No website"', type: 'textarea' },
+                { id: 'depth', label: 'Analysis Depth', type: 'radio', options: ['Quick Scan (Homepage)', 'Deep Dive (News, LinkedIn, Reports)'] },
+            ],
+            template: (a) => `You are a Research Analyst. Profile these companies.
 Attributes: ${a.key_attributes}
 Red Flags: ${a.red_flags}
 Depth: ${a.depth}
+Manual Research Instructions: ${a.manual_research}
 Verify against criteria.`
     },
     {

@@ -1,15 +1,11 @@
 import {
-    startApifyScrape,
     checkApifyRun,
     getApifyResults,
     startApolloDomainScrape
 } from "./apify.js";
-import {
-    startScraperCityScrape,
-    checkScraperCityRun,
-    getScraperCityResults,
-    buildApolloSearchUrl
-} from "./scrapercity.js";
+
+// --- DEFAULTS ---
+
 
 // --- DEFAULTS ---
 const defaultTitles = ["ceo", "founder", "owner", "partner", "president", "director", "vp", "head", "principal", "executive"];
@@ -38,10 +34,9 @@ const defaultSeniorities = ["c_suite", "executive", "owner", "partner", "vp", "d
 export class LeadScraperService {
     constructor(config = {}) {
         this.config = config;
-        // Default to Apollo Domain Scraper - best quality + instant + cheap ($0.0026/lead)
+        // Default to Apollo Domain Scraper
         this.provider = config.provider || process.env.LEAD_SCRAPER_PROVIDER || 'apify_apollo_domain';
         this.apifyApiKey = config.apifyApiKey || process.env.APIFY_API_TOKEN;
-        this.scraperCityApiKey = config.scraperCityApiKey || process.env.SCRAPERCITY_API_KEY;
     }
 
     /**
@@ -51,71 +46,22 @@ export class LeadScraperService {
      * @param {Function} checkCancellation - Optional callback to check for cancellation
      * @returns {Promise<Array<StandardLead>>}
      */
+
+
     async fetchLeads(companies, filters = {}, logStep = console.log, checkCancellation = null) {
         if (!companies || companies.length === 0) return [];
 
         logStep('Lead Finder', `Fetching leads for ${companies.length} companies using ${this.provider}...`);
 
         switch (this.provider) {
-            case 'apify_pipelinelabs':
-                return this._fetchFromApify(companies, filters, logStep, checkCancellation);
             case 'apify_apollo_domain':
                 return this._fetchFromApolloDomain(companies, filters, filters.idempotencyKey, logStep, checkCancellation);
-            case 'scrapercity_apollo':
-                return this._fetchFromScraperCity(companies, filters, logStep, checkCancellation);
             default:
-                throw new Error(`Unknown scraper provider: ${this.provider}`);
+                throw new Error(`Unknown or deprecated scraper provider: ${this.provider}`);
         }
     }
 
-    /**
-     * Internal: Fetch from Apify PipelineLabs Actor (legacy)
-     */
-    async _fetchFromApify(companies, filters, logStep, checkCancellation) {
-        // 1. Prepare Names
-        const targetNames = companies.map(c => c.company_name).filter(n => n && n.trim().length > 0);
 
-        // 2. Start Job
-        const runId = await startApifyScrape(this.apifyApiKey, targetNames, filters);
-
-        // 3. Poll for Completion
-        const POLL_INTERVAL = 5000;
-        const MAX_WAIT = 600; // 10 minutes
-        let isComplete = false;
-        let datasetId = null;
-        let attempts = 0;
-
-        while (!isComplete && attempts < MAX_WAIT) {
-            // Check for cancellation
-            if (checkCancellation && await checkCancellation()) {
-                const { abortApifyRun } = await import("./apify.js");
-                await abortApifyRun(this.apifyApiKey, runId);
-                return [];
-            }
-
-            await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
-            const statusRes = await checkApifyRun(this.apifyApiKey, runId);
-
-            if (statusRes.status === 'SUCCEEDED' || statusRes.status === 'ABORTED') {
-                isComplete = true;
-                datasetId = statusRes.datasetId;
-                if (statusRes.status === 'ABORTED') console.warn('[PipelineLabs] Run ABORTED (likely cost limit). Fetching partial results.');
-            } else if (statusRes.status === 'FAILED') {
-                throw new Error(`Apify run failed with status: ${statusRes.status}`);
-            }
-            attempts++;
-        }
-
-        if (!datasetId) {
-            throw new Error('Scrape timed out or returned no dataset.');
-        }
-
-        // 4. Fetch Results
-        const rawItems = await getApifyResults(this.apifyApiKey, datasetId);
-
-        // 5. Normalize Data
-        return this._normalizeApifyResults(rawItems, companies);
-    }
 
     /**
      * Internal: Fetch from Apollo Domain Scraper (Apify Actor T1XDXWc1L92AfIJtd)
@@ -318,107 +264,9 @@ export class LeadScraperService {
         }
     }
 
-    /**
-     * Internal: Fetch from ScraperCity Apollo Scraper
-     */
-    async _fetchFromScraperCity(companies, filters, logStep, checkCancellation) {
-        // 1. Build company names
-        const targetNames = companies.map(c => c.company_name).filter(n => n && n.trim().length > 0);
 
-        if (targetNames.length === 0) {
-            console.warn('[ScraperCity] No valid company names provided.');
-            return [];
-        }
 
-        // 2. Build Apollo Search URL
-        const apolloUrl = buildApolloSearchUrl(targetNames, filters);
-        console.log(`[ScraperCity] Apollo URL: ${apolloUrl.substring(0, 100)}...`);
 
-        // 3. Calculate count: aim for ~3-5 leads per company
-        const targetCount = Math.min(targetNames.length * 5, 100); // Max 100 per batch
-
-        // 4. Start Scrape
-        const runId = await startScraperCityScrape(this.scraperCityApiKey, apolloUrl, targetCount);
-
-        // 5. Poll for Completion
-        const POLL_INTERVAL = 5000;
-        const MAX_ATTEMPTS = 120; // 10 minutes max
-        let isComplete = false;
-        let attempts = 0;
-
-        while (!isComplete && attempts < MAX_ATTEMPTS) {
-            // Check for cancellation (ScraperCity doesn't have an easy abort API in our wrapper yet, 
-            // but we can stop polling to at least free up the worker)
-            if (checkCancellation && await checkCancellation()) {
-                return [];
-            }
-
-            await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
-            const statusRes = await checkScraperCityRun(this.scraperCityApiKey, runId);
-
-            console.log(`[ScraperCity] Poll ${attempts + 1}: Status = ${statusRes.status || statusRes.state}`);
-
-            const status = (statusRes.status || statusRes.state || '').toLowerCase();
-            if (status === 'completed' || status === 'succeeded' || status === 'done') {
-                isComplete = true;
-            } else if (status === 'failed' || status === 'error') {
-                throw new Error(`ScraperCity run failed: ${statusRes.message || 'Unknown error'}`);
-            }
-            attempts++;
-        }
-
-        if (!isComplete) {
-            throw new Error('ScraperCity scrape timed out.');
-        }
-
-        // 6. Download Results
-        const rawItems = await getScraperCityResults(this.scraperCityApiKey, runId);
-        console.log(`[ScraperCity] Downloaded ${rawItems.length} raw leads.`);
-
-        // 7. Normalize Data
-        return this._normalizeScraperCityResults(rawItems, companies);
-    }
-
-    /**
-     * Normalize Apify results to Standard Lead format
-     */
-    _normalizeApifyResults(rawItems, qualifiedCompanies) {
-        return rawItems.map(item => {
-            // Name Parsing
-            let firstName = item.firstName || item.first_name || '';
-            let lastName = item.lastName || item.last_name || '';
-            if (!firstName && item.fullName) {
-                const parts = item.fullName.split(' ');
-                firstName = parts[0];
-                lastName = parts.slice(1).join(' ');
-            }
-
-            // Company Matching
-            const scrapedCompany = item.orgName || item.companyName;
-            const companyDomain = item.companyDomain || item.orgWebsite;
-
-            // Try to find the original qualified company to restore context (profile, etc)
-            const originalCompany = qualifiedCompanies.find(c =>
-                (c.domain && companyDomain && c.domain.includes(companyDomain)) ||
-                (scrapedCompany && c.company_name && c.company_name.toLowerCase().includes(scrapedCompany.toLowerCase()))
-            ) || {};
-
-            return {
-                first_name: firstName,
-                last_name: lastName,
-                email: item.email || item.workEmail || item.personalEmail,
-                title: item.position || item.title || item.jobTitle,
-                linkedin_url: item.linkedinUrl || item.linkedin_url || item.profileUrl,
-                company_name: scrapedCompany || originalCompany.company_name || 'Unknown',
-                company_domain: companyDomain || originalCompany.domain,
-                company_website: item.orgWebsite || originalCompany.website || '',
-                company_profile: originalCompany.company_profile || '',
-                city: item.city || item.location,
-                seniority: item.seniority,
-                raw_data: item
-            };
-        });
-    }
 
     /**
      * Normalize Apollo Domain Scraper results to Standard Lead format
@@ -462,6 +310,26 @@ export class LeadScraperService {
 
             // Tier 3 is remaining (No Email + Weak Title)
 
+            // --- PHONE NUMBER PARSING ---
+            let phoneNumbers = [];
+            // Strategy: Gather all possible phone fields
+            if (item.phone) phoneNumbers.push({ type: 'generic', number: item.phone });
+            if (item.phone_numbers && Array.isArray(item.phone_numbers)) {
+                // If it's an array of objects or strings, normalize it
+                item.phone_numbers.forEach(p => {
+                    if (typeof p === 'string') phoneNumbers.push({ type: 'other', number: p });
+                    else if (p.raw_number) phoneNumbers.push({ type: p.type || 'other', number: p.raw_number });
+                    else if (p.number) phoneNumbers.push({ type: p.type || 'other', number: p.number });
+                });
+            }
+            // Check for direct fields in standard Apify/Apollo schema
+            if (item.mobile_phone) phoneNumbers.push({ type: 'mobile', number: item.mobile_phone });
+            if (item.corporate_phone) phoneNumbers.push({ type: 'work', number: item.corporate_phone });
+            if (item.home_phone) phoneNumbers.push({ type: 'home', number: item.home_phone });
+
+            // Deduplicate
+            phoneNumbers = [...new Map(phoneNumbers.map(item => [item.number, item])).values()];
+
             return {
                 first_name: item.firstName || '',
                 last_name: item.lastName || '',
@@ -480,43 +348,12 @@ export class LeadScraperService {
                 industry: item.organizationIndustry || '',
                 company_size: item.organizationSize || '',
                 tier: tier, // NEW
+                phone_numbers: phoneNumbers, // NEW: Added phone numbers
                 raw_data: item
             };
         });
     }
 
-    /**
-     * Normalize ScraperCity Apollo results to Standard Lead format
-     */
-    _normalizeScraperCityResults(rawItems, qualifiedCompanies) {
-        // ScraperCity Apollo data shape (based on Apollo.io data):
-        // { first_name, last_name, email, title, linkedin_url, organization_name, ... }
-        return rawItems.map(item => {
-            const scrapedCompany = item.organization_name || item.company || item.orgName;
-            const companyDomain = item.organization_website || item.website_url;
 
-            // Match to our qualified companies
-            const originalCompany = qualifiedCompanies.find(c =>
-                (c.domain && companyDomain && companyDomain.includes(c.domain)) ||
-                (scrapedCompany && c.company_name && c.company_name.toLowerCase().includes(scrapedCompany.toLowerCase()))
-            ) || {};
-
-            return {
-                first_name: item.first_name || '',
-                last_name: item.last_name || '',
-                email: item.email || item.primary_email || '',
-                title: item.title || item.headline || '',
-                linkedin_url: item.linkedin_url || item.linkedin || '',
-                company_name: scrapedCompany || originalCompany.company_name || 'Unknown',
-                company_domain: companyDomain || originalCompany.domain || '',
-                company_website: item.organization_website || originalCompany.website || '',
-                company_profile: originalCompany.company_profile || '',
-                city: item.city || item.location || '',
-                seniority: item.seniority || '',
-                phone: item.phone || item.mobile_phone || item.corporate_phone || '',
-                raw_data: item
-            };
-        });
-    }
 }
 

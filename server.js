@@ -424,6 +424,26 @@ app.post('/api/agents/config', requireAuth, async (req, res) => {
     }
 })
 
+// 4. Create New ICP Strategy
+app.post('/api/icps', requireAuth, async (req, res) => {
+    const { name, config, agent_config } = req.body
+
+    if (!name) return res.status(400).json({ error: 'ICP Name is required' })
+
+    try {
+        const { rows } = await query(
+            `INSERT INTO icps (user_id, name, config, agent_config) 
+             VALUES ($1, $2, $3, $4)
+             RETURNING id, name, created_at`,
+            [req.userId, name, config || {}, agent_config || {}]
+        )
+        res.json({ success: true, icp: rows[0] })
+    } catch (err) {
+        console.error('Failed to create ICP:', err)
+        res.status(500).json({ error: 'Database error' })
+    }
+})
+
 // --- Knowledge Base & Files ---
 
 // 1. Create Internal Strategy Guide & Vector Store

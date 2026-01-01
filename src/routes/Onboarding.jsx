@@ -25,7 +25,7 @@ const PREMIUM_BUTTON_SECONDARY = "px-6 py-3 border border-white/30 hover:bg-whit
 import TagInput from '../components/TagInput'
 
 const StepWelcome = ({ onNext }) => (
-    <div className="flex flex-col items-center justify-center p-12 text-center h-full max-w-4xl mx-auto drop-shadow-lg">
+    <div className="flex flex-col items-center justify-center p-12 text-center h-full max-w-7xl mx-auto drop-shadow-lg">
         <div className="mb-8 p-6 rounded-2xl bg-black/40 border border-teal-500/30 shadow-[0_0_30px_rgba(20,184,166,0.2)] animate-pulse backdrop-blur-md">
             <img src="/logo-columns.png" alt="Elvison" className="w-16 h-16 object-contain" />
         </div>
@@ -52,7 +52,7 @@ const StepWelcome = ({ onNext }) => (
 )
 
 const StepCompanyInfo = ({ onNext, onBack, data, onChange }) => (
-    <div className="flex flex-col items-center justify-center h-full w-full max-w-2xl mx-auto">
+    <div className="flex flex-col items-center justify-center h-full w-full max-w-7xl mx-auto">
         <div className="w-full text-center mb-12">
             <h2 className="text-4xl font-serif font-bold mb-4 text-white drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)]">Company Information</h2>
             <p className="text-gray-200 text-lg drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]">First, tell us a little about who you are.</p>
@@ -183,7 +183,7 @@ const StepAgentSurvey = ({ agent, answers, setAnswers, onNext, onBack, onGenerat
     const progress = ((qIndex + 1) / agent.questions.length) * 100
 
     return (
-        <div className="max-w-3xl mx-auto h-full flex flex-col justify-center relative">
+        <div className="max-w-7xl mx-auto h-full flex flex-col justify-center relative">
             {/* Header / Info */}
             <div className="flex items-center gap-6 mb-12 drop-shadow-lg">
                 <div className="w-16 h-16 shrink-0 bg-white/10 rounded-2xl flex items-center justify-center border border-white/20 backdrop-blur-md shadow-lg">
@@ -316,7 +316,7 @@ const StepCostEstimator = ({ onNext, onBack, targetCompanies = 50, maxLeads = 3 
     const noiseRisk = targetCompanies > 100 ? "High" : "Low"
 
     return (
-        <div className="flex flex-col items-center justify-center h-full max-w-2xl mx-auto text-center">
+        <div className="flex flex-col items-center justify-center h-full max-w-7xl mx-auto text-center">
             <div className="mb-6 rounded-full bg-teal-500/10 p-4 border border-teal-500/30 shadow-[0_0_20px_rgba(20,184,166,0.2)]">
                 <Users className="w-10 h-10 text-teal-400" />
             </div>
@@ -470,7 +470,7 @@ const StepComplete = ({ onLaunch, isSaving }) => {
     const isReady = creationDone
 
     return (
-        <div className="flex flex-col items-center justify-center h-full max-w-4xl mx-auto text-center">
+        <div className="flex flex-col items-center justify-center h-full max-w-7xl mx-auto text-center">
             <h2 className="text-5xl font-serif font-bold mb-12 text-white drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)]">System Status</h2>
             <div className="w-full max-w-2xl bg-black/40 backdrop-blur-xl border border-white/10 rounded-xl p-8 mb-12 font-mono text-left shadow-2xl min-h-[300px]">
                 {statusLines.map((line, idx) => (
@@ -625,7 +625,7 @@ const Onboarding = () => {
     const [isLoaded, setIsLoaded] = useState(false)
     const [step, setStep] = useState(mode === 'create_icp' ? 'company_info' : 'welcome')
     const [currentAgentIndex, setCurrentAgentIndex] = useState(0)
-    const [userData, setUserData] = useState({ userName: 'Roelof', companyName: '' })
+    const [userData, setUserData] = useState({ userName: '', companyName: '' })
     const [surveyAnswers, setSurveyAnswers] = useState({})
 
     // ... (rest of state vars)
@@ -643,7 +643,7 @@ const Onboarding = () => {
                 const parsed = JSON.parse(savedState)
                 setStep(parsed.step || 'welcome')
                 setCurrentAgentIndex(parsed.currentAgentIndex || 0)
-                setUserData(parsed.userData || { userName: 'Roelof', companyName: '' })
+                setUserData(parsed.userData || { userName: '', companyName: '' })
                 setSurveyAnswers(parsed.surveyAnswers || {})
                 setCrmColumns(parsed.crmColumns || [])
                 setGeneratedPrompts(parsed.generatedPrompts || {})
@@ -789,7 +789,6 @@ const Onboarding = () => {
                 // Company Finder Filters
                 geography: companyAnswers.geography || [],
                 org_types: companyAnswers.org_types || [],
-                allocator_types: companyAnswers.allocator_types || [],
                 intent: companyAnswers.intent,
 
                 // Keep raw surveys too if needed
