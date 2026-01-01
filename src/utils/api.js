@@ -128,18 +128,3 @@ export const fetchHealth = async () => {
   return data
 }
 
-export const enrichLead = async (leadId) => {
-    const token = await getToken()
-    const res = await fetch(`${API_URL}/api/leads/${leadId}/enrich`, {
-        method: 'POST',
-        headers: {
-            'Authorization': `Bearer ${token}`
-        }
-    })
-
-    if (!res.ok) {
-        throw new Error('Failed to enrich lead')
-    }
-
-    return res.json()
-}
