@@ -1408,70 +1408,62 @@ app.post('/api/agents/run', requireAuth, async (req, res) => {
             }))
         };
 
-        await query(
-            `UPDATE workflow_runs SET status = $2, completed_at = NOW(), stats = $3 WHERE id = $1`,
-            [runId, dbStatus, JSON.stringify(stats)]
-        )
+        // Helper to update run status
+        const updateRunStatus = async (status, errLog = null, stats = null) => {
+            await query(
+                `UPDATE workflow_runs SET status = $2, completed_at = NOW(), error_log = $3, stats = $4 WHERE id = $1`,
+                [runId, status, errLog, stats ? JSON.stringify(stats) : null]
+            );
+        };
+
+        // SAVE GRANULAR LOGS (Success/Partial Path)
+        await saveWorkflowLogs(runId, stats);
+
         await query(
             `INSERT INTO agent_results (run_id, output_data) VALUES ($1, $2)`,
             [runId, JSON.stringify(outputDataForStorage)]
-        )
+        );
 
-        // SAVE GRANULAR LOGS (Cost)
-        if (stats.cost && stats.cost.calls && Array.isArray(stats.cost.calls)) {
-            try {
-                for (const call of stats.cost.calls) {
-                    await query(
-                        `INSERT INTO workflow_logs (run_id, agent_name, model_name, input_tokens, output_tokens, cost, duration_seconds, metadata)
-                         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-                        [
-                            runId,
-                            call.agent,
-                            call.model,
-                            call.inputTokens || 0,
-                            call.outputTokens || 0,
-                            call.cost || 0,
-                            call.duration || 0,
-                            call.metadata || {}
-                        ]
-                    );
-                }
-                console.log(`Saved ${stats.cost.calls.length} workflow logs.`);
-            } catch (logErr) {
-                console.error("Failed to save workflow logs:", logErr);
-            }
-        }
-
-        // If partial success, also save an error log with the warning message
+        // If partial success/error, update error log
         if (isPartialSuccess && result.errors && result.errors.length > 0) {
             const errorMessages = result.errors.map(e => e.message).join('; ');
-            await query(
-                `UPDATE workflow_runs SET error_log = $2 WHERE id = $1`,
-                [runId, errorMessages]
-            );
+            await query(`UPDATE workflow_runs SET error_log = $2 WHERE id = $1`, [runId, errorMessages]);
         }
 
-        res.write(`event: result\ndata: ${JSON.stringify(result)}\n\n`)
-        res.write(`event: done\ndata: {}\n\n`)
-    } catch (error) {
-        console.error('Workflow failed:', error)
+        // Final Status Update
+        await query(
+            `UPDATE workflow_runs SET status = $2, completed_at = NOW(), stats = $3 WHERE id = $1`,
+            [runId, dbStatus, JSON.stringify(stats)]
+        );
 
-        // Extract partial stats if available (from target validation failure)
-        const partialStats = error.partialStats || {
-            error_message: error.message,
-            partial_results: true
-        };
+        res.write(`event: result\ndata: ${JSON.stringify(result)}\n\n`);
+        res.write(`event: done\ndata: {}\n\n`);
+
+    } catch (error) {
+        console.error('Workflow failed:', error);
+
+        // Attempt to extract stats from the error object if properly attached
+        const errorStats = error.stats || error.partialStats || {};
+
+        // SAVE GRANULAR LOGS (Error Path) - CRITICAL: Always save logs if we have them
+        if (runId && errorStats) {
+            await saveWorkflowLogs(runId, errorStats);
+        }
 
         try {
-            await query(
-                `UPDATE workflow_runs SET status = 'FAILED', completed_at = NOW(), error_log = $2, stats = $3 WHERE id = $1`,
-                [runId, error.message || String(error), JSON.stringify(partialStats)]
-            )
-        } catch (dbErr) { console.error("DB update failed during error handling", dbErr) }
+            if (runId) {
+                await query(
+                    `UPDATE workflow_runs SET status = 'FAILED', completed_at = NOW(), error_log = $2, stats = $3 WHERE id = $1`,
+                    [runId, error.message || String(error), JSON.stringify(errorStats)]
+                );
+            }
+        } catch (dbErr) {
+            console.error("DB update failed during error handling", dbErr);
+        }
 
-        res.write(`event: error\ndata: {"message": "${error.message || 'Workflow execution failed'}"}\n\n`)
+        res.write(`event: error\ndata: {"message": "${error.message || 'Workflow execution failed'}"}\n\n`);
     } finally {
-        res.end()
+        res.end();
     }
 })
 
