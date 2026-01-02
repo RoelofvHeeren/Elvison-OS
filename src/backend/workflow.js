@@ -160,6 +160,7 @@ export const runAgentWorkflow = async (input, config) => {
                     if (profiler.manual_research) companyContext.manualResearch = profiler.manual_research;
                     if (profiler.key_attributes) companyContext.keyAttributes = profiler.key_attributes;
                     if (profiler.red_flags) companyContext.redFlags = profiler.red_flags;
+                    if (profiler.profile_content) companyContext.profileContent = profiler.profile_content;
                 }
 
                 // --- CRITICAL: Populate Filters from ICP Config ---
@@ -353,14 +354,20 @@ OUTPUT FORMAT: Return JSON:
 {"results": [{"company_name": "${candidate.companyName}", "domain": "${candidate.domain}", "company_profile": "...", "match_score": 8}]}
 
 COMPANY PROFILE REQUIREMENTS (CRITICAL):
-The company_profile MUST be 2-4 sentences long and MUST include:
-- What the company does (their core business/niche)
-- Quantitative data if available (e.g., "$X billion in assets", "X projects", "X employees", "founded in XXXX")
-- Their geographic focus or market position
-- Why they might be a good fit for our services
+The company_profile MUST be 4-10 sentences long and comprehensive. Include ALL of the following:
+1. Company overview: What the company does (their core business/niche)
+2. Scale & Size: Quantitative data (e.g., "$X billion in assets", "X projects", "X employees", "founded in XXXX")
+3. Geographic focus: Where they operate (cities, regions, countries)
+4. Key services/products: What specific services or products they offer
+5. Notable achievements: Awards, rankings, major projects, partnerships
+6. Market position: Their competitive position or unique value proposition
+7. Why they might be a good fit for our services
+
+USER-SPECIFIC PROFILE REQUIREMENTS:
+${companyContext.profileContent || "Extract any notable data points about the company's size, focus, and market position."}
 
 BAD EXAMPLE (too short): "Fiera Capital manages assets."
-GOOD EXAMPLE: "Fiera Capital is a Montreal-based investment manager with $180 billion in assets under management, specializing in alternative investments including real estate and private debt. They have a strong track record in Canadian institutional markets and are actively expanding their private credit portfolio."
+GOOD EXAMPLE (4-10 sentences): "Fiera Capital is a Montreal-based investment manager founded in 2003, managing over $180 billion in assets across multiple asset classes. They specialize in alternative investments including real estate, private debt, and infrastructure, with particular strength in Canadian institutional markets. The firm operates offices across Canada, the US, and Europe, serving pension funds, endowments, and high-net-worth individuals. Fiera has been recognized as one of Canada's fastest-growing independent asset managers and recently expanded their private credit portfolio through strategic acquisitions. They are actively seeking partnerships with real estate developers for co-investment opportunities in the residential sector."
 
 SCORING CRITERIA (match_score 1-10):
 - 10: Perfect match (Must have: ${companyContext.keyAttributes || "Clear fit"})
@@ -372,7 +379,7 @@ USER RESEARCH INSTRUCTIONS:
 "${companyContext.manualResearch || "Check for fit."}"
 
 GOAL: ${companyContext.goal}`,
-                            userMessage: `Analyze ${candidate.companyName}. Create a DETAILED company profile (2-4 sentences with specifics). Verify these MUST-HAVES: ${companyContext.keyAttributes || 'General fit'}`,
+                            userMessage: `Analyze ${candidate.companyName}. Create a COMPREHENSIVE company profile (4-10 sentences with specific details from their website). Focus on: ${companyContext.profileContent || 'size, market position, services'}. Verify these MUST-HAVES: ${companyContext.keyAttributes || 'General fit'}`,
                             tools: [
                                 {
                                     name: "scan_site_structure",
@@ -621,12 +628,12 @@ TEMPLATE: ${companyContext.outreachTemplate || "Hi {{First_name}}, saw you're at
 INSTRUCTIONS:
 1. Replace {{...}} placeholders using the lead's data.
 2. For {{research fact}} or similar placeholders, EXTRACT a specific, impressive fact from the 'company_profile' field.
-3. CRITICAL: 'linkedin_message' MUST be under 300 characters (including variables). Use abbreviations if needed to fit.
+3. CRITICAL: 'connection_request' MUST be under 300 characters. This is the LinkedIn connection request message.
 4. Be professional but conversational.
 5. No hashtags or emojis.
 
 OUTPUT FORMAT: Return JSON:
-{"leads": [{"first_name": "...", "email": "...", "linkedin_message": "...", "email_subject": "...", "email_body": "..."}]}`,
+{"leads": [{"first_name": "...", "email": "...", "connection_request": "LinkedIn message under 300 chars", "email_subject": "...", "email_body": "..."}]}`,
                 userMessage: `Draft outreach for these leads. Use their 'company_profile' to find specific facts: ${JSON.stringify(globalLeads.slice(0, 20))}`,
                 tools: [],
                 maxTurns: 2,
@@ -669,12 +676,14 @@ OUTPUT FORMAT: Return JSON:
                 finalLeads = globalLeads.map(original => {
                     const update = outreachMap.get(original.email);
                     if (update) {
+                        // connection_request is the source of truth, copy to linkedin_message for compatibility
+                        const connReq = update.connection_request || original.connection_request;
                         return {
                             ...original,
                             email_message: update.email_message || update.email_body || original.email_message,
-                            linkedin_message: update.linkedin_message || original.linkedin_message,
+                            linkedin_message: connReq, // Use connection_request for both
                             email_subject: update.email_subject || original.email_subject,
-                            connection_request: update.connection_request || original.connection_request
+                            connection_request: connReq
                         };
                     }
                     return original;
