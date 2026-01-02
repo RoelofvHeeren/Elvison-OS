@@ -152,8 +152,21 @@ export const runAgentWorkflow = async (input, config) => {
                 if (cfg.jobTitles && Array.isArray(cfg.jobTitles)) {
                     companyContext.baselineTitles = cfg.jobTitles;
                 }
-                if (cfg.surveys && cfg.surveys.company_profiler && cfg.surveys.company_profiler.manual_research) {
-                    companyContext.manualResearch = cfg.surveys.company_profiler.manual_research;
+                if (cfg.surveys && cfg.surveys.company_profiler) {
+                    const profiler = cfg.surveys.company_profiler;
+                    if (profiler.manual_research) companyContext.manualResearch = profiler.manual_research;
+                    if (profiler.key_attributes) companyContext.keyAttributes = profiler.key_attributes;
+                    if (profiler.red_flags) companyContext.redFlags = profiler.red_flags;
+                }
+
+                // --- CRITICAL: Populate Filters from ICP Config ---
+                // If filters were not passed explicitly, use ICP config
+                if (Object.keys(filters).length === 0 || !filters.job_titles) {
+                    if (cfg.job_titles) filters.job_titles = cfg.job_titles;
+                    if (cfg.seniority) filters.seniority = cfg.seniority;
+                    if (cfg.excluded_functions) filters.excluded_functions = cfg.excluded_functions;
+                    if (cfg.max_contacts) filters.maxLeads = cfg.max_contacts;
+                    if (cfg.geography) filters.geography = cfg.geography;
                 }
             }
         } catch (e) { console.warn("Context fetch failed", e); }
@@ -200,6 +213,8 @@ export const runAgentWorkflow = async (input, config) => {
         let totalSearches = 0;
         const MAX_SEARCHES = 20;
         let masterQualifiedList = [];
+        let totalDiscovered = 0;
+        let totalDisqualified = 0;
 
         // --- Phase 1: Discovery & Profiling Loop ---
         // User Requirement: Stop ONLY when 30 qualified companies are found (or target met)
@@ -279,6 +294,7 @@ CRITICAL RULES:
                 });
 
                 candidates = (normalizedFinder.results || []).filter(c => !scrapedNamesSet.has(c.company_name || c.companyName));
+                totalDiscovered += candidates.length;
             } catch (e) {
                 logStep('Company Finder', `Failed: ${e.message}`);
             }
@@ -323,13 +339,16 @@ OUTPUT FORMAT: Return JSON:
 {"results": [{"company_name": "${candidate.companyName}", "domain": "${candidate.domain}", "company_profile": "...", "match_score": 8}]}
 
 SCORING CRITERIA (match_score 1-10):
-- 10: Perfect match
+- 10: Perfect match (Must have: ${companyContext.keyAttributes || "Clear fit"})
 - 7-9: Good fit
 - 4-6: Maybe
-- 1-3: Poor fit
+- 1-3: Poor fit (Red Flags: ${companyContext.redFlags || "None defined"})
+
+USER RESEARCH INSTRUCTIONS:
+"${companyContext.manualResearch || "Check for fit."}"
 
 GOAL: ${companyContext.goal}`,
-                            userMessage: `Analyze ${candidate.companyName}`,
+                            userMessage: `Analyze ${candidate.companyName}. Verify these MUST-HAVES: ${companyContext.keyAttributes || 'General fit'}`,
                             tools: [
                                 {
                                     name: "scan_site_structure",
@@ -384,7 +403,10 @@ GOAL: ${companyContext.goal}`,
 
                 const qualified = batchResults.filter(c => {
                     const isHighQuality = (c.match_score || 0) >= 7;
-                    if (!isHighQuality) logStep('Profiler', `🗑️ Dropped ${c.company_name} (Score: ${c.match_score}/10)`);
+                    if (!isHighQuality) {
+                        logStep('Profiler', `🗑️ Dropped ${c.company_name} (Score: ${c.match_score}/10)`);
+                        totalDisqualified++;
+                    }
                     return isHighQuality;
                 });
 
@@ -449,7 +471,8 @@ For each lead:
 4. Mark is_valid: true if data is usable, false if unsalvageable
 
 OUTPUT FORMAT: Return JSON:
-{"leads": [{"first_name": "...", "last_name": "...", "email": "...", "is_valid": true, ...}]}`,
+{"leads": [{"first_name": "...", "last_name": "...", "email": "...", "is_valid": true, "company_profile": "PRESERVE_ORIGINAL_VALUE", ...}]}
+CRITICAL: You MUST preserve the 'company_profile' field for every lead. Do not modify or drop it.`,
                                 userMessage: `Normalize these ambiguous leads: ${JSON.stringify(ambiguousLeads)}`,
                                 tools: [],
                                 maxTurns: 2,
@@ -485,19 +508,20 @@ OUTPUT FORMAT: Return JSON:
                                 apiKey: googleKey,
                                 modelName: 'gemini-2.0-flash',
                                 agentName: 'Lead Ranker',
-                                instructions: `You are a lead ranking agent. Score each lead from 1-10 based on fit.
+                                instructions: `You are a lead ranking agent.Score each lead from 1 - 10 based on fit.
 
 SCORING CRITERIA:
-- 10: Perfect title match, decision maker at target company
-- 7-9: Good title, relevant role
-- 4-6: Related role, might be useful
-- 1-3: Low relevance
+                                - 10: Perfect title match, decision maker at target company
+                                - 7 - 9: Good title, relevant role
+                                - 4 - 6: Related role, might be useful
+                                - 1 - 3: Low relevance
 
 GOAL: ${companyContext.goal}
 TARGET TITLES: ${companyContext.baselineTitles?.join(', ') || 'Decision makers'}
 
 OUTPUT FORMAT: Return JSON array with match_score added:
-{"leads": [{"first_name": "...", "match_score": 8, ...}]}`,
+                            { "leads": [{ "first_name": "...", "match_score": 8, "company_profile": "PRESERVE_ORIGINAL_VALUE", ...}] }
+CRITICAL: You MUST preserve the 'company_profile' field for every lead.Do not modify or drop it.`,
                                 userMessage: `Rank these leads: ${JSON.stringify(validatedLeads.slice(0, 50))}`,
                                 tools: [],
                                 maxTurns: 2,
@@ -558,14 +582,15 @@ OUTPUT FORMAT: Return JSON array with match_score added:
 TEMPLATE: ${companyContext.outreachTemplate || "Hi {{First_name}}, saw you're at {{Company}}. We help companies like yours with X."}
 
 INSTRUCTIONS:
-1. Replace {{...}} placeholders with real data
-2. Keep it short (under 75 words)
-3. Be professional but conversational
-4. No hashtags or emojis unless appropriate
+1. Replace {{...}} placeholders using the lead's data.
+2. For {{research fact}} or similar placeholders, EXTRACT a specific, impressive fact from the 'company_profile' field.
+3. Keep it short (under 75 words).
+4. Be professional but conversational.
+5. No hashtags or emojis.
 
 OUTPUT FORMAT: Return JSON:
 {"leads": [{"first_name": "...", "email": "...", "linkedin_message": "...", "email_subject": "...", "email_body": "..."}]}`,
-                userMessage: `Draft outreach for these leads: ${JSON.stringify(globalLeads.slice(0, 20))}`,
+                userMessage: `Draft outreach for these leads. Use their 'company_profile' to find specific facts: ${JSON.stringify(globalLeads.slice(0, 20))}`,
                 tools: [],
                 maxTurns: 2,
                 logStep: logStep
@@ -602,7 +627,10 @@ OUTPUT FORMAT: Return JSON:
             stats: {
                 total: globalLeads.length,
                 attempts,
-                cost: costTracker.getSummary()
+                cost: costTracker.getSummary(),
+                companies_discovered: masterQualifiedList.length + totalDisqualified,
+                qualified: masterQualifiedList.length,
+                disqualified: totalDisqualified
             }
         };
 
@@ -631,7 +659,15 @@ const saveLeadsToDB = async (leads, userId, icpId, logStep) => {
 
             await query(`INSERT INTO leads (company_name, person_name, email, job_title, linkedin_url, status, source, user_id, custom_data) 
                          VALUES ($1, $2, $3, $4, $5, 'NEW', 'Outbound Agent', $6, $7)`,
-                [lead.company_name, `${lead.first_name} ${lead.last_name}`, lead.email, lead.title, lead.linkedin_url, userId, { icp_id: icpId, score: lead.match_score, profile: lead.company_profile }]);
+                [lead.company_name, `${lead.first_name} ${lead.last_name}`, lead.email, lead.title, lead.linkedin_url, userId, {
+                    icp_id: icpId,
+                    score: lead.match_score,
+                    profile: lead.company_profile,
+                    email_message: lead.email_message || lead.email_body,
+                    linkedin_message: lead.linkedin_message,
+                    email_subject: lead.email_subject,
+                    connection_request: lead.connection_request
+                }]);
             count++;
         } catch (e) { console.error("Save error", e); }
     }
