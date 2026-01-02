@@ -972,6 +972,30 @@ app.get('/api/runs', requireAuth, async (req, res) => {
     }
 })
 
+// Get Single Run Status (for resumption)
+app.get('/api/runs/:id', requireAuth, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { rows } = await query(`
+            SELECT 
+                wr.*, 
+                ar.output_data
+            FROM workflow_runs wr
+            LEFT JOIN agent_results ar ON wr.id = ar.run_id
+            WHERE wr.id = $1 AND wr.user_id = $2
+        `, [id, req.userId]);
+
+        if (rows.length === 0) {
+            return res.status(404).json({ error: 'Run not found' });
+        }
+
+        res.json(rows[0]);
+    } catch (err) {
+        console.error('Failed to fetch run:', err);
+        res.status(500).json({ error: 'Database error' });
+    }
+})
+
 // Start Run
 app.post('/api/runs/start', requireAuth, async (req, res) => {
     const { agent_id, metadata } = req.body

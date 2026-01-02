@@ -71,6 +71,89 @@ const AgentRunner = () => {
         }
     }
 
+
+    // --- RESUMPTION LOGIC ---
+    const pollLogs = async (runId) => {
+        setIsRunning(true);
+        setActiveRunId(runId);
+
+        let polling = true;
+        const interval = setInterval(async () => {
+            if (!polling) return;
+            try {
+                // 1. Get Status
+                const statusRes = await fetch(`/api/runs/${runId}`);
+                if (!statusRes.ok) { // 404 or error
+                    clearInterval(interval);
+                    localStorage.removeItem('elvison_active_run_id');
+                    setIsRunning(false);
+                    return;
+                }
+                const runData = await statusRes.json();
+
+                // 2. Get Logs
+                const logRes = await fetch(`/api/runs/${runId}/logs`);
+                if (logRes.ok) {
+                    const { logs: newLogs } = await logRes.json();
+                    setLogs(newLogs.map(l => ({
+                        step: l.step,
+                        detail: l.message,
+                        timestamp: l.created_at
+                    })));
+                    if (newLogs.length > 0) {
+                        setCurrentStep(newLogs[newLogs.length - 1].step);
+                    }
+                }
+
+                // 3. Check Termination
+                if (runData.status === 'COMPLETED') {
+                    clearInterval(interval);
+                    setIsRunning(false);
+                    setResult({ leads: runData.output_data?.leads || [] }); // Rough approximation, usually full object
+                    setCurrentStep('Complete');
+                    localStorage.removeItem('elvison_active_run_id');
+                } else if (runData.status === 'FAILED' || runData.status === 'CANCELLED') {
+                    clearInterval(interval);
+                    setIsRunning(false);
+                    setError(runData.error_log || 'Run failed');
+                    localStorage.removeItem('elvison_active_run_id');
+                }
+            } catch (e) {
+                console.error("Polling error:", e);
+            }
+        }, 2000);
+
+        // Cleanup function for unmount (ref based usually, but here simplicity wins)
+        return () => clearInterval(interval);
+    };
+
+    const checkActiveRun = async () => {
+        const savedRunId = localStorage.getItem('elvison_active_run_id');
+        if (!savedRunId) return;
+
+        try {
+            const res = await fetch(`/api/runs/${savedRunId}`);
+            if (res.ok) {
+                const data = await res.json();
+                if (data.status === 'RUNNING' || data.status === 'PENDING') {
+                    console.log(`[Resumption] Resuming Run ${savedRunId}`);
+                    pollLogs(savedRunId);
+                } else {
+                    // It finished while we were gone
+                    localStorage.removeItem('elvison_active_run_id');
+                }
+            } else {
+                localStorage.removeItem('elvison_active_run_id');
+            }
+        } catch (e) {
+            console.error("Resumption check failed:", e);
+        }
+    };
+
+    useEffect(() => {
+        checkActiveRun();
+    }, []); // Run once on mount
+
     const handleRun = async () => {
         if (isRunning) return
         setIsRunning(true)
@@ -171,16 +254,20 @@ const AgentRunner = () => {
                                 if (data.step) setCurrentStep(data.step)
                             } else if (type === 'run_id') {
                                 setActiveRunId(data.runId)
+                                localStorage.setItem('elvison_active_run_id', data.runId); // PERSIST
                             } else if (type === 'result') {
                                 setResult(data)
                                 setCurrentStep('Complete')
                                 saveJobToHistory(data, null) // Save success
+                                localStorage.removeItem('elvison_active_run_id'); // CLEANUP
                             } else if (type === 'error') {
                                 setError(data.message)
                                 setIsRunning(false)
                                 saveJobToHistory(null, data.message)
+                                localStorage.removeItem('elvison_active_run_id'); // CLEANUP
                             } else if (type === 'done') {
                                 setIsRunning(false)
+                                localStorage.removeItem('elvison_active_run_id'); // CLEANUP
                             }
                         } catch (e) {
                             console.error('Error parsing SSE data', e)

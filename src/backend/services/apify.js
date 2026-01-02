@@ -144,7 +144,7 @@ export const buildApolloDomainPayload = (domains, filters = {}) => {
     }
 
     return {
-        companyDomain: cleanDomains,
+        companyDomains: cleanDomains,
         companyCountry: filters.countries || ["United States", "Canada", "United Kingdom"], // Broader default
         companyEmployeeSize: sizeMapping,
 
