@@ -1465,19 +1465,33 @@ app.post('/api/agents/run', requireAuth, async (req, res) => {
     } catch (error) {
         console.error('Workflow failed:', error);
 
-        // Attempt to extract stats from the error object if properly attached
-        const errorStats = error.stats || error.partialStats || {};
+        // CRITICAL: Extract cost data from error.stats (attached by workflow.js catch block)
+        const errorStats = error.stats || {};
+        const costData = errorStats.cost || {};
 
-        // SAVE GRANULAR LOGS (Error Path)
-        if (runId && errorStats) {
-            await saveWorkflowLogs(runId, errorStats);
-        }
+        // Build comprehensive stats object for DB storage (same structure as success path)
+        const statsForDB = {
+            partialStats: true,
+            error: error.message,
+            // Cost data (from CostTracker.getSummary() attached to error)
+            cost: costData.cost || { total: 0, formatted: '$0.00' },
+            tokens: costData.tokens || { input: 0, output: 0, total: 0 },
+            breakdown: costData.breakdown || { byAgent: {}, byModel: {} },
+            calls: costData.calls || [],
+            totalCalls: costData.totalCalls || 0,
+            // Execution timeline logs
+            execution_timeline: localExecutionLogs,
+            execution_logs: localExecutionLogs
+        };
+
+        console.log(`[Server] Saving FAILURE stats with ${localExecutionLogs.length} log entries and ${statsForDB.calls?.length || 0} API calls`);
 
         try {
             if (runId) {
                 // Save whatever logs we captured before failure
                 const outputDataForStorage = {
                     execution_logs: localExecutionLogs,
+                    execution_timeline: localExecutionLogs,
                     error: error.message
                 };
 
@@ -1489,7 +1503,7 @@ app.post('/api/agents/run', requireAuth, async (req, res) => {
 
                 await query(
                     `UPDATE workflow_runs SET status = 'FAILED', completed_at = NOW(), error_log = $2, stats = $3 WHERE id = $1`,
-                    [runId, error.message || String(error), JSON.stringify(errorStats)]
+                    [runId, error.message || String(error), JSON.stringify(statsForDB)]
                 );
             }
         } catch (dbErr) {

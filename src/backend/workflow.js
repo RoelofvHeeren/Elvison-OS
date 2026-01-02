@@ -378,185 +378,196 @@ STRICTURE: No decision-making. No research. No tone exploration.`,
         instructions: `GOAL: Normalize, validate, and store data.
 PROTOCOL: Use strict schema. Normalize names (CapitalCase), fix broken URLs, and validate emails.
 STRICTURE: LLM is fallback only. Zero creativity. If data is unsalvageable, mark is_valid: false.`,
-        model: getSafeModel('architect'),
         model: getSafeModel('architect')
         // outputType removed to prevent premature validation
     });
 
-    // --- Main Workflow Loop ---
-    let globalLeads = [];
-    let scrapedNamesSet = new Set();
-    const excludedNames = await getExcludedCompanyNames(userId);
-    const leadScraper = new LeadScraperService();
-    let attempts = 0;
-    const MAX_ATTEMPTS = 5; // Allow for thorough discovery
-    let totalSearches = 0;
-    const MAX_SEARCHES = 20;
-    let masterQualifiedList = [];
+    // --- Main Workflow Loop (Wrapped for error cost capture) ---
+    try {
+        let globalLeads = [];
+        let scrapedNamesSet = new Set();
+        const excludedNames = await getExcludedCompanyNames(userId);
+        const leadScraper = new LeadScraperService();
+        let attempts = 0;
+        const MAX_ATTEMPTS = 5; // Allow for thorough discovery
+        let totalSearches = 0;
+        const MAX_SEARCHES = 20;
+        let masterQualifiedList = [];
 
-    // --- Phase 1: Discovery & Profiling Loop ---
-    // User Requirement: Stop ONLY when 30 qualified companies are found (or target met)
-    while (masterQualifiedList.length < targetLeads && attempts < MAX_ATTEMPTS) {
-        if (await checkCancellation()) break;
-        attempts++;
-        logStep('Workflow', `Discovery Round ${attempts}: Collecting companies...`);
+        // --- Phase 1: Discovery & Profiling Loop ---
+        // User Requirement: Stop ONLY when 30 qualified companies are found (or target met)
+        while (masterQualifiedList.length < targetLeads && attempts < MAX_ATTEMPTS) {
+            if (await checkCancellation()) break;
+            attempts++;
+            logStep('Workflow', `Discovery Round ${attempts}: Collecting companies...`);
 
-        // 1. Discovery
-        let candidates = [];
-        try {
-            if (totalSearches >= MAX_SEARCHES) {
-                logStep('Company Finder', `🛑 Search limit reached (${MAX_SEARCHES}). Stopping discovery.`);
+            // 1. Discovery
+            let candidates = [];
+            try {
+                if (totalSearches >= MAX_SEARCHES) {
+                    logStep('Company Finder', `🛑 Search limit reached (${MAX_SEARCHES}). Stopping discovery.`);
+                    break;
+                }
+                totalSearches++;
+                const finderRes = await runAgentWithTracking(runner, getFinderAgent(), [
+                    { role: "user", content: `Find companies for: ${input.input_as_text}. Avoid: ${[...scrapedNamesSet, ...excludedNames, ...masterQualifiedList.map(c => c.company_name)].slice(0, 50).join(', ')}` }
+                ], costTracker, { maxTurns: 20 });
+
+                // HARD CONTRACT ENFORCEMENT
+                const normalizedFinder = enforceAgentContract({
+                    agentName: "Company Finder",
+                    rawOutput: finderRes.finalOutput,
+                    schema: CompanyFinderSchema
+                });
+
+                candidates = (normalizedFinder.results || []).filter(c => !scrapedNamesSet.has(c.company_name));
+            } catch (e) {
+                logStep('Company Finder', `Failed: ${e.message}`);
+            }
+
+            if (candidates.length === 0) {
+                logStep('Workflow', 'No new candidates found in this round.');
                 break;
             }
-            totalSearches++;
-            const finderRes = await runAgentWithTracking(runner, getFinderAgent(), [
-                { role: "user", content: `Find companies for: ${input.input_as_text}. Avoid: ${[...scrapedNamesSet, ...excludedNames, ...masterQualifiedList.map(c => c.company_name)].slice(0, 50).join(', ')}` }
-            ], costTracker, { maxTurns: 20 });
 
-            // HARD CONTRACT ENFORCEMENT
-            const normalizedFinder = enforceAgentContract({
-                agentName: "Company Finder",
-                rawOutput: finderRes.finalOutput,
-                schema: CompanyFinderSchema
-            });
+            // 2. Profiling & Filtering
+            try {
+                if (await checkCancellation()) break;
+                logStep('Company Profiler', `Analyzing ${candidates.length} candidates...`);
+                const profilerRes = await runAgentWithTracking(runner, getProfilerAgent(), [{ role: "user", content: JSON.stringify(candidates) }], costTracker, { maxTurns: 20 });
+                const profiled = profilerRes.finalOutput?.results || [];
 
-            candidates = (normalizedFinder.results || []).filter(c => !scrapedNamesSet.has(c.company_name));
-        } catch (e) {
-            logStep('Company Finder', `Failed: ${e.message}`);
-        }
+                const qualified = profiled.filter(c => {
+                    const isHighQuality = (c.match_score || 0) >= 7;
+                    if (!isHighQuality) logStep('Profiler', `🗑️ Dropped ${c.company_name} (Score: ${c.match_score}/10)`);
+                    return isHighQuality;
+                });
 
-        if (candidates.length === 0) {
-            logStep('Workflow', 'No new candidates found in this round.');
-            break;
-        }
-
-        // 2. Profiling & Filtering
-        try {
-            if (await checkCancellation()) break;
-            logStep('Company Profiler', `Analyzing ${candidates.length} candidates...`);
-            const profilerRes = await runAgentWithTracking(runner, getProfilerAgent(), [{ role: "user", content: JSON.stringify(candidates) }], costTracker, { maxTurns: 20 });
-            const profiled = profilerRes.finalOutput?.results || [];
-
-            const qualified = profiled.filter(c => {
-                const isHighQuality = (c.match_score || 0) >= 7;
-                if (!isHighQuality) logStep('Profiler', `🗑️ Dropped ${c.company_name} (Score: ${c.match_score}/10)`);
-                return isHighQuality;
-            });
-
-            masterQualifiedList.push(...qualified);
-            logStep('Company Profiler', `Round ${attempts}: +${qualified.length} Qualified. Total: ${masterQualifiedList.length}`);
-        } catch (e) {
-            logStep('Company Profiler', `Analysis failed: ${e.message}`);
-        }
-    }
-
-    // --- Phase 1 Check: Data Starvation Protection ---
-    if (masterQualifiedList.length === 0) {
-        logStep('Workflow', '❌ No qualified companies found after discovery. Stopping workflow to prevent hallucination.');
-        return {
-            status: 'failed',
-            leads: [],
-            stats: { total: 0, attempts, cost: costTracker.getSummary() },
-            error: "Discovery failed: No qualified companies found."
-        };
-    }
-
-    // --- Phase 2: Consolidated Lead Scraping (ONE Pass) ---
-    // Already protected by the check above, but keeping structure
-    if (masterQualifiedList.length > 0) {
-        logStep('Lead Finder', `🚀 Triggering Scraper for ALL ${masterQualifiedList.length} qualified companies...`);
-        try {
-            if (await checkCancellation()) return;
-
-            const leads = await leadScraper.fetchLeads(masterQualifiedList, filters, logStep, checkCancellation);
-
-            // --- Phase 2 Check: Data Starvation Protection ---
-            if (leads.length === 0) {
-                logStep('Workflow', '❌ No leads found from scraped companies. Stopping before Outreach.');
-                return {
-                    status: 'failed',
-                    leads: [],
-                    stats: { total: 0, attempts, cost: costTracker.getSummary() },
-                    error: "Scraping failed: No leads found."
-                };
+                masterQualifiedList.push(...qualified);
+                logStep('Company Profiler', `Round ${attempts}: +${qualified.length} Qualified. Total: ${masterQualifiedList.length}`);
+            } catch (e) {
+                logStep('Company Profiler', `Analysis failed: ${e.message}`);
             }
+        }
 
-            if (leads.length > 0) {
-                logStep('Data Architect', `Normalizing ${leads.length} leads...`);
+        // --- Phase 1 Check: Data Starvation Protection ---
+        if (masterQualifiedList.length === 0) {
+            logStep('Workflow', '❌ No qualified companies found after discovery. Stopping workflow to prevent hallucination.');
+            return {
+                status: 'failed',
+                leads: [],
+                stats: { total: 0, attempts, cost: costTracker.getSummary() },
+                error: "Discovery failed: No qualified companies found."
+            };
+        }
 
-                // 4. Data Architect: Validation & Normalization
-                const deterministicLeads = leads.filter(l => l.first_name && l.last_name && l.email);
-                const ambiguousLeads = leads.filter(l => !l.first_name || !l.last_name || !l.email);
-                let fixedLeads = [];
+        // --- Phase 2: Consolidated Lead Scraping (ONE Pass) ---
+        // Already protected by the check above, but keeping structure
+        if (masterQualifiedList.length > 0) {
+            logStep('Lead Finder', `🚀 Triggering Scraper for ALL ${masterQualifiedList.length} qualified companies...`);
+            try {
+                if (await checkCancellation()) return;
 
-                if (ambiguousLeads.length > 0) {
-                    try {
-                        const architectRes = await runAgentWithTracking(runner, getArchitectAgent(), [{ role: "user", content: `Normalize these ambiguous leads: ${JSON.stringify(ambiguousLeads)}` }], costTracker);
-                        fixedLeads = (architectRes.finalOutput?.leads || []).filter(l => l.is_valid);
-                    } catch (e) {
-                        logStep('Data Architect', `Normalization failed: ${e.message}`);
+                const leads = await leadScraper.fetchLeads(masterQualifiedList, filters, logStep, checkCancellation);
+
+                // --- Phase 2 Check: Data Starvation Protection ---
+                if (leads.length === 0) {
+                    logStep('Workflow', '❌ No leads found from scraped companies. Stopping before Outreach.');
+                    return {
+                        status: 'failed',
+                        leads: [],
+                        stats: { total: 0, attempts, cost: costTracker.getSummary() },
+                        error: "Scraping failed: No leads found."
+                    };
+                }
+
+                if (leads.length > 0) {
+                    logStep('Data Architect', `Normalizing ${leads.length} leads...`);
+
+                    // 4. Data Architect: Validation & Normalization
+                    const deterministicLeads = leads.filter(l => l.first_name && l.last_name && l.email);
+                    const ambiguousLeads = leads.filter(l => !l.first_name || !l.last_name || !l.email);
+                    let fixedLeads = [];
+
+                    if (ambiguousLeads.length > 0) {
+                        try {
+                            const architectRes = await runAgentWithTracking(runner, getArchitectAgent(), [{ role: "user", content: `Normalize these ambiguous leads: ${JSON.stringify(ambiguousLeads)}` }], costTracker);
+                            fixedLeads = (architectRes.finalOutput?.leads || []).filter(l => l.is_valid);
+                        } catch (e) {
+                            logStep('Data Architect', `Normalization failed: ${e.message}`);
+                        }
+                    }
+
+                    const validatedLeads = [...deterministicLeads, ...fixedLeads];
+
+                    // 5. Ranking & Deduplication
+                    if (validatedLeads.length > 0) {
+                        const rankRes = await runAgentWithTracking(runner, getApolloAgent(), [{ role: "user", content: `Rank these leads (Match 1-10) for ${companyContext.goal}: ${JSON.stringify(validatedLeads.slice(0, 50))}` }], costTracker);
+                        const ranked = rankRes.finalOutput?.leads || validatedLeads;
+                        const sorted = ranked.sort((a, b) => (b.match_score || 0) - (a.match_score || 0));
+
+                        const perCompany = {};
+                        sorted.forEach(l => {
+                            if (!perCompany[l.company_name]) perCompany[l.company_name] = [];
+                            if (perCompany[l.company_name].length < maxLeadsPerCompany) perCompany[l.company_name].push(l);
+                        });
+
+                        const added = Object.values(perCompany).flat();
+                        globalLeads.push(...added);
+                        logStep('Workflow', `✅ Finalized ${globalLeads.length} leads.`);
                     }
                 }
 
-                const validatedLeads = [...deterministicLeads, ...fixedLeads];
-
-                // 5. Ranking & Deduplication
-                if (validatedLeads.length > 0) {
-                    const rankRes = await runAgentWithTracking(runner, getApolloAgent(), [{ role: "user", content: `Rank these leads (Match 1-10) for ${companyContext.goal}: ${JSON.stringify(validatedLeads.slice(0, 50))}` }], costTracker);
-                    const ranked = rankRes.finalOutput?.leads || validatedLeads;
-                    const sorted = ranked.sort((a, b) => (b.match_score || 0) - (a.match_score || 0));
-
-                    const perCompany = {};
-                    sorted.forEach(l => {
-                        if (!perCompany[l.company_name]) perCompany[l.company_name] = [];
-                        if (perCompany[l.company_name].length < maxLeadsPerCompany) perCompany[l.company_name].push(l);
-                    });
-
-                    const added = Object.values(perCompany).flat();
-                    globalLeads.push(...added);
-                    logStep('Workflow', `✅ Finalized ${globalLeads.length} leads.`);
-                }
+                // Mark companies as processed
+                masterQualifiedList.forEach(c => scrapedNamesSet.add(c.company_name));
+            } catch (e) {
+                logStep('Lead Finder', `Scraping failed: ${e.message}`);
             }
+        }
 
-            // Mark companies as processed
-            masterQualifiedList.forEach(c => scrapedNamesSet.add(c.company_name));
+        // --- Outreach Generation ---
+        logStep('Outreach Creator', `Drafting messages for ${globalLeads.length} leads...`);
+        let finalLeads = [];
+        try {
+            const outreachRes = await runAgentWithTracking(runner, getOutreachAgent(), [{ role: "user", content: JSON.stringify(globalLeads.slice(0, 20)) }], costTracker);
+
+            // HARD CONTRACT ENFORCEMENT
+            const normalizedOutreach = enforceAgentContract({
+                agentName: "Outreach Creator",
+                rawOutput: outreachRes.finalOutput,
+                schema: OutreachCreatorSchema
+            });
+
+            finalLeads = normalizedOutreach.leads?.length > 0 ? normalizedOutreach.leads : globalLeads;
         } catch (e) {
-            logStep('Lead Finder', `Scraping failed: ${e.message}`);
+            logStep('Outreach Creator', `Failed: ${e.message}`);
+            if (e.message?.includes("API key not valid")) useGoogleFallback = true;
+            finalLeads = globalLeads;
         }
-    }
 
-    // --- Outreach Generation ---
-    logStep('Outreach Creator', `Drafting messages for ${globalLeads.length} leads...`);
-    let finalLeads = [];
-    try {
-        const outreachRes = await runAgentWithTracking(runner, getOutreachAgent(), [{ role: "user", content: JSON.stringify(globalLeads.slice(0, 20)) }], costTracker);
+        // --- Save to CRM ---
+        await saveLeadsToDB(finalLeads, userId, icpId, logStep);
 
-        // HARD CONTRACT ENFORCEMENT
-        const normalizedOutreach = enforceAgentContract({
-            agentName: "Outreach Creator",
-            rawOutput: outreachRes.finalOutput,
-            schema: OutreachCreatorSchema
-        });
+        return {
+            status: globalLeads.length >= targetLeads ? 'success' : 'partial',
+            leads: finalLeads,
+            stats: {
+                total: globalLeads.length,
+                attempts,
+                cost: costTracker.getSummary()
+            }
+        };
 
-        finalLeads = normalizedOutreach.leads?.length > 0 ? normalizedOutreach.leads : globalLeads;
-    } catch (e) {
-        logStep('Outreach Creator', `Failed: ${e.message}`);
-        if (e.message?.includes("API key not valid")) useGoogleFallback = true;
-        finalLeads = globalLeads;
-    }
-
-    // --- Save to CRM ---
-    await saveLeadsToDB(finalLeads, userId, icpId, logStep);
-
-    return {
-        status: globalLeads.length >= targetLeads ? 'success' : 'partial',
-        leads: finalLeads,
-        stats: {
-            total: globalLeads.length,
-            attempts,
+    } catch (error) {
+        // CRITICAL: Attach cost data to the error so server.js can save it even on failure
+        console.error('[Workflow] Error occurred, attaching cost data to error object');
+        error.stats = {
+            partialStats: true,
+            error: error.message,
             cost: costTracker.getSummary()
-        }
-    };
+        };
+        throw error; // Re-throw with attached cost data
+    }
 };
 
 /**
