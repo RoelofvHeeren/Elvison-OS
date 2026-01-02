@@ -188,19 +188,30 @@ const Logbook = () => {
     }
 
     const parseRunStats = (run) => {
-        // Parse metadata and output_data to extract stats
+        // Parse JSON fields safely
         const metadata = typeof run.metadata === 'string' ? JSON.parse(run.metadata) : (run.metadata || {})
         const outputData = typeof run.output_data === 'string' ? JSON.parse(run.output_data) : (run.output_data || {})
 
-        // Extract stats from workflow output (stats object) or result object
-        const stats = outputData.stats || metadata.stats || outputData || metadata || {}
+        // CRITICAL FIX: Read valid stats from run.stats (DB column) first, then fallback to output/metadata
+        const runStats = typeof run.stats === 'string' ? JSON.parse(run.stats) : (run.stats || {})
+
+        // Merge stats sources (Run Stats > Output Data Stats > Metadata Stats)
+        const stats = {
+            ...metadata.stats,
+            ...outputData.stats,
+            ...runStats
+        }
+
         const filtering = stats.filtering_breakdown || {}
         const leads = outputData.leads || metadata.leads || []
+
+        // CRITICAL FIX: Ensure costs are read from the merged stats object
         const apiCosts = stats.api_costs || {}
 
         // Extract execution timeline (new format) or execution logs (old format)
-        const executionTimeline = outputData.execution_timeline || metadata.execution_timeline || []
-        const executionLogs = outputData.execution_logs || metadata.execution_logs || outputData.executionLogs || metadata.executionLogs || []
+        // Verify both inside output_data AND the merged stats (in case it was saved there)
+        const executionTimeline = outputData.execution_timeline || stats.execution_timeline || []
+        const executionLogs = outputData.execution_logs || stats.execution_logs || []
 
         return {
             companies: stats.companies_discovered || stats.companiesFound || 0,
@@ -208,7 +219,7 @@ const Logbook = () => {
             qualified: filtering.qualified || stats.qualified || stats.leadsQualified || 0,
             disqualified: filtering.dropped || stats.dropped || stats.leadsDisqualified || 0,
             emailYield: stats.email_yield_percentage || stats.emailYield || 0,
-            logs: executionLogs.length > 0 ? executionLogs : executionTimeline,
+            logs: executionLogs.length > 0 ? executionLogs : executionTimeline, // Prioritize granular logs
             timeline: executionTimeline,
             leads: leads,
             companies_list: Array.from(new Set(leads.map(l => l.company_name).filter(Boolean))),
