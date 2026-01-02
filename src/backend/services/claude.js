@@ -52,13 +52,13 @@ export class ClaudeModel {
 
                     if (params && typeof params === 'object' && !params.parse) { // Not a Zod schema
                         params = { ...params }; // Clone
-                        delete params.$schema; // Remove $schema if present
 
-                        // FIX: Explicitly ensure type is 'object' if missing (required by Anthropic)
-                        if (!params.type) {
-                            console.log(`[ClaudeModel] Fixing missing type for ${t.name}`);
-                            params.type = 'object';
-                        }
+                        // SANITIZATION FOR ANTHROPIC
+                        delete params.$schema; // Remove $schema
+                        delete params.additionalProperties; // Remove additionalProperties (can cause issues)
+
+                        // FIX: Unconditionally set type to object
+                        params.type = 'object';
                     }
 
                     vercelTools[t.name] = {
