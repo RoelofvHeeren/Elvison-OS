@@ -194,8 +194,16 @@ export class GeminiModel {
             const response = result.response;
             const output = [];
 
+            // DETAILED LOGGING: Show exactly what Gemini returned
+            const candidate = response?.candidates?.[0];
+            console.log(`[GeminiModel] Response received. Candidate parts:`, JSON.stringify(candidate?.content?.parts?.map(p => ({
+                hasText: !!p.text,
+                hasFunctionCall: !!p.functionCall,
+                functionName: p.functionCall?.name || null,
+                textSnippet: p.text?.substring(0, 100) || null
+            })), null, 2));
+
             // Check for function calls
-            const candidate = response.candidates?.[0];
             if (candidate?.content?.parts) {
                 for (const part of candidate.content.parts) {
                     if (part.functionCall) {

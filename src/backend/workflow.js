@@ -270,7 +270,6 @@ export const runAgentWorkflow = async (input, config) => {
             - Only add new titles if they are strictly missing and highly relevant to the goal: ${companyContext.goal}
             Constraints: Be precise. Exclude 'intern', 'assistant' unless requested.
             Input: "${input.input_as_text}"`,
-            model: getSafeModel('refiner'),
             model: getSafeModel('refiner')
             // outputType removed to prevent premature validation
         });
