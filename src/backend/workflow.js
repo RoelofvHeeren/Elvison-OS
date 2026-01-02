@@ -659,13 +659,11 @@ OUTPUT FORMAT: Return JSON:
             // Merge AI output with existing leads to preserve data
             const newLeads = normalizedOutreach.leads || [];
 
-            // SAFETY: Enforce 300-char hard limit for LinkedIn
+            // SAFETY: Enforce 300-char hard limit for connection_request
             newLeads.forEach(l => {
-                if (l.linkedin_message && l.linkedin_message.length > 300) {
-                    // Try to preserve as much as possible, but we must truncate.
-                    // Ideally, the Agent should have handled this via the prompt.
-                    logStep('Outreach Creator', `⚠️ Message too long (${l.linkedin_message.length} chars). Truncating for ${l.email}.`);
-                    l.linkedin_message = l.linkedin_message.substring(0, 295) + '...';
+                if (l.connection_request && l.connection_request.length > 300) {
+                    logStep('Outreach Creator', `⚠️ Message too long (${l.connection_request.length} chars). Truncating for ${l.email}.`);
+                    l.connection_request = l.connection_request.substring(0, 295) + '...';
                 }
             });
 
@@ -676,14 +674,11 @@ OUTPUT FORMAT: Return JSON:
                 finalLeads = globalLeads.map(original => {
                     const update = outreachMap.get(original.email);
                     if (update) {
-                        // connection_request is the source of truth, copy to linkedin_message for compatibility
-                        const connReq = update.connection_request || original.connection_request;
                         return {
                             ...original,
                             email_message: update.email_message || update.email_body || original.email_message,
-                            linkedin_message: connReq, // Use connection_request for both
                             email_subject: update.email_subject || original.email_subject,
-                            connection_request: connReq
+                            connection_request: update.connection_request || original.connection_request
                         };
                     }
                     return original;
@@ -740,14 +735,13 @@ const saveLeadsToDB = async (leads, userId, icpId, logStep, forceStatus = 'NEW')
                 [lead.company_name, `${lead.first_name} ${lead.last_name}`, lead.email, lead.title, lead.linkedin_url, forceStatus, userId, {
                     icp_id: icpId,
                     score: lead.match_score,
-                    profile: lead.company_profile,
-                    company_website: lead.company_website || lead.company_domain, // NEW: Store website
-                    company_domain: lead.company_domain, // NEW: Store domain
+                    company_profile: lead.company_profile, // Renamed from 'profile' for clarity
+                    company_website: lead.company_website || lead.company_domain,
+                    company_domain: lead.company_domain,
                     email_message: lead.email_message || lead.email_body,
-                    linkedin_message: lead.linkedin_message,
                     email_subject: lead.email_subject,
-                    connection_request: lead.connection_request,
-                    disqualification_reason: lead.disqualification_reason // Save reason if present
+                    connection_request: lead.connection_request, // Single source for LinkedIn message
+                    disqualification_reason: lead.disqualification_reason
                 }]);
             count++;
         } catch (e) {
