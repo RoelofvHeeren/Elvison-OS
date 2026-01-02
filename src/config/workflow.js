@@ -19,13 +19,16 @@ export const WORKFLOW_CONFIG = {
     DEFAULT_LEADS_PER_COMPANY: 3,
 };
 
+// MODEL CONFIGURATION
+// All agents use Gemini 2.0 Flash (cheapest: $0.10/$0.40 per 1M tokens)
+// Except Company Profiler which uses Claude 3.5 Sonnet (best research: $3.00/$15.00 per 1M tokens)
 export const AGENT_MODELS = {
-    company_finder: "gemini-2.0-flash",    // Cheap, fast, 2025 standard
-    company_profiler: "claude-3-5-sonnet",  // Best research brain per dollar
-    apollo_lead_finder: "gpt-4-turbo",      // Reliable structured query generation
-    outreach_creator: "gemini-2.0-flash",   // Scales copy cheaply
-    data_architect: "claude-3-5-sonnet",    // Fallback for validaton
-    refiner: "gemini-2.0-flash",
+    company_finder: "gemini-2.0-flash",      // Discovery - cheap and fast
+    company_profiler: "claude-3-5-sonnet",   // Research - needs good reasoning
+    apollo_lead_finder: "gemini-2.0-flash",  // Structured queries - simple task
+    outreach_creator: "gemini-2.0-flash",    // Copy generation - scales cheaply
+    data_architect: "gemini-2.0-flash",      // Data normalization - simple task
+    // filter_refiner: REMOVED - redundant, user sets filters in onboarding
     default: "gemini-2.0-flash"
 };
 

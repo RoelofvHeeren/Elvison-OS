@@ -1,4 +1,4 @@
-import { fileSearchTool, hostedMcpTool, Agent, Runner, withTrace, tool } from "@openai/agents";
+import { Agent, Runner, tool } from "@openai/agents";
 import { checkApifyRun, getApifyResults, performGoogleSearch, scrapeCompanyWebsite, scanSiteStructure, scrapeSpecificPages } from "./services/apify.js"; // Import dynamic tools
 import { GeminiModel } from "./services/gemini.js"; // Import GeminiModel
 import { ClaudeModel } from "./services/claude.js"; // Import ClaudeModel
@@ -13,6 +13,7 @@ import { LeadScraperService } from "./services/lead-scraper-service.js";
 import { WORKFLOW_CONFIG, getEffectiveMaxLeads, AGENT_MODELS } from "../config/workflow.js";
 import { CostTracker, runAgentWithTracking } from "./services/cost-tracker.js";
 import { enforceAgentContract } from "./utils/agent-contract.js"; // Import contract enforcer
+import { runGeminiAgent, createTool } from "./services/direct-agent-runner.js"; // Direct Gemini runner
 
 // --- Schema Definitions ---
 console.log("✅ WORKFLOW.JS RELOADED - CLAUDE FIX ACTIVE");
@@ -259,50 +260,8 @@ export const runAgentWorkflow = async (input, config) => {
         return 'gpt-4-turbo';
     };
 
-    // --- OPTIMIZATION 1: LLM Filter Refiner ---
-    logStep('System', '🧠 Refining scraper filters based on user request...');
-    try {
-        const refinerAgent = new Agent({
-            name: "Filter Refiner",
-            instructions: `GOAL: Extract tactical lead filters. 
-            BASELINE TITLES (from User Onboarding): ${companyContext.baselineTitles.join(', ') || 'None selected'}
-            - If baseline titles exist, use them as the primary list.
-            - Only add new titles if they are strictly missing and highly relevant to the goal: ${companyContext.goal}
-            Constraints: Be precise. Exclude 'intern', 'assistant' unless requested.
-            Input: "${input.input_as_text}"`,
-            model: getSafeModel('refiner')
-            // outputType removed to prevent premature validation
-        });
-
-        const refinement = await runAgentWithTracking(runner, refinerAgent, [{ role: "user", content: "Generate filters." }], costTracker);
-
-        // HARD CONTRACT ENFORCEMENT
-        const AI_Filters = enforceAgentContract({
-            agentName: "Filter Refiner",
-            rawOutput: refinement.finalOutput, // Pass the output directly
-            schema: FilterRefinerSchema
-        });
-
-        // Merge AI filters with existing ones (User overrides take precedence if strict, but here we append)
-        if (AI_Filters.job_titles?.length) {
-            filters.job_titles = [...(filters.job_titles || []), ...AI_Filters.job_titles];
-            logStep('Filter Refiner', `➕ Added Job Titles: ${AI_Filters.job_titles.join(', ')}`);
-        }
-        if (AI_Filters.excluded_keywords?.length) {
-            filters.excluded_functions = [...(filters.excluded_functions || []), ...AI_Filters.excluded_keywords];
-            logStep('Filter Refiner', `⛔ Added Exclusions: ${AI_Filters.excluded_keywords.join(', ')}`);
-        }
-        if (AI_Filters.seniority?.length) {
-            filters.seniority = [...(filters.seniority || []), ...AI_Filters.seniority];
-        }
-    } catch (e) {
-        if (e.message?.includes("API key not valid") || e.message?.includes("400") || e.message?.includes("401")) {
-            logStep('Filter Refiner', `❌ Gemini/Anthropic Key Rejected. Stopping run to save costs.`);
-            throw new Error(`Authentication Error: ${e.message}`);
-        } else {
-            logStep('Filter Refiner', `⚠️ Refinement skipped: ${e.message}`);
-        }
-    }
+    // Filter Refiner REMOVED - User sets filters in onboarding, no need for LLM refinement
+    logStep('System', `Using filters from onboarding: ${JSON.stringify(filters)}`);
 
     // --- Agent Definitions with Dynamic Models ---
     const getFinderAgent = () => new Agent({
@@ -408,9 +367,51 @@ STRICTURE: LLM is fallback only. Zero creativity. If data is unsalvageable, mark
                     break;
                 }
                 totalSearches++;
-                const finderRes = await runAgentWithTracking(runner, getFinderAgent(), [
-                    { role: "user", content: `Find companies for: ${input.input_as_text}. Avoid: ${[...scrapedNamesSet, ...excludedNames, ...masterQualifiedList.map(c => c.company_name)].slice(0, 50).join(', ')}` }
-                ], costTracker, { maxTurns: 20 });
+
+                // Use direct Gemini runner with proper tool execution
+                const apifyToken = process.env.APIFY_API_TOKEN;
+                const finderRes = await runGeminiAgent({
+                    apiKey: googleKey,
+                    modelName: 'gemini-2.0-flash',
+                    agentName: 'Company Finder',
+                    instructions: `GOAL: Discover real companies via Google search.
+PROTOCOL: Use google_search_and_extract to find organic results.
+STRATEGY: 
+1. If a result is a direct company homepage, extract it.
+2. If a result is a LIST/DIRECTORY (e.g. "Top 10..."), READ THE SNIPPET. Extract company names mentioned in the snippet.
+3. INFER domains for well-known companies found in snippets if missing (e.g. "Toast" -> "toast.com").
+STRICTURE: Extract: Company name, Primary domain (best guess permitted), One-line description. 
+REJECT: The Directory itself (e.g. do not output "Yelp" as the company), but extracting companies FROM Yelp is okay.
+OUTPUT FORMAT: Return ONLY valid JSON with this structure: {"results": [{"companyName": "...", "domain": "...", "description": "..."}]}`,
+                    userMessage: `Find companies for: ${input.input_as_text}. Avoid: ${[...scrapedNamesSet, ...excludedNames, ...masterQualifiedList.map(c => c.company_name)].slice(0, 50).join(', ')}`,
+                    tools: [
+                        {
+                            name: "google_search_and_extract",
+                            description: "Search using Google and return organic results (Title, URL, Snippet).",
+                            parameters: {
+                                properties: { query: { type: "string", description: "Google search query" } },
+                                required: ["query"]
+                            },
+                            execute: async ({ query }) => {
+                                logStep('Company Finder', `🔍 Google Search: "${query}"`);
+                                const results = await performGoogleSearch(query, apifyToken, checkCancellation);
+                                return results.map(r => `NAME: ${r.title}\nURL: ${r.link}\nDESC: ${r.snippet}`).join('\n\n');
+                            }
+                        }
+                    ],
+                    maxTurns: 10,
+                    logStep: logStep
+                });
+
+                // Track cost
+                costTracker.recordCall({
+                    agent: 'Company Finder',
+                    model: 'gemini-2.0-flash',
+                    inputTokens: finderRes.usage?.inputTokens || 0,
+                    outputTokens: finderRes.usage?.outputTokens || 0,
+                    duration: 0,
+                    success: true
+                });
 
                 // HARD CONTRACT ENFORCEMENT
                 const normalizedFinder = enforceAgentContract({
@@ -419,7 +420,7 @@ STRICTURE: LLM is fallback only. Zero creativity. If data is unsalvageable, mark
                     schema: CompanyFinderSchema
                 });
 
-                candidates = (normalizedFinder.results || []).filter(c => !scrapedNamesSet.has(c.company_name));
+                candidates = (normalizedFinder.results || []).filter(c => !scrapedNamesSet.has(c.company_name || c.companyName));
             } catch (e) {
                 logStep('Company Finder', `Failed: ${e.message}`);
             }

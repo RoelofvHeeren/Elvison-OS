@@ -311,13 +311,15 @@ export function extractTokenUsage(runResult) {
         }
     }
 
-    // If we still don't have usage, estimate based on content length
+    // Debug: Log if usage is missing
     if (inputTokens === 0 && outputTokens === 0) {
+        console.warn(`[CostTracker] No usage found in runResult. Keys: ${Object.keys(runResult).join(', ')}. Estimating...`);
         // Rough estimation: ~4 chars per token
         const inputText = JSON.stringify(runResult.input || []);
         const outputText = JSON.stringify(runResult.finalOutput || {});
-        inputTokens = Math.ceil(inputText.length / 4);
-        outputTokens = Math.ceil(outputText.length / 4);
+        // Fallback to estimation only if inputs exist
+        if (inputText.length > 2) inputTokens = Math.ceil(inputText.length / 4);
+        if (outputText.length > 2) outputTokens = Math.ceil(outputText.length / 4);
     }
 
     return { inputTokens, outputTokens };
