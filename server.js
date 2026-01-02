@@ -1734,7 +1734,6 @@ app.post('/api/leads/import', requireAuth, upload.single('file'), async (req, re
 initDB().then(() => {
     app.listen(port, () => {
         console.log(`Server running on port ${port}`)
+        console.log("✅ SERVER.JS - LOG PERSISTENCE V2 & CLAUDE FIX ACTIVE");
     })
 })
-
-

@@ -50,7 +50,48 @@ export class ClaudeModel {
                     // Debug raw params
                     console.log(`[ClaudeModel] Raw params for ${t.name}:`, JSON.stringify(params, null, 2));
 
-                    if (params && typeof params === 'object' && !params.parse) { // Not a Zod schema
+                    // MANUAL ZOD CONVERSION (Hack for Anthropic Strictness)
+                    // If it looks like a Zod schema (has _def), manually construct JSON Schema
+                    if (params && params._def) {
+                        try {
+                            const def = params._def;
+                            if (def.typeName === 'ZodObject') {
+                                const properties = {};
+                                const required = [];
+
+                                for (const [key, schema] of Object.entries(def.shape())) {
+                                    let type = 'string'; // Default
+                                    const shapeType = schema._def.typeName;
+
+                                    if (shapeType === 'ZodString') type = 'string';
+                                    if (shapeType === 'ZodNumber') type = 'number';
+                                    if (shapeType === 'ZodBoolean') type = 'boolean';
+                                    if (shapeType === 'ZodArray') type = 'array';
+
+                                    properties[key] = { type };
+
+                                    // Handle Array items
+                                    if (type === 'array' && schema._def.type) {
+                                        // Simplify: assume string array for urls
+                                        properties[key].items = { type: 'string' };
+                                    }
+
+                                    if (!schema.isOptional()) {
+                                        required.push(key);
+                                    }
+                                }
+
+                                params = {
+                                    type: 'object',
+                                    properties,
+                                    required
+                                };
+                                console.log(`[ClaudeModel] Manually converted Zod schema for ${t.name}:`, JSON.stringify(params));
+                            }
+                        } catch (e) {
+                            console.error(`[ClaudeModel] Zod conversion failed for ${t.name}`, e);
+                        }
+                    } else if (params && typeof params === 'object' && !params.parse) { // Not a Zod schema
                         params = { ...params }; // Clone
 
                         // SANITIZATION FOR ANTHROPIC
