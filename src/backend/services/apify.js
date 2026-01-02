@@ -356,48 +356,43 @@ export const scanSiteStructure = async (domain, token = null, checkCancellation 
     const url = domain.startsWith('http') ? domain : `https://${domain}`;
     console.log(`[Local Scraper] Scanning structure for ${domain}...`);
 
-    let browser = null;
     try {
-        const puppeteer = (await import('puppeteer')).default;
-        browser = await puppeteer.launch({
-            headless: 'new',
-            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+        // Use cheerio for fast static analysis
+        const cheerio = (await import('cheerio')).load;
+        const response = await axios.get(url, {
+            timeout: 10000,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
         });
-        const page = await browser.newPage();
 
-        // Timeout 15s to be fast
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
+        const $ = cheerio(response.data);
 
-        // Get text content
-        const text = await page.evaluate(() => document.body.innerText.substring(0, 5000)); // Limit size
+        // Clean text
+        $('script, style, noscript, nav, footer, header, svg, img').remove();
+        const text = $('body').text().replace(/\s+/g, ' ').substring(0, 5000);
 
-        // Get internal links relevant to business
-        const links = await page.evaluate((baseUrl) => {
-            const anchors = Array.from(document.querySelectorAll('a'));
-            return anchors
-                .map(a => a.href)
-                .filter(href => href.includes(baseUrl) && !href.includes('#'))
-                .filter(href => {
-                    const lower = href.toLowerCase();
-                    return lower.includes('about') ||
-                        lower.includes('team') ||
-                        lower.includes('people') ||
-                        lower.includes('portfolio') ||
-                        lower.includes('project') ||
-                        lower.includes('invest');
-                })
-                .slice(0, 50); // Limit links
-        }, url.split('//')[1].split('/')[0]); // Simple base domain match
+        // Get internal links
+        const baseUrl = url.split('//')[1].split('/')[0];
+        const links = [];
+        $('a').each((i, el) => {
+            const href = $(el).attr('href');
+            if (href && (href.includes(baseUrl) || href.startsWith('/')) && !href.startsWith('#')) {
+                const fullUrl = href.startsWith('/') ? `${url.startsWith('https') ? 'https://' : 'http://'}${baseUrl}${href}` : href;
+                const lower = fullUrl.toLowerCase();
+                if (lower.includes('about') || lower.includes('team') || lower.includes('people') ||
+                    lower.includes('portfolio') || lower.includes('project') || lower.includes('invest')) {
+                    links.push(fullUrl);
+                }
+            }
+        });
 
         const uniqueLinks = [...new Set(links)];
-
-        return `HOMEPAGE SCAN (${url}):\n${text}\n\nDISCOVERED LINKS:\n${uniqueLinks.join('\n')}`;
+        return `HOMEPAGE SCAN (${url}):\n${text}\n\nDISCOVERED LINKS:\n${uniqueLinks.slice(0, 50).join('\n')}`;
 
     } catch (e) {
         console.warn(`[Local Scraper] Scan Error for ${domain}:`, e.message);
         return `Error scanning ${domain}: ${e.message}`;
-    } finally {
-        if (browser) await browser.close();
     }
 };
 
@@ -410,44 +405,32 @@ export const scrapeSpecificPages = async (urls, token = null, checkCancellation 
     if (!urls || urls.length === 0) return "No URLs provided.";
     console.log(`[Local Scraper] Targeted scraping of ${urls.length} pages...`);
 
-    let browser = null;
-    try {
-        const puppeteer = (await import('puppeteer')).default;
-        browser = await puppeteer.launch({
-            headless: 'new',
-            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
-        });
+    const results = [];
+    const cheerio = (await import('cheerio')).load;
 
-        const results = [];
-        for (const url of urls) {
-            if (checkCancellation && await checkCancellation()) break;
+    for (const url of urls) {
+        if (checkCancellation && await checkCancellation()) break;
 
-            try {
-                const page = await browser.newPage();
-                // 10s timeout per page
-                await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 10000 });
+        try {
+            const response = await axios.get(url, {
+                timeout: 10000,
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                }
+            });
+            const $ = cheerio(response.data);
 
-                const text = await page.evaluate(() => {
-                    // Remove scripts, styles, nav, footer to reduce noise
-                    const trash = document.querySelectorAll('script, style, noscript, nav, footer, header');
-                    trash.forEach(t => t.remove());
-                    return document.body.innerText.substring(0, 8000); // Limit context
-                });
+            // Remove noise
+            $('script, style, noscript, nav, footer, header, svg, img').remove();
 
-                results.push(`--- PAGE: ${url} ---\n${text}`);
-                await page.close();
-            } catch (err) {
-                console.warn(`[Local Scraper] Failed to scrape ${url}: ${err.message}`);
-                results.push(`--- PAGE: ${url} ---\n(Error: ${err.message})`);
-            }
+            const text = $('body').text().replace(/\s+/g, ' ').substring(0, 8000);
+            results.push(`--- PAGE: ${url} ---\n${text}`);
+
+        } catch (err) {
+            console.warn(`[Local Scraper] Failed to scrape ${url}: ${err.message}`);
+            results.push(`--- PAGE: ${url} ---\n(Error: ${err.message})`);
         }
-
-        return results.join('\n\n');
-
-    } catch (e) {
-        console.warn(`[Local Scraper] Group Scrape Error:`, e.message);
-        return `Error scraping pages: ${e.message}`;
-    } finally {
-        if (browser) await browser.close();
     }
+
+    return results.join('\n\n');
 };
