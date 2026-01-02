@@ -289,82 +289,100 @@ CRITICAL RULES:
             }
 
             // 2. Profiling & Filtering - Use direct Gemini runner
+            // 2. Profiling & Filtering - Use direct Gemini runner
+            // SEQUENTIAL PROCESSING to control costs (Apify is expensive)
             try {
                 if (await checkCancellation()) break;
-                logStep('Company Profiler', `Analyzing ${candidates.length} candidates...`);
+                logStep('Company Profiler', `Analyzing ${candidates.length} candidates sequentially...`);
 
                 const apifyToken = process.env.APIFY_API_TOKEN;
-                const profilerRes = await runGeminiAgent({
-                    apiKey: googleKey,
-                    modelName: 'gemini-2.0-flash',
-                    agentName: 'Company Profiler',
-                    instructions: `You are a company research and qualification agent.
+                const batchResults = [];
 
-For each company provided, you need to:
-1. Use scan_site_structure to discover pages on their website
-2. Use scrape_specific_pages to get content from relevant pages (about, portfolio, team, etc.)
-3. Analyze the content to determine if they're a good fit
+                // Process each candidate one by one
+                for (const candidate of candidates) {
+                    if (await checkCancellation()) break;
 
-OUTPUT FORMAT: Return JSON with this structure:
-{"results": [{"company_name": "...", "domain": "...", "company_profile": "...", "match_score": 8}]}
+                    try {
+                        const profilerRes = await runGeminiAgent({
+                            apiKey: googleKey,
+                            modelName: 'gemini-2.0-flash',
+                            agentName: 'Company Profiler',
+                            instructions: `You are a company research and qualification agent.
+                            
+Analyze this specific company:
+NAME: ${candidate.companyName}
+DOMAIN: ${candidate.domain}
+DESC: ${candidate.description}
+
+You need to:
+1. Use scan_site_structure('${candidate.domain}') to see pages
+2. Use scrape_specific_pages([urls]) to get About/Team/Portfolio content
+3. Analyze if they are a good fit
+
+OUTPUT FORMAT: Return JSON:
+{"results": [{"company_name": "${candidate.companyName}", "domain": "${candidate.domain}", "company_profile": "...", "match_score": 8}]}
 
 SCORING CRITERIA (match_score 1-10):
-- 10: Perfect match - exactly what we're looking for
-- 7-9: Good fit - likely to be interested
-- 4-6: Maybe - some relevance but not ideal
-- 1-3: Poor fit - not what we're looking for
+- 10: Perfect match
+- 7-9: Good fit
+- 4-6: Maybe
+- 1-3: Poor fit
 
-GOAL: ${companyContext.goal}
-RED FLAGS TO WATCH FOR: ${companyContext.redFlags || 'None specified'}`,
-                    userMessage: `Analyze these companies and return qualified ones with profiles: ${JSON.stringify(candidates)}`,
-                    tools: [
-                        {
-                            name: "scan_site_structure",
-                            description: "Scan a website's homepage/sitemap to discover available pages and links",
-                            parameters: {
-                                properties: { domain: { type: "string", description: "Domain to scan, e.g. 'example.com'" } },
-                                required: ["domain"]
-                            },
-                            execute: async ({ domain }) => {
-                                logStep('Company Profiler', `📡 Scanning: ${domain}`);
-                                return await scanSiteStructure(domain, apifyToken, checkCancellation);
-                            }
-                        },
-                        {
-                            name: "scrape_specific_pages",
-                            description: "Scrape content from specific URLs",
-                            parameters: {
-                                properties: { urls: { type: "array", items: { type: "string" }, description: "URLs to scrape" } },
-                                required: ["urls"]
-                            },
-                            execute: async ({ urls }) => {
-                                logStep('Company Profiler', `📄 Scraping ${urls.length} pages`);
-                                return await scrapeSpecificPages(urls, apifyToken, checkCancellation);
-                            }
-                        }
-                    ],
-                    maxTurns: 5,
-                    logStep: logStep
-                });
+GOAL: ${companyContext.goal}`,
+                            userMessage: `Analyze ${candidate.companyName}`,
+                            tools: [
+                                {
+                                    name: "scan_site_structure",
+                                    description: "Scan a website's homepage/sitemap to discover available pages and links",
+                                    parameters: {
+                                        properties: { domain: { type: "string", description: "Domain to scan, e.g. 'example.com'" } },
+                                        required: ["domain"]
+                                    },
+                                    execute: async ({ domain }) => {
+                                        logStep('Company Profiler', `📡 Scanning: ${domain}`);
+                                        return await scanSiteStructure(domain, apifyToken, checkCancellation);
+                                    }
+                                },
+                                {
+                                    name: "scrape_specific_pages",
+                                    description: "Scrape content from specific URLs",
+                                    parameters: {
+                                        properties: { urls: { type: "array", items: { type: "string" }, description: "URLs to scrape" } },
+                                        required: ["urls"]
+                                    },
+                                    execute: async ({ urls }) => {
+                                        logStep('Company Profiler', `📄 Scraping ${urls.length} pages`);
+                                        return await scrapeSpecificPages(urls, apifyToken, checkCancellation);
+                                    }
+                                }
+                            ],
+                            maxTurns: 5,
+                            logStep: logStep
+                        });
 
-                // Track cost
-                costTracker.recordCall({
-                    agent: 'Company Profiler',
-                    model: 'gemini-2.0-flash',
-                    inputTokens: profilerRes.usage?.inputTokens || 0,
-                    outputTokens: profilerRes.usage?.outputTokens || 0,
-                    duration: 0,
-                    success: true
-                });
+                        costTracker.recordCall({
+                            agent: 'Company Profiler',
+                            model: 'gemini-2.0-flash',
+                            inputTokens: profilerRes.usage?.inputTokens || 0,
+                            outputTokens: profilerRes.usage?.outputTokens || 0,
+                            duration: 0,
+                            success: true
+                        });
 
-                // Parse profiler output
-                const profiled = enforceAgentContract({
-                    agentName: "Company Profiler",
-                    rawOutput: profilerRes.finalOutput,
-                    schema: CompanyProfilerSchema
-                }).results || [];
+                        const analyzed = enforceAgentContract({
+                            agentName: "Company Profiler",
+                            rawOutput: profilerRes.finalOutput,
+                            schema: CompanyProfilerSchema
+                        }).results || [];
 
-                const qualified = profiled.filter(c => {
+                        batchResults.push(...analyzed);
+
+                    } catch (err) {
+                        logStep('Company Profiler', `Failed to analyze ${candidate.companyName}: ${err.message}`);
+                    }
+                }
+
+                const qualified = batchResults.filter(c => {
                     const isHighQuality = (c.match_score || 0) >= 7;
                     if (!isHighQuality) logStep('Profiler', `🗑️ Dropped ${c.company_name} (Score: ${c.match_score}/10)`);
                     return isHighQuality;
@@ -373,7 +391,7 @@ RED FLAGS TO WATCH FOR: ${companyContext.redFlags || 'None specified'}`,
                 masterQualifiedList.push(...qualified);
                 logStep('Company Profiler', `Round ${attempts}: +${qualified.length} Qualified. Total: ${masterQualifiedList.length}`);
             } catch (e) {
-                logStep('Company Profiler', `Analysis failed: ${e.message}`);
+                logStep('Company Profiler', `Analysis loop failed: ${e.message}`);
             }
         }
 
