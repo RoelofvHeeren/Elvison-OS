@@ -47,29 +47,34 @@ export async function runGeminiAgent({
 
     console.log(`[DirectRunner] Building model with ${functionDeclarations.length} tools:`, functionDeclarations.map(f => f.name));
 
-    // Create model with tools AND force tool calling on first turn
-    const modelConfig = {
+    // Create model with tools - we'll use different configs per turn
+    const baseModelConfig = {
         model: modelName
     };
 
     if (functionDeclarations.length > 0) {
-        modelConfig.tools = [{ functionDeclarations }];
-        // FORCE tool calling - model MUST call a tool, cannot just return text
-        modelConfig.toolConfig = {
-            functionCallingConfig: {
-                mode: 'ANY' // Forces the model to call a function
-            }
-        };
-        console.log(`[DirectRunner] Tool config set to ANY (forced tool calling)`);
+        baseModelConfig.tools = [{ functionDeclarations }];
     }
 
-    const model = genAI.getGenerativeModel(modelConfig);
+    // Create two model instances:
+    // 1. forcedToolModel - MUST call a tool (for first turn to ensure search happens)
+    // 2. autoToolModel - CAN call a tool OR return text (for subsequent turns)
+    const forcedToolConfig = {
+        ...baseModelConfig,
+        toolConfig: { functionCallingConfig: { mode: 'ANY' } }
+    };
+    const autoToolConfig = {
+        ...baseModelConfig,
+        toolConfig: { functionCallingConfig: { mode: 'AUTO' } }
+    };
+
+    console.log(`[DirectRunner] Tool modes: Turn 1=ANY (forced), Turn 2+=AUTO (flexible)`);
 
     // Build conversation history - be explicit about needing to use tools
     const contents = [
         {
             role: 'user',
-            parts: [{ text: `${instructions}\n\nIMPORTANT: You MUST use the google_search_and_extract tool to find real companies. Do NOT make up or hallucinate company names.\n\n${userMessage}` }]
+            parts: [{ text: `${instructions}\n\nIMPORTANT: You MUST use the google_search_and_extract tool to find real companies. Do NOT make up or hallucinate company names. After searching, return your findings as JSON.\n\n${userMessage}` }]
         }
     ];
 
@@ -80,6 +85,10 @@ export async function runGeminiAgent({
     while (turn < maxTurns) {
         turn++;
         logStep(agentName, `Turn ${turn}/${maxTurns}`);
+
+        // Use forced tool calling on turn 1, then auto mode for subsequent turns
+        const modelConfig = turn === 1 ? forcedToolConfig : autoToolConfig;
+        const model = genAI.getGenerativeModel(modelConfig);
 
         try {
             const result = await model.generateContent({ contents });
