@@ -374,20 +374,29 @@ STRICTURE: LLM is fallback only. Zero creativity. If data is unsalvageable, mark
                     apiKey: googleKey,
                     modelName: 'gemini-2.0-flash',
                     agentName: 'Company Finder',
-                    instructions: `GOAL: Discover real companies via Google search.
-PROTOCOL: Use google_search_and_extract to find organic results.
-STRATEGY: 
-1. If a result is a direct company homepage, extract it.
-2. If a result is a LIST/DIRECTORY (e.g. "Top 10..."), READ THE SNIPPET. Extract company names mentioned in the snippet.
-3. INFER domains for well-known companies found in snippets if missing (e.g. "Toast" -> "toast.com").
-STRICTURE: Extract: Company name, Primary domain (best guess permitted), One-line description. 
-REJECT: The Directory itself (e.g. do not output "Yelp" as the company), but extracting companies FROM Yelp is okay.
-OUTPUT FORMAT: Return ONLY valid JSON with this structure: {"results": [{"companyName": "...", "domain": "...", "description": "..."}]}`,
-                    userMessage: `Find companies for: ${input.input_as_text}. Avoid: ${[...scrapedNamesSet, ...excludedNames, ...masterQualifiedList.map(c => c.company_name)].slice(0, 50).join(', ')}`,
+                    instructions: `You are a company discovery agent. Your task is simple:
+
+STEP 1: Call the google_search_and_extract tool ONCE with a relevant query like "residential real estate investment firms Canada" or "family offices real estate Canada".
+
+STEP 2: Parse the search results. For each result that looks like a real company (not a blog or directory), extract:
+- companyName: The company's name
+- domain: Their website domain (from the URL)
+- description: One line about what they do
+
+STEP 3: Return a JSON object with your findings. Example:
+{"results": [{"companyName": "Tricon Residential", "domain": "triconresidential.com", "description": "Multi-family rental housing investor"}, ...]}
+
+CRITICAL RULES:
+- Do NOT call the search tool more than 1-2 times
+- After searching, you MUST return JSON results 
+- Extract at least 5-10 companies from search results
+- If a URL is like "example.com/page", the domain is "example.com"
+- Do not include directories like "top 10 lists" as companies themselves`,
+                    userMessage: `Find investment firms for: ${input.input_as_text}. Companies to AVOID (already scraped): ${[...scrapedNamesSet, ...excludedNames, ...masterQualifiedList.map(c => c.company_name)].slice(0, 30).join(', ') || 'none yet'}`,
                     tools: [
                         {
                             name: "google_search_and_extract",
-                            description: "Search using Google and return organic results (Title, URL, Snippet).",
+                            description: "Search using Google and return organic results (Title, URL, Snippet). Use this to find company websites.",
                             parameters: {
                                 properties: { query: { type: "string", description: "Google search query" } },
                                 required: ["query"]
@@ -395,11 +404,11 @@ OUTPUT FORMAT: Return ONLY valid JSON with this structure: {"results": [{"compan
                             execute: async ({ query }) => {
                                 logStep('Company Finder', `🔍 Google Search: "${query}"`);
                                 const results = await performGoogleSearch(query, apifyToken, checkCancellation);
-                                return results.map(r => `NAME: ${r.title}\nURL: ${r.link}\nDESC: ${r.snippet}`).join('\n\n');
+                                return results.map(r => `TITLE: ${r.title}\nURL: ${r.link}\nSNIPPET: ${r.snippet}`).join('\n---\n');
                             }
                         }
                     ],
-                    maxTurns: 10,
+                    maxTurns: 3, // 1 search + extraction + maybe 1 more search
                     logStep: logStep
                 });
 
