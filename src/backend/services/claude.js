@@ -44,12 +44,24 @@ export class ClaudeModel {
         if (tools && tools.length > 0) {
             tools.forEach(t => {
                 if (t.type === 'function') {
+                    // Sanitize parameters if it's a JSON Schema object
+                    let params = t.parameters;
+                    if (params && typeof params === 'object' && !params.parse) { // Not a Zod schema
+                        params = { ...params }; // Clone
+                        delete params.$schema; // Remove $schema if present
+                    }
+
                     vercelTools[t.name] = {
                         description: t.description,
-                        parameters: t.parameters,
+                        parameters: params,
                     };
                 }
             });
+        }
+
+        // Debug Log for Tool Structure
+        if (tools && tools.length > 0) {
+            console.log(`[ClaudeModel] Constructed Tools for ${this.modelName}:`, JSON.stringify(vercelTools, null, 2));
         }
 
         try {
