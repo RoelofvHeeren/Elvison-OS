@@ -1,6 +1,4 @@
-import { createGoogleGenerativeAI } from '@ai-sdk/google';
-import { generateText, tool } from 'ai';
-import { z } from 'zod';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 /**
  * Extract JSON from text - strips markdown fences
@@ -27,31 +25,131 @@ function assertJsonResponse(text, context) {
 }
 
 /**
+ * Build Gemini function declarations in the format expected by Google's official SDK
+ * Reference: https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/function-calling
+ */
+function buildFunctionDeclarations(tools) {
+    if (!tools || tools.length === 0) return null;
+
+    const functionDeclarations = [];
+
+    for (const t of tools) {
+        if (t.type === 'function') {
+            let parameters = {
+                type: "object",
+                properties: {},
+                required: []
+            };
+
+            // Define parameters based on tool name
+            if (t.name === 'google_search_and_extract') {
+                parameters = {
+                    type: "object",
+                    properties: {
+                        query: {
+                            type: "string",
+                            description: "Google search query"
+                        }
+                    },
+                    required: ["query"]
+                };
+            } else if (t.name === 'scrape_company_website') {
+                parameters = {
+                    type: "object",
+                    properties: {
+                        domain: {
+                            type: "string",
+                            description: "Domain to scrape"
+                        }
+                    },
+                    required: ["domain"]
+                };
+            } else if (t.name === 'scan_site_structure') {
+                parameters = {
+                    type: "object",
+                    properties: {
+                        domain: {
+                            type: "string",
+                            description: "Domain to scan for links"
+                        }
+                    },
+                    required: ["domain"]
+                };
+            } else if (t.name === 'scrape_specific_pages') {
+                parameters = {
+                    type: "object",
+                    properties: {
+                        urls: {
+                            type: "array",
+                            items: { type: "string" },
+                            description: "List of URLs to scrape"
+                        }
+                    },
+                    required: ["urls"]
+                };
+            } else {
+                parameters = {
+                    type: "object",
+                    properties: {
+                        input: {
+                            type: "string",
+                            description: "Input value"
+                        }
+                    },
+                    required: ["input"]
+                };
+            }
+
+            functionDeclarations.push({
+                name: t.name,
+                description: t.description || `Tool: ${t.name}`,
+                parameters: parameters
+            });
+        }
+    }
+
+    if (functionDeclarations.length === 0) return null;
+    return functionDeclarations;
+}
+
+/**
  * GeminiModel Implementation for @openai/agents
- * Uses Vercel AI SDK's native tool format with Zod schemas
+ * Uses Google's official SDK (@google/generative-ai) directly
  */
 export class GeminiModel {
     constructor(apiKey, modelName = 'gemini-2.0-flash') {
         if (!apiKey) throw new Error("Missing API Key for GeminiModel");
         this.modelName = modelName;
         this.apiKey = typeof apiKey === 'string' ? apiKey.trim().replace(/[\s\r\n\t]/g, '') : apiKey;
-        this.googleProvider = createGoogleGenerativeAI({ apiKey: this.apiKey });
+        this.genAI = new GoogleGenerativeAI(this.apiKey);
     }
 
     async getResponse(request) {
         const { systemInstructions, input, tools, outputType } = request;
 
-        // Build messages array with JSON enforcement as FIRST instruction
-        const messages = [];
+        // Build function declarations for Gemini
+        const functionDeclarations = buildFunctionDeclarations(tools);
 
-        // JSON enforcement - zero tolerance
-        messages.push({
-            role: 'system',
-            content: 'You must respond with ONLY valid JSON. Do not include explanations, markdown, code blocks, or any text before or after the JSON.'
+        // Get model with optional tools
+        const modelConfig = {};
+        if (functionDeclarations && functionDeclarations.length > 0) {
+            modelConfig.tools = [{ functionDeclarations }];
+            console.log(`[GeminiModel] Using ${functionDeclarations.length} tools:`, functionDeclarations.map(f => f.name));
+            console.log(`[GeminiModel] Tool declarations:`, JSON.stringify(functionDeclarations, null, 2));
+        }
+
+        const model = this.genAI.getGenerativeModel({
+            model: this.modelName,
+            ...modelConfig
         });
 
+        // Build content parts
+        const contents = [];
+
+        // Add system instruction as first user message (Gemini doesn't have a separate system role)
+        let systemContent = 'You must respond with ONLY valid JSON. Do not include explanations, markdown, code blocks, or any text before or after the JSON.';
         if (systemInstructions) {
-            messages.push({ role: 'system', content: systemInstructions });
+            systemContent += '\n\n' + systemInstructions;
         }
 
         if (Array.isArray(input)) {
@@ -59,111 +157,81 @@ export class GeminiModel {
                 if (item.content && Array.isArray(item.content)) {
                     const textContent = item.content.find(c => c.type === 'text' || c.type === 'output_text')?.text || "";
                     if (textContent) {
-                        messages.push({ role: item.role === 'assistant' ? 'assistant' : 'user', content: textContent });
+                        contents.push({
+                            role: item.role === 'assistant' ? 'model' : 'user',
+                            parts: [{ text: textContent }]
+                        });
                     }
                 } else if (item.content && typeof item.content === 'string') {
-                    messages.push({ role: item.role === 'assistant' ? 'assistant' : 'user', content: item.content });
+                    contents.push({
+                        role: item.role === 'assistant' ? 'model' : 'user',
+                        parts: [{ text: item.content }]
+                    });
                 }
             });
         } else if (typeof input === 'string') {
-            messages.push({ role: 'user', content: input });
+            contents.push({
+                role: 'user',
+                parts: [{ text: systemContent + '\n\n' + input }]
+            });
         }
 
-        // Build Vercel AI SDK tools using Zod schemas directly
-        // This is the officially supported way according to Vercel AI SDK docs
-        const vercelTools = {};
-        if (tools && tools.length > 0) {
-            for (const t of tools) {
-                if (t.type === 'function') {
-                    // Create Zod schema based on tool name
-                    let zodSchema;
-
-                    if (t.name === 'google_search_and_extract') {
-                        zodSchema = z.object({
-                            query: z.string().describe("Google search query")
-                        });
-                    } else if (t.name === 'scrape_company_website') {
-                        zodSchema = z.object({
-                            domain: z.string().describe("Domain to scrape")
-                        });
-                    } else if (t.name === 'scan_site_structure') {
-                        zodSchema = z.object({
-                            domain: z.string().describe("Domain to scan for links")
-                        });
-                    } else if (t.name === 'scrape_specific_pages') {
-                        zodSchema = z.object({
-                            urls: z.array(z.string()).describe("List of URLs to scrape")
-                        });
-                    } else {
-                        zodSchema = z.object({
-                            input: z.string().describe("Input value")
-                        });
-                    }
-
-                    vercelTools[t.name] = tool({
-                        description: t.description || `Tool: ${t.name}`,
-                        parameters: zodSchema
-                    });
-                }
-            }
-        }
-
-        if (Object.keys(vercelTools).length > 0) {
-            console.log(`[GeminiModel] Using ${Object.keys(vercelTools).length} tools with Zod schemas:`, Object.keys(vercelTools));
+        // If no contents built from input, create one from system
+        if (contents.length === 0) {
+            contents.push({
+                role: 'user',
+                parts: [{ text: systemContent }]
+            });
         }
 
         try {
-            const modelInstance = this.googleProvider(this.modelName);
+            console.log(`[GeminiModel] Calling ${this.modelName} with ${contents.length} messages`);
 
-            const generateOptions = {
-                model: modelInstance,
-                messages: messages,
-            };
+            const result = await model.generateContent({
+                contents: contents
+            });
 
-            // Pass tools if any
-            if (Object.keys(vercelTools).length > 0) {
-                generateOptions.tools = vercelTools;
-                generateOptions.toolChoice = 'auto';
-            }
-
-            const result = await generateText(generateOptions);
-
+            const response = result.response;
             const output = [];
 
-            if (result.text) {
-                // Strip markdown before adding to output
-                const cleanText = extractJson(result.text);
-
-                output.push({
-                    type: 'message',
-                    role: 'assistant',
-                    content: [{ type: 'output_text', text: cleanText }],
-                    status: 'completed'
-                });
+            // Check for function calls
+            const candidate = response.candidates?.[0];
+            if (candidate?.content?.parts) {
+                for (const part of candidate.content.parts) {
+                    if (part.functionCall) {
+                        console.log(`[GeminiModel] Function call detected: ${part.functionCall.name}`);
+                        output.push({
+                            type: 'tool_call',
+                            toolCallId: `call_${Date.now()}`,
+                            name: part.functionCall.name,
+                            parameters: part.functionCall.args || {}
+                        });
+                    } else if (part.text) {
+                        const cleanText = extractJson(part.text);
+                        output.push({
+                            type: 'message',
+                            role: 'assistant',
+                            content: [{ type: 'output_text', text: cleanText }],
+                            status: 'completed'
+                        });
+                    }
+                }
             }
 
-            if (result.toolCalls && result.toolCalls.length > 0) {
-                result.toolCalls.forEach(tc => {
-                    output.push({
-                        type: 'tool_call',
-                        toolCallId: tc.toolCallId,
-                        name: tc.toolName,
-                        parameters: tc.args
-                    });
-                });
-            }
+            // Get usage metadata
+            const usageMetadata = response.usageMetadata || {};
 
             return {
                 usage: {
-                    promptTokens: result.usage?.promptTokens || 0,
-                    completionTokens: result.usage?.completionTokens || 0,
-                    totalTokens: result.usage?.totalTokens || 0
+                    promptTokens: usageMetadata.promptTokenCount || 0,
+                    completionTokens: usageMetadata.candidatesTokenCount || 0,
+                    totalTokens: usageMetadata.totalTokenCount || 0
                 },
                 output: output
             };
 
         } catch (e) {
-            console.error("[GeminiModel] Error:", e);
+            console.error("[GeminiModel] Error:", e.message);
             throw e;
         }
     }
