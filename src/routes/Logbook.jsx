@@ -749,7 +749,7 @@ const Logbook = () => {
                                         </thead>
                                         <tbody className="divide-y divide-white/5">
                                             {droppedLeads.map((lead) => {
-                                                const reason = (lead.source_notes || 'AI Filtered').replace(/archived|no connection request sent|zombie/gi, '').trim() || 'Did not match ICP criteria'
+                                                const reason = (lead.custom_data?.disqualification_reason || lead.source_notes || 'AI Filtered').replace(/archived|no connection request sent|zombie/gi, '').trim() || 'Did not match ICP criteria'
                                                 return (
                                                     <tr key={lead.id} className="hover:bg-white/5 transition-colors">
                                                         <td className="px-4 py-3">

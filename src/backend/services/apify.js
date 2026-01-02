@@ -63,12 +63,12 @@ export const getApifyResults = async (token, datasetId) => {
 };
 
 // =============================================================================
-// NEW: Apollo Domain Scraper (Actor ID: T1XDXWc1L92AfIJtd)
-// Cost: ~$0.0026 per lead ($0.30 base + $0.55 per ~330 leads)
+// NEW: Leads Scraper (Emails guaranteed - Rental) (Actor ID: GlxYrQp6f3YAzH2W2)
+// Cost: $35/month flat fee for 300k leads (Rental Plan)
 // =============================================================================
 
 /**
- * Constructs the payload for the Apollo Domain Scraper
+ * Constructs the payload for the Leads Scraper Actor
  * @param {Array<string>} domains - List of company domains (e.g., "greybrook.com")
  * @param {Object} filters - Dynamic filters
  * @returns {Object} - The constructed payload
@@ -99,49 +99,75 @@ export const buildApolloDomainPayload = (domains, filters = {}) => {
     )];
 
     // MAPPING: Convert user-friendly labels to valid Apify/Apollo values
-    // ALLOWED VALUES: "Founder", "Chairman", "President", "CEO", "CXO", "Vice President", "Director", "Head", "Manager", "Senior", "Junior", "Entry Level", "Executive"
+    // ALLOWED SENIORITY: "Founder", "Chairman", "President", "CEO", "CXO", "Vice President", "Director", "Head", "Manager", "Senior", "Junior", "Entry Level", "Executive"
     let mappedSeniority = filters.seniority;
     if (filters.seniority && filters.seniority.length > 0) {
         mappedSeniority = filters.seniority.flatMap(s => {
-            if (s === "Partner / Principal") return ["Executive", "Director"]; // 'Partner'/'Principal' not in enum, mapping to 'Executive'
+            if (s === "Partner / Principal") return ["Executive", "Director"];
             if (s === "C-Level (CEO, CIO, COO)") return ["CXO", "CEO", "President", "Founder"];
             if (s === "Managing Director") return ["Director", "Head"];
             if (s === "VP / Director") return ["Vice President", "Director"];
             if (s === "Head of X") return ["Head"];
             if (s === "Manager / Associate") return ["Manager", "Senior"];
-
-            // If the filter is literally "Partner" or "Principal" (from manual entry), map it too
             if (s === "Partner" || s === "Principal" || s === "Owner") return ["Executive", "Founder"];
-
             return s;
         });
 
-        // Final Filter: Ensure only allowed values pass
         const ALLOWED_VALUES = ["Founder", "Chairman", "President", "CEO", "CXO", "Vice President", "Director", "Head", "Manager", "Senior", "Junior", "Entry Level", "Executive"];
         mappedSeniority = mappedSeniority.filter(s => ALLOWED_VALUES.includes(s));
-
-        // Deduplicate
         mappedSeniority = [...new Set(mappedSeniority)];
+    }
+
+    // MAPPING: Employee Size to specific ranges
+    // Allowed: "0 - 1", "2 - 10", "11 - 50", "51 - 200", "201 - 500", "501 - 1000", "1001 - 5000", "5001 - 10000", "10000+"
+    // We map generic buckets to these specific ones
+    const sizeMapping = [
+        "11 - 50", "51 - 200", "201 - 500", "501 - 1000",
+        "1001 - 5000", "5001 - 10000", "10000+"
+    ];
+
+    // MAPPING: Job Functions (App UI -> Apify Actor Keys)
+    let mappedFunctions = filters.job_functions || [];
+    if (mappedFunctions.length > 0) {
+        mappedFunctions = mappedFunctions.flatMap(f => {
+            if (f === "Executive / Leadership") return ["Executive", "Management", "Administration"];
+            if (f === "Sales / Revenue") return ["Sales", "Business Development"];
+            if (f === "Marketing / Growth") return ["Marketing", "Branding"];
+            if (f === "Product / Engineering") return ["Product", "Engineering"];
+            if (f === "Operations") return ["Operations", "Administrative"];
+            if (f === "Finance") return ["Finance", "Accounting"];
+            if (f === "HR / People") return ["Human Resources", "Recruiting"];
+            if (f === "Legal") return ["Legal"];
+            return f; // Pass through if no match (e.g. manual entry)
+        });
+        mappedFunctions = [...new Set(mappedFunctions)];
     }
 
     return {
         companyDomain: cleanDomains,
-        companyCountry: filters.countries || ["Canada", "United States"],
-        companyEmployeeSize: [
-            "11 - 50", "51 - 200", "201 - 500", "501 - 1000",
-            "1001 - 5000", "5001 - 10000", "10000+"
-        ],
-        contactEmailStatus: "verified",
-        includeEmails: true,
+        companyCountry: filters.countries || ["United States", "Canada", "United Kingdom"], // Broader default
+        companyEmployeeSize: sizeMapping,
+
+        // Person Filters
         personTitle: (filters.job_titles && filters.job_titles.length > 0) ? filters.job_titles : defaultTitles,
         seniority: (mappedSeniority && mappedSeniority.length > 0) ? mappedSeniority : defaultSeniorities,
-        totalResults: filters.maxResults || 1000,
-        maxCost: 1 // Cost Cap ($1)
+        // functional: mappedFunctions, // REMOVED: Strict function mapping drops empty-function executives. We filter locally.
+
+        // Location (Optional - usually inferred from company but can be specific)
+        // personCountry: ["United States"], 
+
+        // Email Settings
+        contactEmailStatus: "verified", // Strict verification
+        includeEmails: true,
+        skipLeadsWithoutEmails: true,
+
+        // Limits
+        totalResults: filters.maxResults || 2500 // Rental allows higher volume per run
     };
 };
 
 /**
- * Starts the Apollo Domain Scraper actor
+ * Starts the Leads Scraper Actor (Rental)
  * @param {string} token - Apify API Token
  * @param {Array<string>} domains - List of company domains
  * @param {Object} filters - Dynamic filters
@@ -157,8 +183,8 @@ export const startApolloDomainScrape = async (token, domains, filters = {}, idem
         const input = buildApolloDomainPayload(domains, filters);
         console.log(`[ApolloDomain] Starting scrape for ${domains.length} domains...`);
 
-        // Apollo Domain Scraper Actor ID (Verified Working ID from Console)
-        const ACTOR_ID = 'T1XDXWc1L92AfIJtd';
+        // Leads Scraper (Emails guaranteed - Rental)
+        const ACTOR_ID = 'GlxYrQp6f3YAzH2W2';
 
         console.log(`[ApolloDomain] Sending payload to ${ACTOR_ID}:`, JSON.stringify(input, null, 2));
 
@@ -179,7 +205,7 @@ export const startApolloDomainScrape = async (token, domains, filters = {}, idem
         return response.data.data.id;
     } catch (error) {
         console.error('[ApolloDomain] Start Error:', error.response?.data || error.message);
-        throw new Error(`Failed to start Apollo Domain scrape: ${error.response?.data?.error?.message || error.message}`);
+        throw new Error(`Failed to start Lead Scrape: ${error.response?.data?.error?.message || error.message}`);
     }
 };
 

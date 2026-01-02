@@ -49,7 +49,7 @@ export class LeadScraperService {
 
 
     async fetchLeads(companies, filters = {}, logStep = console.log, checkCancellation = null) {
-        if (!companies || companies.length === 0) return [];
+        if (!companies || companies.length === 0) return { leads: [], disqualified: [] };
 
         logStep('Lead Finder', `Fetching leads for ${companies.length} companies using ${this.provider}...`);
 
@@ -154,15 +154,21 @@ export class LeadScraperService {
         }));
 
         // Aggregate results
-        const rawItems = results.flat();
+        const rawValid = results.flatMap(r => r.valid);
+        const rawDisqualified = results.flatMap(r => r.disqualified);
 
-        // Filter out the info message row (first row is often a log message)
-        const actualLeads = rawItems.filter(item => item.email || item.firstName);
-
-        console.log(`[ApolloDomain] Retrieved ${actualLeads.length} total leads with emails from all batches.`);
+        console.log(`[ApolloDomain] Retrieved ${rawValid.length} valid leads and ${rawDisqualified.length} disqualified.`);
 
         // 5. Normalize Data with Tiering
-        return this._normalizeApolloDomainResults(actualLeads, companies, filters);
+        const validLeads = this._normalizeApolloDomainResults(rawValid, companies, filters);
+
+        // Normalize disqualified too (so they can be saved)
+        const disqualifiedLeads = this._normalizeApolloDomainResults(rawDisqualified, companies, filters).map((l, i) => ({
+            ...l,
+            disqualification_reason: rawDisqualified[i].disqualification_reason
+        }));
+
+        return { leads: validLeads, disqualified: disqualifiedLeads };
     }
 
     /**
@@ -229,34 +235,50 @@ export class LeadScraperService {
 
             // --- STRICT FILTERING LAYER ---
             // Deprioritize or Remove Excluded Functions
-            const validItems = items.filter(item => {
+            // --- STRICT FILTERING LAYER ---
+            const validItems = [];
+            const disqualifiedItems = [];
+
+            items.forEach(item => {
                 const title = (item.position || item.title || item.personTitle || "").toLowerCase();
-                if (!title) return false;
+
+                if (!title) {
+                    disqualifiedItems.push({ ...item, disqualification_reason: "Missing Job Title" });
+                    return;
+                }
 
                 // Check Exclusions
                 if (filters.excluded_functions && Array.isArray(filters.excluded_functions)) {
                     for (const exclusion of filters.excluded_functions) {
-                        // "HR / People" -> ["hr", "people"]
                         const keywords = exclusion.toLowerCase().split('/').map(s => s.trim());
-                        // If title matches any keyword, exclude
-                        // Use word boundary check for better accuracy e.g. "hr" vs "chris"
                         for (const kw of keywords) {
+                            let isExcluded = false;
                             if (kw.length < 3) {
-                                // Strict word check for short acronyms
-                                const regex = new RegExp(`\\b${kw}\\b`, 'i');
-                                if (regex.test(title)) return false;
+                                if (new RegExp(`\\b${kw}\\b`, 'i').test(title)) isExcluded = true;
                             } else {
-                                if (title.includes(kw)) return false;
+                                if (title.includes(kw)) isExcluded = true;
+                            }
+
+                            // EXCEPTION: Protect "Development" role (Real Estate context) from exclusions like "Engineering"
+                            if (isExcluded && title.includes('development')) {
+                                // console.log(`[ApolloDomain] Protected "Development" role from exclusion "${kw}": ${title}`);
+                                isExcluded = false;
+                            }
+
+                            if (isExcluded) {
+                                disqualifiedItems.push({ ...item, disqualification_reason: `Excluded Function: ${exclusion}` });
+                                return;
                             }
                         }
                     }
                 }
-                return true;
+
+                validItems.push(item);
             });
 
-            console.log(`[ApolloDomain] Batch ${batchId} valid items after exclusions: ${validItems.length} (Dropped ${items.length - validItems.length})`);
+            console.log(`[ApolloDomain] Batch ${batchId}: ${validItems.length} valid, ${disqualifiedItems.length} disqualified.`);
 
-            return validItems;
+            return { valid: validItems, disqualified: disqualifiedItems };
 
         } catch (error) {
             console.error(`[ApolloDomain] Batch ${batchId} failed:`, error.message);

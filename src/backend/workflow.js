@@ -52,17 +52,20 @@ const ApolloLeadFinderSchema = z.object({
 
 const OutreachCreatorSchema = z.object({
     leads: z.array(z.object({
-        date_added: z.string(),
-        first_name: z.string(),
-        last_name: z.string(),
-        company_name: z.string(),
-        title: z.string(),
-        email: z.string(),
-        linkedin_url: z.string(),
-        company_website: z.string(),
-        connection_request: z.string(),
-        email_message: z.string(),
-        company_profile: z.string()
+        date_added: z.string().optional(),
+        first_name: z.string().optional(),
+        last_name: z.string().optional(),
+        company_name: z.string().optional(),
+        title: z.string().optional(),
+        email: z.string().optional(),
+        linkedin_url: z.string().optional(),
+        company_website: z.string().optional(),
+        connection_request: z.string().optional(),
+        email_message: z.string().optional(),
+        linkedin_message: z.string().optional(),
+        email_subject: z.string().optional(),
+        email_body: z.string().optional(),
+        company_profile: z.string().optional()
     }))
 });
 
@@ -435,10 +438,21 @@ GOAL: ${companyContext.goal}`,
             try {
                 if (await checkCancellation()) return;
 
-                const leads = await leadScraper.fetchLeads(masterQualifiedList, filters, logStep, checkCancellation);
+                // --- 4. Lead Scraping with Disqualified Tracking ---
+                const scrapeResult = await leadScraper.fetchLeads(masterQualifiedList, filters, logStep, checkCancellation);
 
-                // --- Phase 2 Check: Data Starvation Protection ---
-                if (leads.length === 0) {
+                // Handle new return structure { leads, disqualified }
+                const leadsFound = scrapeResult.leads || (Array.isArray(scrapeResult) ? scrapeResult : []);
+                const disqualifiedFound = scrapeResult.disqualified || [];
+
+                logStep('Lead Finder', `Found ${leadsFound.length} valid leads. Saving ${disqualifiedFound.length} disqualified leads for review.`);
+
+                // Save Disqualified Leads Immediately
+                if (disqualifiedFound.length > 0) {
+                    await saveLeadsToDB(disqualifiedFound, userId, icpId, logStep, 'DISQUALIFIED');
+                }
+
+                if (leadsFound.length === 0) {
                     logStep('Workflow', '❌ No leads found from scraped companies. Stopping before Outreach.');
                     return {
                         status: 'failed',
@@ -448,12 +462,12 @@ GOAL: ${companyContext.goal}`,
                     };
                 }
 
-                if (leads.length > 0) {
-                    logStep('Data Architect', `Normalizing ${leads.length} leads...`);
+                if (leadsFound.length > 0) {
+                    logStep('Data Architect', `Normalizing ${leadsFound.length} leads...`);
 
                     // 4. Data Architect: Validation & Normalization
-                    const deterministicLeads = leads.filter(l => l.first_name && l.last_name && l.email);
-                    const ambiguousLeads = leads.filter(l => !l.first_name || !l.last_name || !l.email);
+                    const deterministicLeads = leadsFound.filter(l => l.first_name && l.last_name && l.email);
+                    const ambiguousLeads = leadsFound.filter(l => !l.first_name || !l.last_name || !l.email);
                     let fixedLeads = [];
 
                     if (ambiguousLeads.length > 0) {
@@ -584,7 +598,7 @@ TEMPLATE: ${companyContext.outreachTemplate || "Hi {{First_name}}, saw you're at
 INSTRUCTIONS:
 1. Replace {{...}} placeholders using the lead's data.
 2. For {{research fact}} or similar placeholders, EXTRACT a specific, impressive fact from the 'company_profile' field.
-3. Keep it short (under 75 words).
+3. CRITICAL: 'linkedin_message' MUST be under 300 characters (including variables). Use abbreviations if needed to fit.
 4. Be professional but conversational.
 5. No hashtags or emojis.
 
@@ -612,7 +626,39 @@ OUTPUT FORMAT: Return JSON:
                 success: true
             });
 
-            finalLeads = normalizedOutreach.leads?.length > 0 ? normalizedOutreach.leads : globalLeads;
+            // Merge AI output with existing leads to preserve data
+            const newLeads = normalizedOutreach.leads || [];
+
+            // SAFETY: Enforce 300-char hard limit for LinkedIn
+            newLeads.forEach(l => {
+                if (l.linkedin_message && l.linkedin_message.length > 300) {
+                    // Try to preserve as much as possible, but we must truncate.
+                    // Ideally, the Agent should have handled this via the prompt.
+                    logStep('Outreach Creator', `⚠️ Message too long (${l.linkedin_message.length} chars). Truncating for ${l.email}.`);
+                    l.linkedin_message = l.linkedin_message.substring(0, 295) + '...';
+                }
+            });
+
+            if (newLeads.length > 0) {
+                // Map new data by email for O(1) lookup
+                const outreachMap = new Map(newLeads.map(l => [l.email, l]));
+
+                finalLeads = globalLeads.map(original => {
+                    const update = outreachMap.get(original.email);
+                    if (update) {
+                        return {
+                            ...original,
+                            email_message: update.email_message || update.email_body || original.email_message,
+                            linkedin_message: update.linkedin_message || original.linkedin_message,
+                            email_subject: update.email_subject || original.email_subject,
+                            connection_request: update.connection_request || original.connection_request
+                        };
+                    }
+                    return original;
+                });
+            } else {
+                finalLeads = globalLeads;
+            }
         } catch (e) {
             logStep('Outreach Creator', `Failed: ${e.message}`);
             finalLeads = globalLeads;
@@ -649,7 +695,7 @@ OUTPUT FORMAT: Return JSON:
 /**
  * DB Persistence
  */
-const saveLeadsToDB = async (leads, userId, icpId, logStep) => {
+const saveLeadsToDB = async (leads, userId, icpId, logStep, forceStatus = 'NEW') => {
     if (!leads || leads.length === 0) return;
     let count = 0;
     for (const lead of leads) {
@@ -657,21 +703,24 @@ const saveLeadsToDB = async (leads, userId, icpId, logStep) => {
             const exists = await query("SELECT id FROM leads WHERE email = $1 AND user_id = $2", [lead.email, userId]);
             if (exists.rows.length > 0) continue;
 
-            await query(`INSERT INTO leads (company_name, person_name, email, job_title, linkedin_url, status, source, user_id, custom_data) 
-                         VALUES ($1, $2, $3, $4, $5, 'NEW', 'Outbound Agent', $6, $7)`,
-                [lead.company_name, `${lead.first_name} ${lead.last_name}`, lead.email, lead.title, lead.linkedin_url, userId, {
+            await query(`INSERT INTO leads (company_name, person_name, email, job_title, linkedin_url, status, source, user_id, custom_data)
+            VALUES ($1, $2, $3, $4, $5, $6, 'Outbound Agent', $7, $8)`,
+                [lead.company_name, `${lead.first_name} ${lead.last_name}`, lead.email, lead.title, lead.linkedin_url, forceStatus, userId, {
                     icp_id: icpId,
                     score: lead.match_score,
                     profile: lead.company_profile,
                     email_message: lead.email_message || lead.email_body,
                     linkedin_message: lead.linkedin_message,
                     email_subject: lead.email_subject,
-                    connection_request: lead.connection_request
+                    connection_request: lead.connection_request,
+                    disqualification_reason: lead.disqualification_reason // Save reason if present
                 }]);
             count++;
-        } catch (e) { console.error("Save error", e); }
+        } catch (e) {
+            console.error('Failed to save lead:', e.message);
+        }
     }
-    logStep('CRM', `Saved ${count} new leads to database.`);
+    if (count > 0) logStep('Database', `Saved ${count} leads (Status: ${forceStatus}) to CRM.`);
 };
 
 /**
