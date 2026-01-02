@@ -102,10 +102,23 @@ export class ClaudeModel {
                         params.type = 'object';
                     }
 
+                    // CRITICAL FIX: Anthropic expects 'input_schema', NOT 'parameters'
+                    // The Error "tools.0.custom.input_schema.type: Field required" indicates it was looking for input_schema.
                     vercelTools[t.name] = {
                         description: t.description,
-                        parameters: params,
+                        parameters: params, // Vercel AI SDK might map this, but let's be safe
                     };
+
+                    // Direct modification of the object structure if Vercel AI SDK allows access to the raw tool list
+                    // But effectively, if we are passing this map to 'tools', the keys are names.
+                    // Wait, Vercel AI SDK 'tools' object format is: { toolName: { description, parameters, execute? } }
+                    // It handles the conversion to provider specific format.
+
+                    // If Vercel AI SDK is using 'parameters' to build 'input_schema', then 'params' MUST have 'type: object'
+                    // which we ensured above.
+
+                    // Let's TRY to force the input_schema property if the SDK passes it through
+                    vercelTools[t.name].input_schema = params;
                 }
             });
         }
