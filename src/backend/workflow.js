@@ -30,25 +30,7 @@ const CompanyFinderSchemaV2 = z.object({
     })
 });
 
-// ... (other schemas)
 
-// ...
-
-// In runAgentWorkflow:
-// HARD CONTRACT ENFORCEMENT
-const normalizedFinder = enforceAgentContract({
-    agentName: "Company Finder",
-    rawOutput: finderRes.finalOutput,
-    schema: CompanyFinderSchemaV2
-});
-
-candidates = (normalizedFinder.results || [])
-    .map(c => ({
-        ...c,
-        company_name: c.companyName || c.company_name, // Polyfill
-        domain: c.domain || c.primaryDomain // Polyfill domain from primaryDomain
-    }))
-    .filter(c => !scrapedNamesSet.has(c.company_name));
 
 const CompanyProfilerSchema = z.object({
     results: z.array(z.object({
