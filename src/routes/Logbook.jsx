@@ -330,7 +330,7 @@ const Logbook = () => {
                                                         </div>
                                                         <div>
                                                             <h3 className="font-semibold text-white text-lg">
-                                                                Workflow Run
+                                                                {run.run_name || 'Workflow Run'}
                                                             </h3>
                                                             <p className="text-sm text-gray-400">
                                                                 {new Date(run.started_at).toLocaleString()}

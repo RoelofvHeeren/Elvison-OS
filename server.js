@@ -956,9 +956,11 @@ app.get('/api/runs', requireAuth, async (req, res) => {
         const { rows } = await query(`
             SELECT 
                 wr.*, 
-                ar.output_data 
+                ar.output_data,
+                i.name as icp_name
             FROM workflow_runs wr
             LEFT JOIN agent_results ar ON wr.id = ar.run_id
+            LEFT JOIN icps i ON wr.icp_id = i.id
             WHERE wr.user_id = $1
             ORDER BY wr.started_at DESC
             LIMIT 50
@@ -1327,10 +1329,30 @@ app.post('/api/agents/run', requireAuth, async (req, res) => {
     // 2. Create Run Record
     let runId = null
     try {
+        // Determine Run Name & Number
+        let runName = `Run ${new Date().toLocaleTimeString()}`; // Fallback
+        let runNumber = 1;
+
+        if (icpId) {
+            // Get ICP Name
+            const icpRes = await query('SELECT name FROM icps WHERE id = $1', [icpId]);
+            const icpName = icpRes.rows[0]?.name || 'Unknown ICP';
+
+            // Get Max Run Number for this ICP
+            const countRes = await query('SELECT MAX(run_number) as max_num FROM workflow_runs WHERE icp_id = $1', [icpId]);
+            runNumber = (countRes.rows[0]?.max_num || 0) + 1;
+            runName = `${icpName} #${runNumber}`;
+        } else {
+            // Generic runs
+            const countRes = await query('SELECT MAX(run_number) as max_num FROM workflow_runs WHERE user_id = $1 AND icp_id IS NULL', [req.userId]);
+            runNumber = (countRes.rows[0]?.max_num || 0) + 1;
+            runName = `Manual Run #${runNumber}`;
+        }
+
         const { rows } = await query(
-            `INSERT INTO workflow_runs (agent_id, status, started_at, metadata, user_id, icp_id) 
-             VALUES ('main_workflow', 'RUNNING', NOW(), $1, $2, $3) RETURNING id`,
-            [JSON.stringify({ prompt, vectorStoreId, mode: mode || 'default', idempotencyKey }), req.userId, icpId]
+            `INSERT INTO workflow_runs (agent_id, status, started_at, metadata, user_id, icp_id, run_name, run_number) 
+             VALUES ('main_workflow', 'RUNNING', NOW(), $1, $2, $3, $4, $5) RETURNING id`,
+            [JSON.stringify({ prompt, vectorStoreId, mode: mode || 'default', idempotencyKey }), req.userId, icpId, runName, runNumber]
         )
         runId = rows[0].id
         // Send initial connection confirmation
@@ -1395,6 +1417,31 @@ app.post('/api/agents/run', requireAuth, async (req, res) => {
             [runId, JSON.stringify(outputDataForStorage)]
         )
 
+        // SAVE GRANULAR LOGS (Cost)
+        if (stats.cost && stats.cost.calls && Array.isArray(stats.cost.calls)) {
+            try {
+                for (const call of stats.cost.calls) {
+                    await query(
+                        `INSERT INTO workflow_logs (run_id, agent_name, model_name, input_tokens, output_tokens, cost, duration_seconds, metadata)
+                         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+                        [
+                            runId,
+                            call.agent,
+                            call.model,
+                            call.inputTokens || 0,
+                            call.outputTokens || 0,
+                            call.cost || 0,
+                            call.duration || 0,
+                            call.metadata || {}
+                        ]
+                    );
+                }
+                console.log(`Saved ${stats.cost.calls.length} workflow logs.`);
+            } catch (logErr) {
+                console.error("Failed to save workflow logs:", logErr);
+            }
+        }
+
         // If partial success, also save an error log with the warning message
         if (isPartialSuccess && result.errors && result.errors.length > 0) {
             const errorMessages = result.errors.map(e => e.message).join('; ');
@@ -1443,6 +1490,22 @@ app.post('/api/workflow/cancel', requireAuth, async (req, res) => {
         res.status(500).json({ error: e.message });
     }
 })
+
+// 6. Get Run Logs (New)
+app.get('/api/runs/:id/logs', requireAuth, async (req, res) => {
+    const { id } = req.params;
+    try {
+        const { rows } = await query(`
+            SELECT * FROM workflow_logs 
+            WHERE run_id = $1 
+            ORDER BY created_at ASC
+        `, [id]);
+        res.json({ logs: rows });
+    } catch (e) {
+        console.error("Failed to fetch logs:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
 
 // Helper to format agent ID to Name
 function formatAgentName(id) {
@@ -1579,6 +1642,26 @@ const initDB = async () => {
             console.log(`🧹 Migrated ${zombieRes.rowCount} zombie leads to DISQUALIFIED.`);
         }
         */
+
+        // Migration 07: Logbook Enhancements (Granular Logs & naming)
+        await query(`ALTER TABLE workflow_runs ADD COLUMN IF NOT EXISTS run_name VARCHAR(255);`);
+        await query(`ALTER TABLE workflow_runs ADD COLUMN IF NOT EXISTS run_number INTEGER;`);
+
+        await query(`
+            CREATE TABLE IF NOT EXISTS workflow_logs (
+                id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                run_id UUID REFERENCES workflow_runs(id) ON DELETE CASCADE,
+                agent_name VARCHAR(100),
+                model_name VARCHAR(100),
+                input_tokens INTEGER DEFAULT 0,
+                output_tokens INTEGER DEFAULT 0,
+                cost DECIMAL(12, 6) DEFAULT 0,
+                duration_seconds DECIMAL(10, 2),
+                metadata JSONB DEFAULT '{}'::jsonb,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+            );
+            CREATE INDEX IF NOT EXISTS idx_workflow_logs_run_id ON workflow_logs(run_id);
+        `);
 
         console.log('Database Schema Verified.')
     } catch (err) {
