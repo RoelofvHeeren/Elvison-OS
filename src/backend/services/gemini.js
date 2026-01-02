@@ -1,6 +1,5 @@
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { generateText } from 'ai';
-import { zodToJsonSchema } from 'zod-to-json-schema';
 
 /**
  * Extract JSON from text - strips markdown fences
@@ -27,64 +26,84 @@ function assertJsonResponse(text, context) {
 }
 
 /**
- * Convert a Zod schema or raw object to a proper JSON Schema for Gemini
- * Gemini requires: { type: 'object', properties: {...}, required: [...] }
+ * Build Gemini-native tools format with UPPERCASE types as required by Gemini API
+ * Reference: https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/function-calling
  */
-function convertToJsonSchema(params, toolName) {
-    // If it's a Zod schema (has _def property), use zodToJsonSchema
-    if (params && params._def) {
-        try {
-            const jsonSchema = zodToJsonSchema(params, {
-                $refStrategy: 'none', // Flatten, no $refs
-                target: 'jsonSchema7'
-            });
+function buildGeminiNativeTools(tools) {
+    if (!tools || tools.length === 0) return undefined;
 
-            // Remove $schema property as Gemini doesn't like it
-            delete jsonSchema.$schema;
-            delete jsonSchema.additionalProperties;
+    const functionDeclarations = [];
 
-            // Ensure type is 'object' at root level
-            if (!jsonSchema.type) {
-                jsonSchema.type = 'object';
+    for (const t of tools) {
+        if (t.type === 'function') {
+            // Build parameters with UPPERCASE types as required by Gemini
+            const parameters = {
+                type: "OBJECT",  // UPPERCASE required by Gemini!
+                properties: {}
+            };
+
+            // Handle google_search_and_extract
+            if (t.name === 'google_search_and_extract') {
+                parameters.properties = {
+                    query: {
+                        type: "STRING",  // UPPERCASE!
+                        description: "Google search query"
+                    }
+                };
+                parameters.required = ["query"];
+            }
+            // Handle scrape_company_website
+            else if (t.name === 'scrape_company_website') {
+                parameters.properties = {
+                    domain: {
+                        type: "STRING",
+                        description: "Domain to scrape"
+                    }
+                };
+                parameters.required = ["domain"];
+            }
+            // Handle scan_site_structure
+            else if (t.name === 'scan_site_structure') {
+                parameters.properties = {
+                    domain: {
+                        type: "STRING",
+                        description: "Domain to scan for links"
+                    }
+                };
+                parameters.required = ["domain"];
+            }
+            // Handle scrape_specific_pages
+            else if (t.name === 'scrape_specific_pages') {
+                parameters.properties = {
+                    urls: {
+                        type: "ARRAY",
+                        items: { type: "STRING" },
+                        description: "List of URLs to scrape"
+                    }
+                };
+                parameters.required = ["urls"];
+            }
+            // Default fallback
+            else {
+                parameters.properties = {
+                    input: {
+                        type: "STRING",
+                        description: "Input value"
+                    }
+                };
+                parameters.required = ["input"];
             }
 
-            console.log(`[GeminiModel] Converted Zod schema for ${toolName}:`, JSON.stringify(jsonSchema));
-            return jsonSchema;
-        } catch (e) {
-            console.error(`[GeminiModel] zodToJsonSchema failed for ${toolName}:`, e);
-            // Fallback to a minimal object schema
-            return { type: 'object', properties: {}, required: [] };
+            functionDeclarations.push({
+                name: t.name,
+                description: t.description || `Tool: ${t.name}`,
+                parameters: parameters
+            });
         }
     }
 
-    // If it's already a JSON Schema object
-    if (params && typeof params === 'object') {
-        const schema = { ...params };
-
-        // Remove problematic properties
-        delete schema.$schema;
-        delete schema.additionalProperties;
-
-        // Ensure type is 'object'
-        if (!schema.type) {
-            schema.type = 'object';
-        }
-
-        // Ensure properties exists
-        if (!schema.properties) {
-            schema.properties = {};
-        }
-
-        // Ensure required is an array
-        if (!Array.isArray(schema.required)) {
-            schema.required = [];
-        }
-
-        return schema;
-    }
-
-    // Fallback
-    return { type: 'object', properties: {}, required: [] };
+    if (functionDeclarations.length === 0) return undefined;
+    return [{ functionDeclarations }];
 }
 
 /**
@@ -129,24 +148,11 @@ export class GeminiModel {
             messages.push({ role: 'user', content: input });
         }
 
-        // Convert tools to Vercel AI SDK format using zodToJsonSchema
-        const vercelTools = {};
-        if (tools && tools.length > 0) {
-            tools.forEach(t => {
-                if (t.type === 'function') {
-                    const jsonSchema = convertToJsonSchema(t.parameters, t.name);
+        // Build Gemini-native tools with UPPERCASE types
+        const geminiTools = buildGeminiNativeTools(tools);
 
-                    vercelTools[t.name] = {
-                        description: t.description || `Tool: ${t.name}`,
-                        parameters: jsonSchema
-                    };
-                }
-            });
-        }
-
-        // Debug Log for Tool Structure
-        if (tools && tools.length > 0) {
-            console.log(`[GeminiModel] Final Tool Structure for ${this.modelName}:`, JSON.stringify(vercelTools, null, 2));
+        if (geminiTools) {
+            console.log(`[GeminiModel] Gemini-native tools format:`, JSON.stringify(geminiTools, null, 2));
         }
 
         try {
@@ -157,10 +163,16 @@ export class GeminiModel {
                 messages: messages,
             };
 
-            // Pass tools if any
-            if (Object.keys(vercelTools).length > 0) {
-                generateOptions.tools = vercelTools;
-                generateOptions.toolChoice = 'auto';
+            // Pass tools via experimental_providerMetadata for Gemini-native format
+            if (geminiTools) {
+                generateOptions.experimental_providerMetadata = {
+                    google: {
+                        functionCallingConfig: {
+                            mode: 'AUTO'
+                        },
+                        tools: geminiTools
+                    }
+                };
             }
 
             const result = await generateText(generateOptions);
