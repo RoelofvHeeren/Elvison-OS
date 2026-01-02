@@ -132,11 +132,20 @@ export class GeminiModel {
                 messages: messages,
             };
 
-            // Pass tools in Gemini-native format
-            if (geminiTools) {
-                generateOptions.experimental_providerMetadata = {
-                    google: { tools: geminiTools }
-                };
+            // Pass tools directly to generateText for proper tool calling
+            // Previously used experimental_providerMetadata which may not work
+            if (geminiTools && geminiTools.length > 0 && geminiTools[0].functionDeclarations) {
+                // Convert Gemini-native format to Vercel AI SDK format
+                const vercelTools = {};
+                for (const decl of geminiTools[0].functionDeclarations) {
+                    vercelTools[decl.name] = {
+                        description: decl.description,
+                        parameters: decl.parameters
+                    };
+                }
+                generateOptions.tools = vercelTools;
+                generateOptions.toolChoice = 'auto';
+                console.log(`[GeminiModel] Vercel tools format:`, JSON.stringify(vercelTools));
             }
 
             const result = await generateText(generateOptions);

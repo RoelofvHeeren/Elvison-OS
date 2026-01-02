@@ -310,10 +310,14 @@ export const runAgentWorkflow = async (input, config) => {
         name: "Company Finder",
         instructions: `GOAL: Discover real companies via Google search.
 PROTOCOL: Use google_search_and_extract to find organic results.
-STRICTURE: Extract ONLY: Company name, Primary domain, One-line description. 
-REJECT: Ambiguous or directory-style results (LinkedIn, Yelp, etc).
+STRATEGY: 
+1. If a result is a direct company homepage, extract it.
+2. If a result is a LIST/DIRECTORY (e.g. "Top 10..."), READ THE SNIPPET. Extract company names mentioned in the snippet.
+3. INFER domains for well-known companies found in snippets if missing (e.g. "Toast" -> "toast.tab.com" or "toast.com").
+STRICTURE: Extract: Company name, Primary domain (best guess permitted), One-line description. 
+REJECT: The Directory itself (e.g. do not output "Yelp" as the company), but extracting companies FROM Yelp is okay.
+OUTPUT FORMAT: JSON with keys: "companyName", "domain", "description". Do NOT use "primaryDomain".
 CONTEXT: ${input.input_as_text}. PASS: ${leadLearning.pass}.`,
-        model: getSafeModel('discovery'),
         model: getSafeModel('discovery'),
         tools: getToolsForAgent('company_finder')
         // outputType removed to prevent premature validation
