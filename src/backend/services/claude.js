@@ -1,5 +1,6 @@
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { generateText } from 'ai';
+import { zodToJsonSchema } from 'zod-to-json-schema';
 
 /**
  * ClaudeModel Implementation for @openai/agents
@@ -15,6 +16,66 @@ export class ClaudeModel {
         this.anthropicProvider = createAnthropic({
             apiKey: this.apiKey
         });
+    }
+
+    /**
+     * Convert a Zod schema or raw object to a proper JSON Schema for Anthropic
+     * Anthropic requires: { type: 'object', properties: {...}, required: [...] }
+     */
+    convertToJsonSchema(params, toolName) {
+        // If it's a Zod schema (has _def property), use zodToJsonSchema
+        if (params && params._def) {
+            try {
+                const jsonSchema = zodToJsonSchema(params, {
+                    $refStrategy: 'none', // Flatten, no $refs
+                    target: 'jsonSchema7'
+                });
+
+                // Remove $schema property as Anthropic doesn't like it
+                delete jsonSchema.$schema;
+
+                // Ensure type is 'object' at root level
+                if (!jsonSchema.type) {
+                    jsonSchema.type = 'object';
+                }
+
+                console.log(`[ClaudeModel] Converted Zod schema for ${toolName}:`, JSON.stringify(jsonSchema));
+                return jsonSchema;
+            } catch (e) {
+                console.error(`[ClaudeModel] zodToJsonSchema failed for ${toolName}:`, e);
+                // Fallback to a minimal object schema
+                return { type: 'object', properties: {}, required: [] };
+            }
+        }
+
+        // If it's already a JSON Schema object
+        if (params && typeof params === 'object') {
+            const schema = { ...params };
+
+            // Remove problematic properties
+            delete schema.$schema;
+            delete schema.additionalProperties;
+
+            // Ensure type is 'object'
+            if (!schema.type) {
+                schema.type = 'object';
+            }
+
+            // Ensure properties exists
+            if (!schema.properties) {
+                schema.properties = {};
+            }
+
+            // Ensure required is an array
+            if (!Array.isArray(schema.required)) {
+                schema.required = [];
+            }
+
+            return schema;
+        }
+
+        // Fallback
+        return { type: 'object', properties: {}, required: [] };
     }
 
     /**
@@ -40,92 +101,25 @@ export class ClaudeModel {
         }
 
         // Convert tools to Vercel AI SDK format
+        // Vercel AI SDK expects: { toolName: { description, parameters } }
+        // where parameters is a JSON Schema object
         const vercelTools = {};
         if (tools && tools.length > 0) {
             tools.forEach(t => {
                 if (t.type === 'function') {
-                    // Sanitize parameters if it's a JSON Schema object
-                    let params = t.parameters;
+                    const jsonSchema = this.convertToJsonSchema(t.parameters, t.name);
 
-                    // Debug raw params
-                    console.log(`[ClaudeModel] Raw params for ${t.name}:`, JSON.stringify(params, null, 2));
-
-                    // MANUAL ZOD CONVERSION (Hack for Anthropic Strictness)
-                    // If it looks like a Zod schema (has _def), manually construct JSON Schema
-                    if (params && params._def) {
-                        try {
-                            const def = params._def;
-                            if (def.typeName === 'ZodObject') {
-                                const properties = {};
-                                const required = [];
-
-                                for (const [key, schema] of Object.entries(def.shape())) {
-                                    let type = 'string'; // Default
-                                    const shapeType = schema._def.typeName;
-
-                                    if (shapeType === 'ZodString') type = 'string';
-                                    if (shapeType === 'ZodNumber') type = 'number';
-                                    if (shapeType === 'ZodBoolean') type = 'boolean';
-                                    if (shapeType === 'ZodArray') type = 'array';
-
-                                    properties[key] = { type };
-
-                                    // Handle Array items
-                                    if (type === 'array' && schema._def.type) {
-                                        // Simplify: assume string array for urls
-                                        properties[key].items = { type: 'string' };
-                                    }
-
-                                    if (!schema.isOptional()) {
-                                        required.push(key);
-                                    }
-                                }
-
-                                params = {
-                                    type: 'object',
-                                    properties,
-                                    required
-                                };
-                                console.log(`[ClaudeModel] Manually converted Zod schema for ${t.name}:`, JSON.stringify(params));
-                            }
-                        } catch (e) {
-                            console.error(`[ClaudeModel] Zod conversion failed for ${t.name}`, e);
-                        }
-                    } else if (params && typeof params === 'object' && !params.parse) { // Not a Zod schema
-                        params = { ...params }; // Clone
-
-                        // SANITIZATION FOR ANTHROPIC
-                        delete params.$schema; // Remove $schema
-                        delete params.additionalProperties; // Remove additionalProperties (can cause issues)
-
-                        // FIX: Unconditionally set type to object
-                        params.type = 'object';
-                    }
-
-                    // CRITICAL FIX: Anthropic expects 'input_schema', NOT 'parameters'
-                    // The Error "tools.0.custom.input_schema.type: Field required" indicates it was looking for input_schema.
                     vercelTools[t.name] = {
-                        description: t.description,
-                        parameters: params, // Vercel AI SDK might map this, but let's be safe
+                        description: t.description || `Tool: ${t.name}`,
+                        parameters: jsonSchema
                     };
-
-                    // Direct modification of the object structure if Vercel AI SDK allows access to the raw tool list
-                    // But effectively, if we are passing this map to 'tools', the keys are names.
-                    // Wait, Vercel AI SDK 'tools' object format is: { toolName: { description, parameters, execute? } }
-                    // It handles the conversion to provider specific format.
-
-                    // If Vercel AI SDK is using 'parameters' to build 'input_schema', then 'params' MUST have 'type: object'
-                    // which we ensured above.
-
-                    // Let's TRY to force the input_schema property if the SDK passes it through
-                    vercelTools[t.name].input_schema = params;
                 }
             });
         }
 
         // Debug Log for Tool Structure
         if (tools && tools.length > 0) {
-            console.log(`[ClaudeModel] Constructed Tools for ${this.modelName}:`, JSON.stringify(vercelTools, null, 2));
+            console.log(`[ClaudeModel] Final Tool Structure for ${this.modelName}:`, JSON.stringify(vercelTools, null, 2));
         }
 
         try {
