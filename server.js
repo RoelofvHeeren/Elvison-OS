@@ -1399,7 +1399,68 @@ app.post('/api/agents/run', requireAuth, async (req, res) => {
             }
         })
 
-        // ... (existing success logic) ...
+        // SUCCESS PATH: Save logs, stats, and output to database
+        console.log('Workflow completed successfully, saving results...');
+
+        try {
+            // Build stats object from workflow result
+            const workflowStats = result.stats || {};
+            const costData = workflowStats.cost || {};
+
+            // Build comprehensive stats object for DB storage
+            const statsForDB = {
+                // Basic counts
+                companies_discovered: result.leads?.length || 0,
+                leads_returned: result.leads?.length || 0,
+                total: workflowStats.total || 0,
+                attempts: workflowStats.attempts || 0,
+
+                // Cost data (from CostTracker.getSummary())
+                cost: costData.cost || { total: 0, formatted: '$0.00' },
+                tokens: costData.tokens || { input: 0, output: 0, total: 0 },
+                breakdown: costData.breakdown || { byAgent: {}, byModel: {} },
+                calls: costData.calls || [],
+                totalCalls: costData.totalCalls || 0,
+
+                // Execution timeline logs
+                execution_timeline: localExecutionLogs,
+                execution_logs: localExecutionLogs
+            };
+
+            console.log(`[Server] Saving stats with ${localExecutionLogs.length} log entries and ${statsForDB.calls?.length || 0} API calls`);
+
+            // Save output to agent_results
+            const outputDataForStorage = {
+                leads: result.leads || [],
+                status: result.status,
+                execution_logs: localExecutionLogs,
+                execution_timeline: localExecutionLogs
+            };
+
+            await query(
+                `INSERT INTO agent_results (run_id, output_data) VALUES ($1, $2)
+                 ON CONFLICT (run_id) DO UPDATE SET output_data = $2`,
+                [runId, JSON.stringify(outputDataForStorage)]
+            );
+
+            // Update workflow_runs with stats
+            await query(
+                `UPDATE workflow_runs SET status = 'COMPLETED', completed_at = NOW(), stats = $2 WHERE id = $1`,
+                [runId, JSON.stringify(statsForDB)]
+            );
+
+            // Send success event
+            res.write(`event: complete\ndata: ${JSON.stringify({
+                status: 'success',
+                leads: result.leads?.length || 0,
+                cost: costData.cost?.formatted || '$0.00'
+            })}\n\n`);
+
+        } catch (dbErr) {
+            console.error('Failed to save success results:', dbErr);
+            res.write(`event: error\ndata: {"message": "Results saved but DB commit failed: ${dbErr.message}"}\n\n`);
+        }
+
 
     } catch (error) {
         console.error('Workflow failed:', error);
