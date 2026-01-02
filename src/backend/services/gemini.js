@@ -1,5 +1,6 @@
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
-import { generateText } from 'ai';
+import { generateText, tool } from 'ai';
+import { z } from 'zod';
 
 /**
  * Extract JSON from text - strips markdown fences
@@ -26,88 +27,8 @@ function assertJsonResponse(text, context) {
 }
 
 /**
- * Build Gemini-native tools format with UPPERCASE types as required by Gemini API
- * Reference: https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/function-calling
- */
-function buildGeminiNativeTools(tools) {
-    if (!tools || tools.length === 0) return undefined;
-
-    const functionDeclarations = [];
-
-    for (const t of tools) {
-        if (t.type === 'function') {
-            // Build parameters with UPPERCASE types as required by Gemini
-            const parameters = {
-                type: "OBJECT",  // UPPERCASE required by Gemini!
-                properties: {}
-            };
-
-            // Handle google_search_and_extract
-            if (t.name === 'google_search_and_extract') {
-                parameters.properties = {
-                    query: {
-                        type: "STRING",  // UPPERCASE!
-                        description: "Google search query"
-                    }
-                };
-                parameters.required = ["query"];
-            }
-            // Handle scrape_company_website
-            else if (t.name === 'scrape_company_website') {
-                parameters.properties = {
-                    domain: {
-                        type: "STRING",
-                        description: "Domain to scrape"
-                    }
-                };
-                parameters.required = ["domain"];
-            }
-            // Handle scan_site_structure
-            else if (t.name === 'scan_site_structure') {
-                parameters.properties = {
-                    domain: {
-                        type: "STRING",
-                        description: "Domain to scan for links"
-                    }
-                };
-                parameters.required = ["domain"];
-            }
-            // Handle scrape_specific_pages
-            else if (t.name === 'scrape_specific_pages') {
-                parameters.properties = {
-                    urls: {
-                        type: "ARRAY",
-                        items: { type: "STRING" },
-                        description: "List of URLs to scrape"
-                    }
-                };
-                parameters.required = ["urls"];
-            }
-            // Default fallback
-            else {
-                parameters.properties = {
-                    input: {
-                        type: "STRING",
-                        description: "Input value"
-                    }
-                };
-                parameters.required = ["input"];
-            }
-
-            functionDeclarations.push({
-                name: t.name,
-                description: t.description || `Tool: ${t.name}`,
-                parameters: parameters
-            });
-        }
-    }
-
-    if (functionDeclarations.length === 0) return undefined;
-    return [{ functionDeclarations }];
-}
-
-/**
  * GeminiModel Implementation for @openai/agents
+ * Uses Vercel AI SDK's native tool format with Zod schemas
  */
 export class GeminiModel {
     constructor(apiKey, modelName = 'gemini-2.0-flash') {
@@ -148,11 +69,47 @@ export class GeminiModel {
             messages.push({ role: 'user', content: input });
         }
 
-        // Build Gemini-native tools with UPPERCASE types
-        const geminiTools = buildGeminiNativeTools(tools);
+        // Build Vercel AI SDK tools using Zod schemas directly
+        // This is the officially supported way according to Vercel AI SDK docs
+        const vercelTools = {};
+        if (tools && tools.length > 0) {
+            for (const t of tools) {
+                if (t.type === 'function') {
+                    // Create Zod schema based on tool name
+                    let zodSchema;
 
-        if (geminiTools) {
-            console.log(`[GeminiModel] Gemini-native tools format:`, JSON.stringify(geminiTools, null, 2));
+                    if (t.name === 'google_search_and_extract') {
+                        zodSchema = z.object({
+                            query: z.string().describe("Google search query")
+                        });
+                    } else if (t.name === 'scrape_company_website') {
+                        zodSchema = z.object({
+                            domain: z.string().describe("Domain to scrape")
+                        });
+                    } else if (t.name === 'scan_site_structure') {
+                        zodSchema = z.object({
+                            domain: z.string().describe("Domain to scan for links")
+                        });
+                    } else if (t.name === 'scrape_specific_pages') {
+                        zodSchema = z.object({
+                            urls: z.array(z.string()).describe("List of URLs to scrape")
+                        });
+                    } else {
+                        zodSchema = z.object({
+                            input: z.string().describe("Input value")
+                        });
+                    }
+
+                    vercelTools[t.name] = tool({
+                        description: t.description || `Tool: ${t.name}`,
+                        parameters: zodSchema
+                    });
+                }
+            }
+        }
+
+        if (Object.keys(vercelTools).length > 0) {
+            console.log(`[GeminiModel] Using ${Object.keys(vercelTools).length} tools with Zod schemas:`, Object.keys(vercelTools));
         }
 
         try {
@@ -163,16 +120,10 @@ export class GeminiModel {
                 messages: messages,
             };
 
-            // Pass tools via experimental_providerMetadata for Gemini-native format
-            if (geminiTools) {
-                generateOptions.experimental_providerMetadata = {
-                    google: {
-                        functionCallingConfig: {
-                            mode: 'AUTO'
-                        },
-                        tools: geminiTools
-                    }
-                };
+            // Pass tools if any
+            if (Object.keys(vercelTools).length > 0) {
+                generateOptions.tools = vercelTools;
+                generateOptions.toolChoice = 'auto';
             }
 
             const result = await generateText(generateOptions);
