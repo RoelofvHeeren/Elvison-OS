@@ -1437,9 +1437,10 @@ app.post('/api/agents/run', requireAuth, async (req, res) => {
                 execution_timeline: localExecutionLogs
             };
 
+            // Delete existing result if any, then insert (no unique constraint on run_id)
+            await query(`DELETE FROM agent_results WHERE run_id = $1`, [runId]);
             await query(
-                `INSERT INTO agent_results (run_id, output_data) VALUES ($1, $2)
-                 ON CONFLICT (run_id) DO UPDATE SET output_data = $2`,
+                `INSERT INTO agent_results (run_id, output_data) VALUES ($1, $2)`,
                 [runId, JSON.stringify(outputDataForStorage)]
             );
 
@@ -1495,9 +1496,10 @@ app.post('/api/agents/run', requireAuth, async (req, res) => {
                     error: error.message
                 };
 
+                // Delete existing result if any, then insert (no unique constraint on run_id)
+                await query(`DELETE FROM agent_results WHERE run_id = $1`, [runId]);
                 await query(
-                    `INSERT INTO agent_results (run_id, output_data) VALUES ($1, $2)
-                     ON CONFLICT (run_id) DO UPDATE SET output_data = $2`,
+                    `INSERT INTO agent_results (run_id, output_data) VALUES ($1, $2)`,
                     [runId, JSON.stringify(outputDataForStorage)]
                 );
 
