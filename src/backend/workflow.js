@@ -2,6 +2,7 @@ import { fileSearchTool, hostedMcpTool, Agent, Runner, withTrace, tool } from "@
 import { checkApifyRun, getApifyResults, performGoogleSearch, scrapeCompanyWebsite, scanSiteStructure, scrapeSpecificPages } from "./services/apify.js"; // Import dynamic tools
 import { GeminiModel } from "./services/gemini.js"; // Import GeminiModel
 import { ClaudeModel } from "./services/claude.js"; // Import ClaudeModel
+
 import { z } from "zod";
 import { query } from "../../db/index.js";
 import {
@@ -17,7 +18,7 @@ import { enforceAgentContract } from "./utils/agent-contract.js"; // Import cont
 // --- Schema Definitions ---
 const CompanyFinderSchema = z.object({
     results: z.array(z.object({
-        company_name: z.string(),
+        companyName: z.string(),
         domain: z.string(),
         description: z.string().optional()
     }))
@@ -237,21 +238,21 @@ export const runAgentWorkflow = async (input, config) => {
         logStep('System', `🔑 Anthropic Key detected: ${anthropicKey.substring(0, 7)}...`);
     }
 
-    const finderModel = googleKey ? new GeminiModel(googleKey, 'gemini-2.0-flash') : 'gpt-4-turbo';
-    const profilerModel = anthropicKey ? new ClaudeModel(anthropicKey, 'claude-3-5-sonnet-20240620') : 'gpt-4-turbo';
+    // --- STRICT Model Initialization (No Silent Fallbacks) ---
+    if (!googleKey) logStep('System', '⚠️ Missing Google API Key. Discovery/Gemini agents will fail.');
+    if (!anthropicKey) logStep('System', '⚠️ Missing Anthropic API Key. Profiler/Claude agents will fail.');
 
-    // --- Dynamic Fallback State ---
-    let useGoogleFallback = !googleKey;
-    let useAnthropicFallback = !anthropicKey;
+    const finderModel = new GeminiModel(googleKey, 'gemini-2.0-flash');
+    const profilerModel = new ClaudeModel(anthropicKey, 'claude-3-5-sonnet-20240620');
 
     const getSafeModel = (type) => {
         if (type === 'discovery' || type === 'outreach' || type === 'refiner') {
-            return useGoogleFallback ? 'gpt-4-turbo' : finderModel;
+            return finderModel;
         }
         if (type === 'profiler' || type === 'architect') {
-            return useAnthropicFallback ? 'gpt-4-turbo' : profilerModel;
+            return profilerModel;
         }
-        return 'gpt-4-turbo';
+        return 'gpt-4-turbo'; // For Apollo/defaults if needed
     };
 
     // --- OPTIMIZATION 1: LLM Filter Refiner ---
@@ -415,7 +416,12 @@ STRICTURE: LLM is fallback only. Zero creativity. If data is unsalvageable, mark
                 schema: CompanyFinderSchema
             });
 
-            candidates = (normalizedFinder.results || []).filter(c => !scrapedNamesSet.has(c.company_name));
+            candidates = (normalizedFinder.results || [])
+                .map(c => ({
+                    ...c,
+                    company_name: c.companyName || c.company_name // Polyfill for schema drift
+                }))
+                .filter(c => !scrapedNamesSet.has(c.company_name));
         } catch (e) {
             logStep('Company Finder', `Failed: ${e.message}`);
         }
