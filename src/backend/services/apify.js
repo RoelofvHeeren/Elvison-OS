@@ -351,60 +351,53 @@ export const performGoogleSearch = async (query, token, checkCancellation = null
  * @param {string} domain 
  * @param {string} token 
  */
-export const scanSiteStructure = async (domain, token, checkCancellation = null) => {
-    const ACTOR_ID = 'apify~website-content-crawler';
+export const scanSiteStructure = async (domain, token = null, checkCancellation = null) => {
     if (!domain) return "No domain provided.";
-
     const url = domain.startsWith('http') ? domain : `https://${domain}`;
+    console.log(`[Local Scraper] Scanning structure for ${domain}...`);
 
-    // 1. Shallow Crawl (Depth 0) to get Homepage links
-    const input = {
-        startUrls: [{ url }],
-        maxPagesPerCrawl: 1, // Just the homepage
-        maxConcurrency: 1,
-        saveHtml: false,
-        saveMarkdown: true, // We want the links
-        crawlerType: 'cheerio'
-    };
-
+    let browser = null;
     try {
-        console.log(`[Apify] Scanning structure for ${domain}...`);
-        const runUrl = `${APIFY_API_URL}/acts/${ACTOR_ID}/runs?token=${token}`;
-        const startRes = await axios.post(runUrl, input);
-        const runId = startRes.data.data.id;
+        const puppeteer = (await import('puppeteer')).default;
+        browser = await puppeteer.launch({
+            headless: 'new',
+            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+        });
+        const page = await browser.newPage();
 
-        // Poll
-        let attempts = 0;
-        let datasetId = null;
-        while (attempts < 30) {
-            if (checkCancellation && await checkCancellation()) {
-                await abortApifyRun(token, runId);
-                return "Scan cancelled.";
-            }
+        // Timeout 15s to be fast
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
 
-            await new Promise(r => setTimeout(r, 2000));
-            const statusRes = await checkApifyRun(token, runId);
-            if (statusRes.status === 'SUCCEEDED') {
-                datasetId = statusRes.datasetId;
-                break;
-            }
-            if (['FAILED', 'ABORTED', 'TIMED-OUT'].includes(statusRes.status)) {
-                throw new Error(`Scan failed: ${statusRes.status}`);
-            }
-            attempts++;
-        }
+        // Get text content
+        const text = await page.evaluate(() => document.body.innerText.substring(0, 5000)); // Limit size
 
-        if (!datasetId) return "Scan timed out.";
+        // Get internal links relevant to business
+        const links = await page.evaluate((baseUrl) => {
+            const anchors = Array.from(document.querySelectorAll('a'));
+            return anchors
+                .map(a => a.href)
+                .filter(href => href.includes(baseUrl) && !href.includes('#'))
+                .filter(href => {
+                    const lower = href.toLowerCase();
+                    return lower.includes('about') ||
+                        lower.includes('team') ||
+                        lower.includes('people') ||
+                        lower.includes('portfolio') ||
+                        lower.includes('project') ||
+                        lower.includes('invest');
+                })
+                .slice(0, 50); // Limit links
+        }, url.split('//')[1].split('/')[0]); // Simple base domain match
 
-        const results = await getApifyResults(token, datasetId);
-        if (!results || results.length === 0) return "No scan results.";
+        const uniqueLinks = [...new Set(links)];
 
-        const homepage = results[0];
-        return `HOMEPAGE SCAN (${url}):\n${homepage.markdown || homepage.text || "No content."}`;
+        return `HOMEPAGE SCAN (${url}):\n${text}\n\nDISCOVERED LINKS:\n${uniqueLinks.join('\n')}`;
 
     } catch (e) {
-        console.warn(`[Apify] Scan Error for ${domain}:`, e.message);
+        console.warn(`[Local Scraper] Scan Error for ${domain}:`, e.message);
         return `Error scanning ${domain}: ${e.message}`;
+    } finally {
+        if (browser) await browser.close();
     }
 };
 
@@ -413,59 +406,48 @@ export const scanSiteStructure = async (domain, token, checkCancellation = null)
  * @param {Array<string>} urls 
  * @param {string} token 
  */
-export const scrapeSpecificPages = async (urls, token, checkCancellation = null) => {
-    const ACTOR_ID = 'apify~website-content-crawler';
+export const scrapeSpecificPages = async (urls, token = null, checkCancellation = null) => {
     if (!urls || urls.length === 0) return "No URLs provided.";
+    console.log(`[Local Scraper] Targeted scraping of ${urls.length} pages...`);
 
-    const validUrls = urls.map(u => ({ url: u }));
-
-    const input = {
-        startUrls: validUrls,
-        maxPagesPerCrawl: validUrls.length,
-        maxConcurrency: 2,
-        saveHtml: false,
-        saveMarkdown: true,
-        crawlerType: 'cheerio'
-    };
-
+    let browser = null;
     try {
-        console.log(`[Apify] Targeted scraping of ${urls.length} pages...`);
-        const runUrl = `${APIFY_API_URL}/acts/${ACTOR_ID}/runs?token=${token}`;
-        const startRes = await axios.post(runUrl, input);
-        const runId = startRes.data.data.id;
+        const puppeteer = (await import('puppeteer')).default;
+        browser = await puppeteer.launch({
+            headless: 'new',
+            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+        });
 
-        let attempts = 0;
-        let datasetId = null;
-        while (attempts < 60) {
-            if (checkCancellation && await checkCancellation()) {
-                await abortApifyRun(token, runId);
-                return "Scrape cancelled.";
-            }
+        const results = [];
+        for (const url of urls) {
+            if (checkCancellation && await checkCancellation()) break;
 
-            await new Promise(r => setTimeout(r, 2000));
-            const statusRes = await checkApifyRun(token, runId);
-            if (statusRes.status === 'SUCCEEDED') {
-                datasetId = statusRes.datasetId;
-                break;
+            try {
+                const page = await browser.newPage();
+                // 10s timeout per page
+                await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 10000 });
+
+                const text = await page.evaluate(() => {
+                    // Remove scripts, styles, nav, footer to reduce noise
+                    const trash = document.querySelectorAll('script, style, noscript, nav, footer, header');
+                    trash.forEach(t => t.remove());
+                    return document.body.innerText.substring(0, 8000); // Limit context
+                });
+
+                results.push(`--- PAGE: ${url} ---\n${text}`);
+                await page.close();
+            } catch (err) {
+                console.warn(`[Local Scraper] Failed to scrape ${url}: ${err.message}`);
+                results.push(`--- PAGE: ${url} ---\n(Error: ${err.message})`);
             }
-            if (['FAILED', 'ABORTED', 'TIMED-OUT'].includes(statusRes.status)) {
-                throw new Error(`Scrape failed: ${statusRes.status}`);
-            }
-            attempts++;
         }
 
-        if (!datasetId) return "Scrape timed out.";
-
-        const results = await getApifyResults(token, datasetId);
-
-        const combined = results.map(r => {
-            return `--- PAGE: ${r.url} ---\n${r.markdown || r.text || "Empty"}`;
-        }).join('\n\n');
-
-        return combined;
+        return results.join('\n\n');
 
     } catch (e) {
-        console.warn(`[Apify] Specific Scrape Error:`, e.message);
+        console.warn(`[Local Scraper] Group Scrape Error:`, e.message);
         return `Error scraping pages: ${e.message}`;
+    } finally {
+        if (browser) await browser.close();
     }
 };
