@@ -20,15 +20,15 @@ export const WORKFLOW_CONFIG = {
 };
 
 // MODEL CONFIGURATION
-// All agents use Gemini 2.0 Flash (cheapest: $0.10/$0.40 per 1M tokens)
-// Except Company Profiler which uses Claude 3.5 Sonnet (best research: $3.00/$15.00 per 1M tokens)
+// All agents use Gemini 2.0 Flash for now (cheapest: $0.10/$0.40 per 1M tokens)
+// NOTE: Claude Sonnet is better for research but @openai/agents Runner doesn't support it properly
+// TODO: Build direct Claude runner like we did for Gemini, then switch profiler back
 export const AGENT_MODELS = {
     company_finder: "gemini-2.0-flash",      // Discovery - cheap and fast
-    company_profiler: "claude-3-5-sonnet",   // Research - needs good reasoning
+    company_profiler: "gemini-2.0-flash",    // TEMP: Gemini until direct Claude runner built
     apollo_lead_finder: "gemini-2.0-flash",  // Structured queries - simple task
     outreach_creator: "gemini-2.0-flash",    // Copy generation - scales cheaply
     data_architect: "gemini-2.0-flash",      // Data normalization - simple task
-    // filter_refiner: REMOVED - redundant, user sets filters in onboarding
     default: "gemini-2.0-flash"
 };
 

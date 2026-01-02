@@ -1,7 +1,5 @@
-import { Agent, Runner, tool } from "@openai/agents";
-import { checkApifyRun, getApifyResults, performGoogleSearch, scrapeCompanyWebsite, scanSiteStructure, scrapeSpecificPages } from "./services/apify.js"; // Import dynamic tools
-import { GeminiModel } from "./services/gemini.js"; // Import GeminiModel
-import { ClaudeModel } from "./services/claude.js"; // Import ClaudeModel
+// NO MORE @openai/agents - Using direct SDK runners only
+import { checkApifyRun, getApifyResults, performGoogleSearch, scrapeCompanyWebsite, scanSiteStructure, scrapeSpecificPages } from "./services/apify.js";
 import { z } from "zod";
 import { query } from "../../db/index.js";
 import {
@@ -11,12 +9,12 @@ import {
 } from "./company-tracker.js";
 import { LeadScraperService } from "./services/lead-scraper-service.js";
 import { WORKFLOW_CONFIG, getEffectiveMaxLeads, AGENT_MODELS } from "../config/workflow.js";
-import { CostTracker, runAgentWithTracking } from "./services/cost-tracker.js";
-import { enforceAgentContract } from "./utils/agent-contract.js"; // Import contract enforcer
-import { runGeminiAgent, createTool } from "./services/direct-agent-runner.js"; // Direct Gemini runner
+import { CostTracker } from "./services/cost-tracker.js";
+import { enforceAgentContract } from "./utils/agent-contract.js";
+import { runGeminiAgent } from "./services/direct-agent-runner.js";
 
 // --- Schema Definitions ---
-console.log("✅ WORKFLOW.JS RELOADED - CLAUDE FIX ACTIVE");
+console.log("✅ WORKFLOW.JS - DIRECT SDK MODE (No OpenAI)");
 
 const CompanyFinderSchema = z.object({
     results: z.array(z.object({
@@ -139,57 +137,7 @@ export const runAgentWorkflow = async (input, config) => {
         return false;
     };
 
-    const getToolsForAgent = (agentName) => {
-        const apifyToken = process.env.APIFY_API_TOKEN;
-
-        if (agentName === 'company_finder') {
-            return [
-                tool({
-                    name: "google_search_and_extract",
-                    description: "Search using Google and return organic results (Title, URL, Snippet).",
-                    parameters: z.object({ query: z.string() }),
-                    execute: async ({ query }) => {
-                        logStep('Company Finder', `🔍 Google Search: "${query}"`);
-                        const results = await performGoogleSearch(query, apifyToken, checkCancellation);
-                        return results.map(r => `NAME: ${r.title}\nURL: ${r.link}\nDESC: ${r.snippet}`).join('\n\n');
-                    }
-                })
-            ];
-        }
-
-        if (agentName === 'company_profiler') {
-            return [
-                tool({
-                    name: "scan_site_structure",
-                    description: "Step 1: Scan homepage/sitemap to discover available pages/links.",
-                    parameters: z.object({ domain: z.string() }),
-                    execute: async ({ domain }) => {
-                        return await scanSiteStructure(domain, apifyToken, checkCancellation);
-                    }
-                }),
-                tool({
-                    name: "scrape_specific_pages",
-                    description: "Step 2: Scrape valid URLs found in the scan step.",
-                    parameters: z.object({ urls: z.array(z.string()) }),
-                    execute: async ({ urls }) => {
-                        return await scrapeSpecificPages(urls, apifyToken, checkCancellation);
-                    }
-                })
-            ];
-        }
-
-        if (agentName === 'apollo_lead_finder') {
-            return [
-                hostedMcpTool({
-                    serverLabel: "Apollo_Lead_Finder",
-                    serverUrl: "https://apollo-mcp-v4-production.up.railway.app/sse?apiKey=apollo-mcp-client-key-01",
-                    authorization: "apollo-mcp-client-key-01"
-                })
-            ];
-        }
-
-        return [];
-    };
+    // NOTE: getToolsForAgent removed - tools are now defined inline with runGeminiAgent() calls
 
     // --- Dynamic Context Injection ---
     let companyContext = { name: "The User's Company", goal: "Expand client base.", baselineTitles: [] };
@@ -222,123 +170,24 @@ export const runAgentWorkflow = async (input, config) => {
         if (rejectRows.rows.length > 0) leadLearning.reject = "Avoid: " + rejectRows.rows.map(r => r.reason).join(", ");
     } catch (e) { console.warn("Learning loop failed", e); }
 
-    const runner = new Runner();
+    // --- Direct SDK Mode - No @openai/agents ---
     const costTracker = new CostTracker(`wf_${Date.now()}`);
 
-    // --- Model Initialization & Hardening ---
+    // --- API Key Validation ---
     const rawGoogleKey = process.env.GOOGLE_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-    const rawAnthropicKey = process.env.ANTHROPIC_API_KEY;
-
-    // Sanitize and validate keys (Removing all whitespace/newlines)
     const googleKey = (typeof rawGoogleKey === 'string' && rawGoogleKey.length > 10) ? rawGoogleKey.trim().replace(/[\s\r\n\t]/g, '') : null;
-    const anthropicKey = (typeof rawAnthropicKey === 'string' && rawAnthropicKey.length > 10) ? rawAnthropicKey.trim().replace(/[\s\r\n\t]/g, '') : null;
 
-    if (googleKey) {
-        logStep('System', `🔑 Google Key: ${googleKey.substring(0, 7)}...${googleKey.substring(googleKey.length - 4)} (Len: ${googleKey.length})`);
-    } else if (rawGoogleKey) {
-        logStep('System', `⚠️ Warning: GOOGLE_API_KEY looks invalid (Type: ${typeof rawGoogleKey}, Len: ${rawGoogleKey?.length}).`);
+    if (!googleKey) {
+        throw new Error('GOOGLE_API_KEY is required. Set it in environment variables.');
     }
+    logStep('System', `🔑 Google Key: ${googleKey.substring(0, 7)}...${googleKey.substring(googleKey.length - 4)} (Len: ${googleKey.length})`);
 
-    if (anthropicKey) {
-        logStep('System', `🔑 Anthropic Key detected: ${anthropicKey.substring(0, 7)}...`);
-    }
-
-    const finderModel = googleKey ? new GeminiModel(googleKey, 'gemini-2.0-flash') : 'gpt-4-turbo';
-    const profilerModel = anthropicKey ? new ClaudeModel(anthropicKey, 'claude-3-5-sonnet-20240620') : 'gpt-4-turbo';
-
-    // --- Dynamic Fallback State ---
-    let useGoogleFallback = !googleKey;
-    let useAnthropicFallback = !anthropicKey;
-
-    const getSafeModel = (type) => {
-        if (type === 'discovery' || type === 'outreach' || type === 'refiner') {
-            return useGoogleFallback ? 'gpt-4-turbo' : finderModel;
-        }
-        if (type === 'profiler' || type === 'architect') {
-            return useAnthropicFallback ? 'gpt-4-turbo' : profilerModel;
-        }
-        return 'gpt-4-turbo';
-    };
-
-    // Filter Refiner REMOVED - User sets filters in onboarding, no need for LLM refinement
+    // Log filters from onboarding
     logStep('System', `Using filters from onboarding: ${JSON.stringify(filters)}`);
 
-    // --- Agent Definitions with Dynamic Models ---
-    const getFinderAgent = () => new Agent({
-        name: "Company Finder",
-        instructions: `GOAL: Discover real companies via Google search.
-PROTOCOL: Use google_search_and_extract to find organic results.
-STRATEGY: 
-1. If a result is a direct company homepage, extract it.
-2. If a result is a LIST/DIRECTORY (e.g. "Top 10..."), READ THE SNIPPET. Extract company names mentioned in the snippet.
-3. INFER domains for well-known companies found in snippets if missing (e.g. "Toast" -> "toast.tab.com" or "toast.com").
-STRICTURE: Extract: Company name, Primary domain (best guess permitted), One-line description. 
-REJECT: The Directory itself (e.g. do not output "Yelp" as the company), but extracting companies FROM Yelp is okay.
-OUTPUT FORMAT: JSON with keys: "companyName", "domain", "description". Do NOT use "primaryDomain".
-CONTEXT: ${input.input_as_text}. PASS: ${leadLearning.pass}.`,
-        model: getSafeModel('discovery'),
-        tools: getToolsForAgent('company_finder')
-        // outputType removed to prevent premature validation
-    });
-
-    const getProfilerAgent = () => new Agent({
-        name: "Company Profiler",
-        instructions: `GOAL: Deep research and business inference. 
-PROTOCOL:
-1. Call 'scan_site_structure(domain)' to see available links.
-2. REASON: Compare links against manual instructions. Select 3-5 most relevant URLs (e.g. portfolio, projects, team).
-3. Call 'scrape_specific_pages([urls])' to get deep content.
-4. Output strict profile based on ALL gathered data.
-
-STRICTURE: Output a strict structured profile:
-- Core offer: What do they sell?
-- Target customer: Who do they sell to?
-- Industry: Category.
-- Company size estimate: Size based on web evidence.
-- Buying signals: Expansion, hiring, pain points.
-NO creative writing. NO outreach content.
-MANUAL RESEARCH INSTRUCTIONS: ${companyContext.manualResearch || "None provided."}
-Assign 'match_score' (1-10) against goal: ${companyContext.goal}.`,
-        model: getSafeModel('profiler'),
-        model: getSafeModel('profiler'),
-        tools: getToolsForAgent('company_profiler')
-        // outputType removed to prevent premature validation
-    });
-
-    // 3. Apollo (Lead Finder): GPT-4 Turbo
-    const getApolloAgent = () => new Agent({
-        name: "Apollo Agent",
-        instructions: `GOAL: Generate precise Apollo filters only. 
-PROTOCOL: Take domain + company profile. Generate filters for contacts.
-STRICTURE: Use GPT-4 Turbo logic to be reliable. Do NOT improvise filters.
-CONTEXT: Goal for ${companyContext.name} is ${companyContext.goal}. Match these types: ${companyContext.baselineTitles.join(', ')}.`,
-        model: AGENT_MODELS.apollo_lead_finder, // GPT-4 Turbo is always safe
-        model: AGENT_MODELS.apollo_lead_finder, // GPT-4 Turbo is always safe
-        tools: getToolsForAgent('apollo_lead_finder')
-        // outputType removed to prevent premature validation
-    });
-
-    // 4. Outreach Creator: Gemini 1.5 Flash
-    const getOutreachAgent = () => new Agent({
-        name: "Outreach Creator",
-        instructions: `GOAL: Generate personalized outreach.
-PROTOCOL: Use strict message templates. Inject personalization fields only. 
-STRICTURE: No decision-making. No research. No tone exploration.`,
-        model: getSafeModel('outreach'),
-        model: getSafeModel('outreach'),
-        tools: []
-        // outputType removed to prevent premature validation
-    });
-
-    // 5. Data Architect: Claude 3.5 Sonnet (Fallback)
-    const getArchitectAgent = () => new Agent({
-        name: "Data Architect",
-        instructions: `GOAL: Normalize, validate, and store data.
-PROTOCOL: Use strict schema. Normalize names (CapitalCase), fix broken URLs, and validate emails.
-STRICTURE: LLM is fallback only. Zero creativity. If data is unsalvageable, mark is_valid: false.`,
-        model: getSafeModel('architect')
-        // outputType removed to prevent premature validation
-    });
+    // NOTE: All @openai/agents Agent definitions removed
+    // We now use runGeminiAgent() directly inline with tool definitions
+    // This bypasses @openai/agents entirely and uses Google's official SDK
 
     // --- Main Workflow Loop (Wrapped for error cost capture) ---
     try {
@@ -439,12 +288,81 @@ CRITICAL RULES:
                 break;
             }
 
-            // 2. Profiling & Filtering
+            // 2. Profiling & Filtering - Use direct Gemini runner
             try {
                 if (await checkCancellation()) break;
                 logStep('Company Profiler', `Analyzing ${candidates.length} candidates...`);
-                const profilerRes = await runAgentWithTracking(runner, getProfilerAgent(), [{ role: "user", content: JSON.stringify(candidates) }], costTracker, { maxTurns: 20 });
-                const profiled = profilerRes.finalOutput?.results || [];
+
+                const apifyToken = process.env.APIFY_API_TOKEN;
+                const profilerRes = await runGeminiAgent({
+                    apiKey: googleKey,
+                    modelName: 'gemini-2.0-flash',
+                    agentName: 'Company Profiler',
+                    instructions: `You are a company research and qualification agent.
+
+For each company provided, you need to:
+1. Use scan_site_structure to discover pages on their website
+2. Use scrape_specific_pages to get content from relevant pages (about, portfolio, team, etc.)
+3. Analyze the content to determine if they're a good fit
+
+OUTPUT FORMAT: Return JSON with this structure:
+{"results": [{"company_name": "...", "domain": "...", "company_profile": "...", "match_score": 8}]}
+
+SCORING CRITERIA (match_score 1-10):
+- 10: Perfect match - exactly what we're looking for
+- 7-9: Good fit - likely to be interested
+- 4-6: Maybe - some relevance but not ideal
+- 1-3: Poor fit - not what we're looking for
+
+GOAL: ${companyContext.goal}
+RED FLAGS TO WATCH FOR: ${companyContext.redFlags || 'None specified'}`,
+                    userMessage: `Analyze these companies and return qualified ones with profiles: ${JSON.stringify(candidates)}`,
+                    tools: [
+                        {
+                            name: "scan_site_structure",
+                            description: "Scan a website's homepage/sitemap to discover available pages and links",
+                            parameters: {
+                                properties: { domain: { type: "string", description: "Domain to scan, e.g. 'example.com'" } },
+                                required: ["domain"]
+                            },
+                            execute: async ({ domain }) => {
+                                logStep('Company Profiler', `📡 Scanning: ${domain}`);
+                                return await scanSiteStructure(domain, apifyToken, checkCancellation);
+                            }
+                        },
+                        {
+                            name: "scrape_specific_pages",
+                            description: "Scrape content from specific URLs",
+                            parameters: {
+                                properties: { urls: { type: "array", items: { type: "string" }, description: "URLs to scrape" } },
+                                required: ["urls"]
+                            },
+                            execute: async ({ urls }) => {
+                                logStep('Company Profiler', `📄 Scraping ${urls.length} pages`);
+                                return await scrapeSpecificPages(urls, apifyToken, checkCancellation);
+                            }
+                        }
+                    ],
+                    maxTurns: 5,
+                    logStep: logStep
+                });
+
+                // Track cost
+                costTracker.recordCall({
+                    agent: 'Company Profiler',
+                    model: 'gemini-2.0-flash',
+                    inputTokens: profilerRes.usage?.inputTokens || 0,
+                    outputTokens: profilerRes.usage?.outputTokens || 0,
+                    duration: 0,
+                    success: true
+                });
+
+                // Parse profiler output
+                const profiled = enforceAgentContract({
+                    agentName: "Company Profiler",
+                    rawOutput: profilerRes.finalOutput,
+                    schema: CompanyProfilerSchema
+                }).results || [];
 
                 const qualified = profiled.filter(c => {
                     const isHighQuality = (c.match_score || 0) >= 7;
