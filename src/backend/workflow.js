@@ -153,6 +153,7 @@ export const runAgentWorkflow = async (input, config) => {
                     description: "Search using Google and return organic results (Title, URL, Snippet).",
                     parameters: z.object({ query: z.string() }),
                     execute: async ({ query }) => {
+                        logStep('Company Finder', `🔍 Google Search: "${query}"`);
                         const results = await performGoogleSearch(query, apifyToken, checkCancellation);
                         return results.map(r => `NAME: ${r.title}\nURL: ${r.link}\nDESC: ${r.snippet}`).join('\n\n');
                     }

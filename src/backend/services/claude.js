@@ -46,12 +46,17 @@ export class ClaudeModel {
                 if (t.type === 'function') {
                     // Sanitize parameters if it's a JSON Schema object
                     let params = t.parameters;
+
+                    // Debug raw params
+                    console.log(`[ClaudeModel] Raw params for ${t.name}:`, JSON.stringify(params, null, 2));
+
                     if (params && typeof params === 'object' && !params.parse) { // Not a Zod schema
                         params = { ...params }; // Clone
                         delete params.$schema; // Remove $schema if present
 
                         // FIX: Explicitly ensure type is 'object' if missing (required by Anthropic)
                         if (!params.type) {
+                            console.log(`[ClaudeModel] Fixing missing type for ${t.name}`);
                             params.type = 'object';
                         }
                     }
