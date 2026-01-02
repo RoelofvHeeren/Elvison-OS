@@ -16,13 +16,39 @@ import { CostTracker, runAgentWithTracking } from "./services/cost-tracker.js";
 import { enforceAgentContract } from "./utils/agent-contract.js"; // Import contract enforcer
 
 // --- Schema Definitions ---
-const CompanyFinderSchema = z.object({
+console.log("✅ WORKFLOW.JS RELOADED - V2 SCHEMA ACTIVE");
+
+// --- Schema Definitions ---
+const CompanyFinderSchemaV2 = z.object({
     results: z.array(z.object({
         companyName: z.string(),
-        domain: z.string(),
+        domain: z.string().optional().or(z.literal("")).or(z.null()), // Maximum leniency
+        primaryDomain: z.string().optional(),
         description: z.string().optional()
-    }))
+    })).refine(items => items.every(i => i.domain || i.primaryDomain), {
+        message: "Each result must have a domain or primaryDomain"
+    })
 });
+
+// ... (other schemas)
+
+// ...
+
+// In runAgentWorkflow:
+// HARD CONTRACT ENFORCEMENT
+const normalizedFinder = enforceAgentContract({
+    agentName: "Company Finder",
+    rawOutput: finderRes.finalOutput,
+    schema: CompanyFinderSchemaV2
+});
+
+candidates = (normalizedFinder.results || [])
+    .map(c => ({
+        ...c,
+        company_name: c.companyName || c.company_name, // Polyfill
+        domain: c.domain || c.primaryDomain // Polyfill domain from primaryDomain
+    }))
+    .filter(c => !scrapedNamesSet.has(c.company_name));
 
 const CompanyProfilerSchema = z.object({
     results: z.array(z.object({
@@ -312,6 +338,7 @@ STRATEGY:
 3. INFER domains for well-known companies found in snippets if missing (e.g. "Toast" -> "toast.tab.com" or "toast.com").
 STRICTURE: Extract: Company name, Primary domain (best guess permitted), One-line description. 
 REJECT: The Directory itself (e.g. do not output "Yelp" as the company), but extracting companies FROM Yelp is okay.
+OUTPUT FORMAT: JSON with keys: "companyName", "domain", "description". Do NOT use "primaryDomain".
 CONTEXT: ${input.input_as_text}. PASS: ${leadLearning.pass}.`,
         model: getSafeModel('discovery'),
         model: getSafeModel('discovery'),
@@ -413,13 +440,14 @@ STRICTURE: LLM is fallback only. Zero creativity. If data is unsalvageable, mark
             const normalizedFinder = enforceAgentContract({
                 agentName: "Company Finder",
                 rawOutput: finderRes.finalOutput,
-                schema: CompanyFinderSchema
+                schema: CompanyFinderSchemaV2
             });
 
             candidates = (normalizedFinder.results || [])
                 .map(c => ({
                     ...c,
-                    company_name: c.companyName || c.company_name // Polyfill for schema drift
+                    company_name: c.companyName || c.company_name, // Polyfill for schema drift
+                    domain: c.domain || c.primaryDomain // Polyfill domain from primaryDomain
                 }))
                 .filter(c => !scrapedNamesSet.has(c.company_name));
         } catch (e) {
