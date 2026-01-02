@@ -205,8 +205,27 @@ const Logbook = () => {
         const filtering = stats.filtering_breakdown || {}
         const leads = outputData.leads || metadata.leads || []
 
-        // CRITICAL FIX: Ensure costs are read from the merged stats object
-        const apiCosts = stats.api_costs || {}
+        // ROBUST COST PARSING: Handle both CostTracker format (camelCase) and legacy format (snake_case)
+        // CostTracker.getSummary() returns: { cost: { total, formatted }, breakdown: { byAgent, byModel }, calls: [...] }
+        // Legacy format expected: { api_costs: { total_cost, by_agent, by_model, detailed_calls } }
+
+        const costTrackerData = stats.cost || {}  // From CostTracker.getSummary()
+        const breakdownData = stats.breakdown || {}  // From CostTracker.getSummary()
+        const apiCosts = stats.api_costs || {}  // Legacy format
+
+        // Extract values with fallbacks for both formats
+        const totalCost = costTrackerData.formatted || apiCosts.total_cost ||
+            (typeof costTrackerData.total === 'number' ? `$${costTrackerData.total.toFixed(4)}` : '$0.00')
+
+        const tokensData = stats.tokens || {}
+        const totalTokens = tokensData.total || apiCosts.total_tokens || 0
+        const inputTokens = tokensData.input || apiCosts.input_tokens || 0
+        const outputTokens = tokensData.output || apiCosts.output_tokens || 0
+
+        const byAgent = breakdownData.byAgent || apiCosts.by_agent || {}
+        const byModel = breakdownData.byModel || apiCosts.by_model || {}
+        const detailedCalls = stats.calls || apiCosts.detailed_calls || []
+        const totalCalls = stats.totalCalls || apiCosts.total_calls || detailedCalls.length || 0
 
         // Extract execution timeline (new format) or execution logs (old format)
         // Verify both inside output_data AND the merged stats (in case it was saved there)
@@ -223,16 +242,16 @@ const Logbook = () => {
             timeline: executionTimeline,
             leads: leads,
             companies_list: Array.from(new Set(leads.map(l => l.company_name).filter(Boolean))),
-            // API Cost tracking
+            // API Cost tracking - normalized from either format
             apiCosts: {
-                totalCost: apiCosts.total_cost || '$0.00',
-                totalTokens: apiCosts.total_tokens || 0,
-                inputTokens: apiCosts.input_tokens || 0,
-                outputTokens: apiCosts.output_tokens || 0,
-                totalCalls: apiCosts.total_calls || 0,
-                byAgent: apiCosts.by_agent || {},
-                byModel: apiCosts.by_model || {},
-                detailedCalls: apiCosts.detailed_calls || []
+                totalCost,
+                totalTokens,
+                inputTokens,
+                outputTokens,
+                totalCalls,
+                byAgent,
+                byModel,
+                detailedCalls
             }
         }
     }
