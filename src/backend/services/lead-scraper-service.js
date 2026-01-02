@@ -265,6 +265,13 @@ export class LeadScraperService {
                                 isExcluded = false;
                             }
 
+                            // EXCEPTION: Protect "Founder" roles (Co-Founder, Founding Partner) from all exclusions
+                            // A Co-Founder of Sales/Marketing is still a decision-maker worth reaching out to
+                            if (isExcluded && (title.includes('founder') || title.includes('founding'))) {
+                                console.log(`[ApolloDomain] Protected "Founder" role from exclusion "${kw}": ${title}`);
+                                isExcluded = false;
+                            }
+
                             if (isExcluded) {
                                 disqualifiedItems.push({ ...item, disqualification_reason: `Excluded Function: ${exclusion}` });
                                 return;

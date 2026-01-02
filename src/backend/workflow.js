@@ -241,25 +241,36 @@ export const runAgentWorkflow = async (input, config) => {
                     apiKey: googleKey,
                     modelName: 'gemini-2.0-flash',
                     agentName: 'Company Finder',
-                    instructions: `You are a company discovery agent. Your task is simple:
+                    instructions: `You are a company discovery agent. Your task is to find companies that match a SPECIFIC Ideal Customer Profile (ICP).
 
-STEP 1: Call the google_search_and_extract tool ONCE with a relevant query like "residential real estate investment firms Canada" or "family offices real estate Canada".
+ICP TARGET: ${input.input_as_text}
+MUST-HAVE CRITERIA: ${companyContext.keyAttributes || 'Not specified'}
+AVOID THESE TYPES: ${companyContext.redFlags || 'Not specified'}
 
-STEP 2: Parse the search results. For each result that looks like a real company (not a blog or directory), extract:
-- companyName: The company's name
-- domain: Their website domain (from the URL)
-- description: One line about what they do
+STEP 1: Call the google_search_and_extract tool ONCE with a query that will find companies matching the ICP above. Be specific with industry, geography, and company type.
 
-STEP 3: Return a JSON object with your findings. Example:
-{"results": [{"companyName": "Tricon Residential", "domain": "triconresidential.com", "description": "Multi-family rental housing investor"}, ...]}
+STEP 2: Parse the search results. For each result, evaluate if it ACTUALLY matches the ICP. Only include companies that:
+- Are in the correct industry/sector specified in the ICP
+- Are the right company type (e.g., investment firm vs. restaurant)
+- Have a real business website (not directories, blogs, or news articles)
+
+STEP 3: Return a JSON object with ONLY the companies that match the ICP. Example:
+{"results": [{"companyName": "Tricon Residential", "domain": "triconresidential.com", "description": "Multi-family rental housing investor in Canada with $10B+ AUM"}, ...]}
 
 CRITICAL RULES:
 - Do NOT call the search tool more than 1-2 times
-- After searching, you MUST return JSON results 
-- Extract at least 5-10 companies from search results
+- After searching, you MUST return JSON results
+- ONLY include companies that match the ICP - do not include random companies from search results
+- Reject restaurant/food companies unless the ICP specifically targets them
+- Reject small local businesses unless that's what the ICP wants
+- Extract at least 5-10 RELEVANT companies from search results
 - If a URL is like "example.com/page", the domain is "example.com"
 - Do not include directories like "top 10 lists" as companies themselves`,
-                    userMessage: `Find investment firms for: ${input.input_as_text}. Companies to AVOID (already scraped): ${[...scrapedNamesSet, ...excludedNames, ...masterQualifiedList.map(c => c.company_name)].slice(0, 30).join(', ') || 'none yet'}`,
+                    userMessage: `Find companies matching this ICP: ${input.input_as_text}. 
+
+MUST-HAVE ATTRIBUTES: ${companyContext.keyAttributes || 'General fit'}
+
+Companies to AVOID (already scraped): ${[...scrapedNamesSet, ...excludedNames, ...masterQualifiedList.map(c => c.company_name)].slice(0, 30).join(', ') || 'none yet'}`,
                     tools: [
                         {
                             name: "google_search_and_extract",
@@ -335,23 +346,33 @@ DESC: ${candidate.description}
 
 You need to:
 1. Use scan_site_structure('${candidate.domain}') to see pages
-2. Use scrape_specific_pages([urls]) to get About/Team/Portfolio content
+2. Use scrape_specific_pages([urls]) to get About/Team/Portfolio/Services content
 3. Analyze if they are a good fit
 
 OUTPUT FORMAT: Return JSON:
 {"results": [{"company_name": "${candidate.companyName}", "domain": "${candidate.domain}", "company_profile": "...", "match_score": 8}]}
 
+COMPANY PROFILE REQUIREMENTS (CRITICAL):
+The company_profile MUST be 2-4 sentences long and MUST include:
+- What the company does (their core business/niche)
+- Quantitative data if available (e.g., "$X billion in assets", "X projects", "X employees", "founded in XXXX")
+- Their geographic focus or market position
+- Why they might be a good fit for our services
+
+BAD EXAMPLE (too short): "Fiera Capital manages assets."
+GOOD EXAMPLE: "Fiera Capital is a Montreal-based investment manager with $180 billion in assets under management, specializing in alternative investments including real estate and private debt. They have a strong track record in Canadian institutional markets and are actively expanding their private credit portfolio."
+
 SCORING CRITERIA (match_score 1-10):
 - 10: Perfect match (Must have: ${companyContext.keyAttributes || "Clear fit"})
-- 7-9: Good fit
-- 4-6: Maybe
+- 7-9: Good fit with strong relevance
+- 4-6: Maybe, lacking key criteria
 - 1-3: Poor fit (Red Flags: ${companyContext.redFlags || "None defined"})
 
 USER RESEARCH INSTRUCTIONS:
 "${companyContext.manualResearch || "Check for fit."}"
 
 GOAL: ${companyContext.goal}`,
-                            userMessage: `Analyze ${candidate.companyName}. Verify these MUST-HAVES: ${companyContext.keyAttributes || 'General fit'}`,
+                            userMessage: `Analyze ${candidate.companyName}. Create a DETAILED company profile (2-4 sentences with specifics). Verify these MUST-HAVES: ${companyContext.keyAttributes || 'General fit'}`,
                             tools: [
                                 {
                                     name: "scan_site_structure",
@@ -439,7 +460,9 @@ GOAL: ${companyContext.goal}`,
                 if (await checkCancellation()) return;
 
                 // --- 4. Lead Scraping with Disqualified Tracking ---
-                const scrapeResult = await leadScraper.fetchLeads(masterQualifiedList, filters, logStep, checkCancellation);
+                // Pass idempotencyKey to prevent duplicate Apify runs on retries
+                const scrapeFilters = { ...filters, idempotencyKey: idempotencyKey || `wf_${Date.now()}` };
+                const scrapeResult = await leadScraper.fetchLeads(masterQualifiedList, scrapeFilters, logStep, checkCancellation);
 
                 // Handle new return structure { leads, disqualified }
                 const leadsFound = scrapeResult.leads || (Array.isArray(scrapeResult) ? scrapeResult : []);
@@ -709,6 +732,8 @@ const saveLeadsToDB = async (leads, userId, icpId, logStep, forceStatus = 'NEW')
                     icp_id: icpId,
                     score: lead.match_score,
                     profile: lead.company_profile,
+                    company_website: lead.company_website || lead.company_domain, // NEW: Store website
+                    company_domain: lead.company_domain, // NEW: Store domain
                     email_message: lead.email_message || lead.email_body,
                     linkedin_message: lead.linkedin_message,
                     email_subject: lead.email_subject,

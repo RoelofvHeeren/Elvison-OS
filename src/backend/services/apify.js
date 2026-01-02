@@ -161,8 +161,10 @@ export const buildApolloDomainPayload = (domains, filters = {}) => {
         includeEmails: true,
         skipLeadsWithoutEmails: true,
 
-        // Limits
-        totalResults: filters.maxResults || 2500 // Rental allows higher volume per run
+        // Limits - Calculate a reasonable limit based on batch size and expected leads per company
+        // User's max_contacts (e.g., 4) * number of domains (max 10) = ~40 leads max per batch
+        // But allow up to 1000 max per run to catch larger batches
+        totalResults: Math.min(filters.maxLeads ? (filters.maxLeads * 100) : 1000, 1000)
     };
 };
 
