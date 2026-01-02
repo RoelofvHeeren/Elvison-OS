@@ -45,22 +45,31 @@ export async function runGeminiAgent({
         }
     }));
 
-    // Create model with tools
-    const modelConfig = {};
+    console.log(`[DirectRunner] Building model with ${functionDeclarations.length} tools:`, functionDeclarations.map(f => f.name));
+
+    // Create model with tools AND force tool calling on first turn
+    const modelConfig = {
+        model: modelName
+    };
+
     if (functionDeclarations.length > 0) {
         modelConfig.tools = [{ functionDeclarations }];
+        // FORCE tool calling - model MUST call a tool, cannot just return text
+        modelConfig.toolConfig = {
+            functionCallingConfig: {
+                mode: 'ANY' // Forces the model to call a function
+            }
+        };
+        console.log(`[DirectRunner] Tool config set to ANY (forced tool calling)`);
     }
 
-    const model = genAI.getGenerativeModel({
-        model: modelName,
-        ...modelConfig
-    });
+    const model = genAI.getGenerativeModel(modelConfig);
 
-    // Build conversation history
+    // Build conversation history - be explicit about needing to use tools
     const contents = [
         {
             role: 'user',
-            parts: [{ text: `${instructions}\n\n${userMessage}` }]
+            parts: [{ text: `${instructions}\n\nIMPORTANT: You MUST use the google_search_and_extract tool to find real companies. Do NOT make up or hallucinate company names.\n\n${userMessage}` }]
         }
     ];
 
