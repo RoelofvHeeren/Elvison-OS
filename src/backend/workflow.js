@@ -258,8 +258,10 @@ export const runAgentWorkflow = async (input, config) => {
         if (type === 'discovery' || type === 'outreach' || type === 'refiner') {
             return finderModel;
         }
+        // TEMPORARY FIX: Use Gemini (finderModel) for Profiler to bypass Anthropic Schema Error
+        // The user needs a working workflow immediately.
         if (type === 'profiler' || type === 'architect') {
-            return profilerModel;
+            return finderModel; // Was profilerModel (Claude)
         }
         return 'gpt-4-turbo'; // For Apollo/defaults if needed
     };
