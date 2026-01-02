@@ -418,8 +418,41 @@ RED FLAGS TO WATCH FOR: ${companyContext.redFlags || 'None specified'}`,
 
                     if (ambiguousLeads.length > 0) {
                         try {
-                            const architectRes = await runAgentWithTracking(runner, getArchitectAgent(), [{ role: "user", content: `Normalize these ambiguous leads: ${JSON.stringify(ambiguousLeads)}` }], costTracker);
-                            fixedLeads = (architectRes.finalOutput?.leads || []).filter(l => l.is_valid);
+                            const architectRes = await runGeminiAgent({
+                                apiKey: googleKey,
+                                modelName: 'gemini-2.0-flash',
+                                agentName: 'Data Architect',
+                                instructions: `You are a data normalization agent. Your job is to fix and validate lead data.
+
+For each lead:
+1. Fix capitalization (FirstName LastName)
+2. Validate email format
+3. Fix broken URLs
+4. Mark is_valid: true if data is usable, false if unsalvageable
+
+OUTPUT FORMAT: Return JSON:
+{"leads": [{"first_name": "...", "last_name": "...", "email": "...", "is_valid": true, ...}]}`,
+                                userMessage: `Normalize these ambiguous leads: ${JSON.stringify(ambiguousLeads)}`,
+                                tools: [],
+                                maxTurns: 2,
+                                logStep: logStep
+                            });
+
+                            const parsed = enforceAgentContract({
+                                agentName: "Data Architect",
+                                rawOutput: architectRes.finalOutput,
+                                schema: z.object({ leads: z.array(z.any()) })
+                            });
+                            fixedLeads = (parsed.leads || []).filter(l => l.is_valid);
+
+                            costTracker.recordCall({
+                                agent: 'Data Architect',
+                                model: 'gemini-2.0-flash',
+                                inputTokens: architectRes.usage?.inputTokens || 0,
+                                outputTokens: architectRes.usage?.outputTokens || 0,
+                                duration: 0,
+                                success: true
+                            });
                         } catch (e) {
                             logStep('Data Architect', `Normalization failed: ${e.message}`);
                         }
@@ -429,19 +462,61 @@ RED FLAGS TO WATCH FOR: ${companyContext.redFlags || 'None specified'}`,
 
                     // 5. Ranking & Deduplication
                     if (validatedLeads.length > 0) {
-                        const rankRes = await runAgentWithTracking(runner, getApolloAgent(), [{ role: "user", content: `Rank these leads (Match 1-10) for ${companyContext.goal}: ${JSON.stringify(validatedLeads.slice(0, 50))}` }], costTracker);
-                        const ranked = rankRes.finalOutput?.leads || validatedLeads;
-                        const sorted = ranked.sort((a, b) => (b.match_score || 0) - (a.match_score || 0));
+                        try {
+                            const rankRes = await runGeminiAgent({
+                                apiKey: googleKey,
+                                modelName: 'gemini-2.0-flash',
+                                agentName: 'Lead Ranker',
+                                instructions: `You are a lead ranking agent. Score each lead from 1-10 based on fit.
 
-                        const perCompany = {};
-                        sorted.forEach(l => {
-                            if (!perCompany[l.company_name]) perCompany[l.company_name] = [];
-                            if (perCompany[l.company_name].length < maxLeadsPerCompany) perCompany[l.company_name].push(l);
-                        });
+SCORING CRITERIA:
+- 10: Perfect title match, decision maker at target company
+- 7-9: Good title, relevant role
+- 4-6: Related role, might be useful
+- 1-3: Low relevance
 
-                        const added = Object.values(perCompany).flat();
-                        globalLeads.push(...added);
-                        logStep('Workflow', `✅ Finalized ${globalLeads.length} leads.`);
+GOAL: ${companyContext.goal}
+TARGET TITLES: ${companyContext.baselineTitles?.join(', ') || 'Decision makers'}
+
+OUTPUT FORMAT: Return JSON array with match_score added:
+{"leads": [{"first_name": "...", "match_score": 8, ...}]}`,
+                                userMessage: `Rank these leads: ${JSON.stringify(validatedLeads.slice(0, 50))}`,
+                                tools: [],
+                                maxTurns: 2,
+                                logStep: logStep
+                            });
+
+                            const rankedParsed = enforceAgentContract({
+                                agentName: "Lead Ranker",
+                                rawOutput: rankRes.finalOutput,
+                                schema: z.object({ leads: z.array(z.any()) })
+                            });
+                            const ranked = rankedParsed.leads || validatedLeads;
+                            const sorted = ranked.sort((a, b) => (b.match_score || 0) - (a.match_score || 0));
+
+                            costTracker.recordCall({
+                                agent: 'Lead Ranker',
+                                model: 'gemini-2.0-flash',
+                                inputTokens: rankRes.usage?.inputTokens || 0,
+                                outputTokens: rankRes.usage?.outputTokens || 0,
+                                duration: 0,
+                                success: true
+                            });
+
+                            const perCompany = {};
+                            sorted.forEach(l => {
+                                if (!perCompany[l.company_name]) perCompany[l.company_name] = [];
+                                if (perCompany[l.company_name].length < maxLeadsPerCompany) perCompany[l.company_name].push(l);
+                            });
+
+                            const added = Object.values(perCompany).flat();
+                            globalLeads.push(...added);
+                            logStep('Workflow', `✅ Finalized ${globalLeads.length} leads.`);
+                        } catch (e) {
+                            logStep('Lead Ranker', `Ranking failed: ${e.message}`);
+                            // Fallback: use unranked leads
+                            globalLeads.push(...validatedLeads.slice(0, 20));
+                        }
                     }
                 }
 
@@ -456,7 +531,27 @@ RED FLAGS TO WATCH FOR: ${companyContext.redFlags || 'None specified'}`,
         logStep('Outreach Creator', `Drafting messages for ${globalLeads.length} leads...`);
         let finalLeads = [];
         try {
-            const outreachRes = await runAgentWithTracking(runner, getOutreachAgent(), [{ role: "user", content: JSON.stringify(globalLeads.slice(0, 20)) }], costTracker);
+            const outreachRes = await runGeminiAgent({
+                apiKey: googleKey,
+                modelName: 'gemini-2.0-flash',
+                agentName: 'Outreach Creator',
+                instructions: `You are an outreach copywriter. Create personalized messages for these leads.
+
+TEMPLATE: ${companyContext.outreachTemplate || "Hi {{First_name}}, saw you're at {{Company}}. We help companies like yours with X."}
+
+INSTRUCTIONS:
+1. Replace {{...}} placeholders with real data
+2. Keep it short (under 75 words)
+3. Be professional but conversational
+4. No hashtags or emojis unless appropriate
+
+OUTPUT FORMAT: Return JSON:
+{"leads": [{"first_name": "...", "email": "...", "linkedin_message": "...", "email_subject": "...", "email_body": "..."}]}`,
+                userMessage: `Draft outreach for these leads: ${JSON.stringify(globalLeads.slice(0, 20))}`,
+                tools: [],
+                maxTurns: 2,
+                logStep: logStep
+            });
 
             // HARD CONTRACT ENFORCEMENT
             const normalizedOutreach = enforceAgentContract({
@@ -465,10 +560,18 @@ RED FLAGS TO WATCH FOR: ${companyContext.redFlags || 'None specified'}`,
                 schema: OutreachCreatorSchema
             });
 
+            costTracker.recordCall({
+                agent: 'Outreach Creator',
+                model: 'gemini-2.0-flash',
+                inputTokens: outreachRes.usage?.inputTokens || 0,
+                outputTokens: outreachRes.usage?.outputTokens || 0,
+                duration: 0,
+                success: true
+            });
+
             finalLeads = normalizedOutreach.leads?.length > 0 ? normalizedOutreach.leads : globalLeads;
         } catch (e) {
             logStep('Outreach Creator', `Failed: ${e.message}`);
-            if (e.message?.includes("API key not valid")) useGoogleFallback = true;
             finalLeads = globalLeads;
         }
 
