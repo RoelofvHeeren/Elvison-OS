@@ -300,72 +300,79 @@ export const scrapeCompanyWebsite = async (domain, token, checkCancellation = nu
 };
 
 /**
- * Perform a Google Search via Apify (apify/google-search-scraper)
+ * Perform a Google Search by scraping Google directly (FREE - no API key)
  * @param {string} query - The search query
- * @param {string} token - Apify API Token
+ * @param {string} token - Apify API Token (unused, kept for compatibility)
  * @param {Function} checkCancellation - Optional callback to check for cancellation
  */
 export const performGoogleSearch = async (query, token, checkCancellation = null) => {
-    const ACTOR_ID = 'apify~google-search-scraper';
     const cleanQuery = query || "";
     if (!cleanQuery) return [];
 
-    const input = {
-        queries: cleanQuery,
-        resultsPerPage: 20,
-        maxPagesPerQuery: 1,
-        languageCode: "",
-        mobileResults: false,
-        includeUnfilteredResults: false,
-        saveHtml: false,
-        saveHtmlToKeyValueStore: false,
-        includeIcons: false
-    };
+    console.log(`[Search] Google search for: "${cleanQuery}"`);
 
     try {
-        const url = `${APIFY_API_URL}/acts/${ACTOR_ID}/runs?token=${token}`;
-        const startRes = await axios.post(url, input);
-        const runId = startRes.data.data.id;
+        const cheerio = (await import('cheerio')).load;
+        const googleUrl = `https://www.google.com/search?q=${encodeURIComponent(cleanQuery)}&num=20&hl=en`;
 
-        // Poll
-        const POLL_INTERVAL = 2000;
-        const MAX_ATTEMPTS = 30; // 60s max
-        let attempts = 0;
-        let datasetId = null;
+        const response = await axios.get(googleUrl, {
+            timeout: 15000,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Accept-Encoding': 'gzip, deflate',
+                'Connection': 'keep-alive'
+            }
+        });
 
-        while (attempts < MAX_ATTEMPTS) {
-            // Check for cancellation
-            if (checkCancellation && await checkCancellation()) {
-                await abortApifyRun(token, runId);
-                return [];
+        const $ = cheerio(response.data);
+        const results = [];
+
+        // Google search results are in div.g elements
+        $('div.g').each((i, el) => {
+            if (i >= 20) return false;
+
+            const title = $(el).find('h3').first().text().trim();
+            const linkEl = $(el).find('a').first();
+            let link = linkEl.attr('href') || '';
+
+            // Skip non-http links
+            if (!link.startsWith('http')) return;
+
+            // Get snippet from various possible selectors
+            let snippet = '';
+            const snippetSelectors = ['.VwiC3b', 'div[data-sncf]', '.aCOpRe', 'span.st'];
+            for (const sel of snippetSelectors) {
+                const found = $(el).find(sel).first().text().trim();
+                if (found) { snippet = found; break; }
+            }
+            if (!snippet) {
+                snippet = $(el).text().substring(0, 200);
             }
 
-            await new Promise(r => setTimeout(r, POLL_INTERVAL));
-            const statusRes = await checkApifyRun(token, runId);
-            if (statusRes.status === 'SUCCEEDED') {
-                datasetId = statusRes.datasetId;
-                break;
+            if (title && link) {
+                results.push({ title, link, snippet });
             }
-            if (statusRes.status === 'FAILED' || statusRes.status === 'ABORTED') {
-                throw new Error("Search failed on Apify side.");
-            }
-            attempts++;
+        });
+
+        // Fallback: if no div.g results, try alternate selectors
+        if (results.length === 0) {
+            $('a[href^="http"]').each((i, el) => {
+                if (i >= 15) return false;
+                const link = $(el).attr('href');
+                const title = $(el).text().trim();
+                if (title && title.length > 10 && link && !link.includes('google.com')) {
+                    results.push({ title, link, snippet: '' });
+                }
+            });
         }
 
-        if (!datasetId) throw new Error("Search timeout.");
-
-        // Fetch
-        const results = await getApifyResults(token, datasetId);
-
-        // Normalize to simple { title, link, snippet }
-        return results.flatMap(r => r.organicResults || []).map(r => ({
-            title: r.title,
-            link: r.url,
-            snippet: r.description
-        }));
+        console.log(`[Search] Found ${results.length} results`);
+        return results;
 
     } catch (e) {
-        console.warn("Google Search Error:", e.message);
+        console.error("[Search] Google search failed:", e.message);
         return [];
     }
 };
