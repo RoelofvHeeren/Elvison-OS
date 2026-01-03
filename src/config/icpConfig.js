@@ -62,23 +62,31 @@ export const CHANNEL_OPTIONS = [
     "LinkedIn", "Email", "Instagram", "Facebook", "Other"
 ]
 
+export const STRICTNESS_OPTIONS = [
+    "Strict - Only exact ICP matches (e.g., only real estate investment firms, no adjacent industries)",
+    "Moderate - Include similar/adjacent companies (e.g., mortgage lenders, property developers)",
+    "Flexible - Broad matches within the general sector (e.g., any financial services company)"
+]
+
 export const AGENTS = [
     {
         id: 'company_finder',
         name: 'Company Finder',
         description: 'Define your strictly qualified Ideal Customer Profile (ICP).',
         questions: [
+            { id: 'icp_description', label: 'Describe your Ideal Customer in one paragraph', type: 'textarea', placeholder: 'e.g. "We target Canadian real estate investment firms with $50M+ in assets under management, focused on residential multi-family properties. They should have an active acquisition strategy and be open to joint ventures with developers."', helper: 'Write a natural description of your perfect customer. Be specific about industry, size, geography, and what makes them a good fit.' },
+            { id: 'strictness', label: 'How strict should we be with your ICP?', type: 'radio', options: STRICTNESS_OPTIONS, helper: 'Strict = fewer but more accurate results. Flexible = more results but may include less relevant companies.' },
             { id: 'org_types', label: 'Target Industries / Sectors', type: 'multi-select', options: ORG_TYPE_OPTIONS, helper: 'Select all that apply.' },
             { id: 'excluded_industries', label: 'Excluded Industries (Strictly Avoid)', type: 'textarea', placeholder: 'e.g. "Restaurants, Food & Beverage, Small retail shops, Local service businesses"', helper: 'List company types or industries to NEVER include, even if they appear in search results.' },
             { id: 'geography', label: 'Geographic Scope', type: 'multi-select', options: COUNTRY_SUGGESTIONS, helper: 'Where are they headquartered?' },
-            { id: 'intent', label: 'Campaign Goal', type: 'radio', options: INTENT_OPTIONS, helper: 'This determines how strict our filtering is.' },
-            { id: 'quality_bar', label: 'Specific Criteria', placeholder: 'e.g. "Revenue > $10M", "Using HubSpot", "Recently funded"', type: 'textarea' },
+            { id: 'quality_bar', label: 'Additional Criteria', placeholder: 'e.g. "Revenue > $10M", "Using HubSpot", "Recently funded"', type: 'textarea' },
         ],
         template: (a) => `You are an expert lead researcher. Find companies matching this strict profile:
+ICP Description: ${a.icp_description || 'Not provided'}
+Strictness Level: ${a.strictness || 'Moderate'}
 Org Types: ${Array.isArray(a.org_types) ? a.org_types.join(', ') : a.org_types}
 EXCLUDED Industries (NEVER include): ${a.excluded_industries || 'None specified'}
 Geo: ${Array.isArray(a.geography) ? a.geography.join(', ') : a.geography}
-Intent: ${a.intent}
 Quality Bar: ${a.quality_bar}
 Output the list in JSON format.`
     },

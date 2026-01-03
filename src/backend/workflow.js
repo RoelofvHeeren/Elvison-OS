@@ -162,10 +162,12 @@ export const runAgentWorkflow = async (input, config) => {
                     if (profiler.red_flags) companyContext.redFlags = profiler.red_flags;
                     if (profiler.profile_content) companyContext.profileContent = profiler.profile_content;
                 }
-                // Read Company Finder exclusions
+                // Read Company Finder settings
                 if (cfg.surveys && cfg.surveys.company_finder) {
                     const finder = cfg.surveys.company_finder;
                     if (finder.excluded_industries) companyContext.excludedIndustries = finder.excluded_industries;
+                    if (finder.icp_description) companyContext.icpDescription = finder.icp_description;
+                    if (finder.strictness) companyContext.strictness = finder.strictness;
                 }
 
                 // --- CRITICAL: Populate Filters from ICP Config ---
@@ -249,32 +251,37 @@ export const runAgentWorkflow = async (input, config) => {
                     agentName: 'Company Finder',
                     instructions: `You are a company discovery agent. Your task is to find companies that match a SPECIFIC Ideal Customer Profile (ICP).
 
-ICP TARGET: ${input.input_as_text}
-MUST-HAVE CRITERIA: ${companyContext.keyAttributes || 'Not specified'}
-AVOID THESE TYPES: ${companyContext.redFlags || 'Not specified'}
-EXCLUDED INDUSTRIES (NEVER INCLUDE): ${companyContext.excludedIndustries || 'Not specified'}
+USER'S ICP DESCRIPTION:
+"${companyContext.icpDescription || input.input_as_text}"
+
+STRICTNESS LEVEL: ${companyContext.strictness || 'Moderate'}
+${companyContext.strictness?.includes('Strict') ? '⚠️ STRICT MODE: Only include EXACT matches. No adjacent industries or company types.' : ''}
+${companyContext.strictness?.includes('Flexible') ? '✅ FLEXIBLE MODE: Include companies from adjacent/similar industries if they might be relevant.' : ''}
+
+MUST-HAVE CRITERIA: ${companyContext.keyAttributes || 'See ICP description'}
+EXCLUDED INDUSTRIES (NEVER INCLUDE): ${companyContext.excludedIndustries || 'None specified'}
 
 STEP 1: Call the google_search_and_extract tool ONCE with a query that will find companies matching the ICP above. Be specific with industry, geography, and company type.
 
-STEP 2: Parse the search results. For each result, evaluate if it ACTUALLY matches the ICP. Only include companies that:
-- Are in the correct industry/sector specified in the ICP
-- Are NOT in any excluded industry listed above
-- Have a real business website (not directories, blogs, or news articles)
+STEP 2: Parse the search results. For each result, evaluate if it ACTUALLY matches the ICP based on the strictness level:
+- STRICT: Company must be in the EXACT industry described. No exceptions.
+- MODERATE: Company should be in the target industry or closely related.
+- FLEXIBLE: Company can be in adjacent industries if there's potential overlap.
 
-STEP 3: Return a JSON object with ONLY the companies that match the ICP. Example:
+STEP 3: Return a JSON object with ONLY the companies that match. Example:
 {"results": [{"companyName": "Tricon Residential", "domain": "triconresidential.com", "description": "Multi-family rental housing investor in Canada with $10B+ AUM"}, ...]}
 
 CRITICAL RULES:
 - Do NOT call the search tool more than 1-2 times
 - After searching, you MUST return JSON results
-- ONLY include companies that match the ICP - do not include random companies from search results
 - STRICTLY REJECT any company in these excluded industries: ${companyContext.excludedIndustries || 'None specified'}
+- Apply the strictness level when deciding which companies to include
 - Extract at least 5-10 RELEVANT companies from search results
 - If a URL is like "example.com/page", the domain is "example.com"
 - Do not include directories like "top 10 lists" as companies themselves`,
-                    userMessage: `Find companies matching this ICP: ${input.input_as_text}. 
+                    userMessage: `Find companies matching this ICP: "${companyContext.icpDescription || input.input_as_text}"
 
-MUST-HAVE ATTRIBUTES: ${companyContext.keyAttributes || 'General fit'}
+STRICTNESS: ${companyContext.strictness || 'Moderate'}
 EXCLUDED INDUSTRIES: ${companyContext.excludedIndustries || 'None'}
 
 Companies to AVOID (already scraped): ${[...scrapedNamesSet, ...excludedNames, ...masterQualifiedList.map(c => c.company_name)].slice(0, 30).join(', ') || 'none yet'}`,
