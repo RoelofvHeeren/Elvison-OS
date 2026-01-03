@@ -60,6 +60,7 @@ function Companies() {
                     // Parse company profile from custom_data
                     let companyProfile = ''
                     let companyWebsite = ''
+                    let fitScore = 'N/A'
 
                     if (lead.custom_data) {
                         try {
@@ -68,6 +69,7 @@ function Companies() {
                                 : lead.custom_data
                             companyProfile = customData.company_profile || ''
                             companyWebsite = customData.company_website || ''
+                            fitScore = customData.fit_score || 'N/A'
                         } catch (e) {
                             console.error('Error parsing custom_data', e)
                         }
@@ -77,6 +79,7 @@ function Companies() {
                         name: companyName,
                         website: companyWebsite,
                         profile: companyProfile,
+                        fitScore: fitScore,
                         leads: [],
                         leadCount: 0
                     })
@@ -234,6 +237,11 @@ function Companies() {
                                     </div>
 
                                     <div className="flex items-center gap-4">
+                                        {company.fitScore !== 'N/A' && (
+                                            <span className={`px-2 py-1 rounded text-xs font-bold border ${parseInt(company.fitScore) >= 8 ? 'bg-green-500/10 text-green-400 border-green-500/20' : parseInt(company.fitScore) >= 6 ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 'bg-gray-500/10 text-gray-400 border-gray-500/20'}`}>
+                                                Score: {company.fitScore}/10
+                                            </span>
+                                        )}
                                         <span className="text-gray-400 text-sm">
                                             <span className="text-white font-semibold">{company.leadCount}</span> leads
                                         </span>
@@ -264,7 +272,17 @@ function Companies() {
                                                 <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">
                                                     Company Profile
                                                 </h4>
-                                                <p className="text-sm text-gray-300 leading-relaxed">{company.profile}</p>
+                                                <div className="text-sm text-gray-300 leading-relaxed space-y-2">
+                                                    {company.profile ? company.profile.split('**').map((part, i) =>
+                                                        i % 2 === 1 ? <strong key={i} className="text-white">{part}</strong> : part
+                                                    ).map((seg, j) => {
+                                                        // Split by newlines and wrap in p tags or handle breaks
+                                                        if (typeof seg === 'string') {
+                                                            return seg.split('\n').map((line, k) => <span key={`${j}-${k}`}>{line}<br /></span>)
+                                                        }
+                                                        return seg
+                                                    }) : 'No profile available'}
+                                                </div>
                                             </div>
                                         )}
 

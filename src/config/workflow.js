@@ -9,7 +9,7 @@ export const WORKFLOW_CONFIG = {
     IS_TESTING,
 
     // Limits
-    MAX_LEADS_TESTING: 50,
+    MAX_LEADS_TESTING: 10,
     MAX_LEADS_PRODUCTION: 1000,
 
     // Batching (to avoid huge payloads)

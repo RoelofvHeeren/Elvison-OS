@@ -151,7 +151,10 @@ export const buildApolloDomainPayload = (domains, filters = {}) => {
     }
 
     const payload = {
+        // Domain Filters - "Shotgun" approach to hit correct actor parameter
         companyDomains: cleanDomains,
+        organizationDomains: cleanDomains, // Common alias
+        qOrganizationDomains: cleanDomains.join('\n'), // Apollo URL format (newline separated)
 
         // Person Filters
         personTitle: (filters.job_titles && filters.job_titles.length > 0) ? filters.job_titles : defaultTitles,

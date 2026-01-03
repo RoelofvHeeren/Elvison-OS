@@ -20,10 +20,15 @@ console.log("Testing Apollo Payload Construction...");
     // Assertions
     assert.ok(!payload.companyCountry, "FAIL: companyCountry should be omitted in strict mode");
     assert.ok(!payload.companyEmployeeSize, "FAIL: companyEmployeeSize should be omitted in strict mode");
-    assert.deepEqual(payload.companyDomains, ["example.com", "google.com"], "FAIL: Domains should be cleaned");
+
+    // Domain Validations
+    assert.deepEqual(payload.companyDomains, ["example.com", "google.com"], "FAIL: companyDomains should be cleaned");
+    assert.deepEqual(payload.organizationDomains, ["example.com", "google.com"], "FAIL: organizationDomains should match");
+    assert.equal(payload.qOrganizationDomains, "example.com\ngoogle.com", "FAIL: qOrganizationDomains should be newline separated");
+
     assert.deepEqual(payload.personTitle, ["CEO"], "FAIL: Titles should be preserved");
 
-    console.log("✅ PASS: Strict mode correctly omitted broad filters.");
+    console.log("✅ PASS: Strict mode correctly omitted broad filters and included correct domain params.");
 }
 
 // Test Case 2: Broad Mode (Empty domains - technically not allowed by wrapper but good to test fallback)
