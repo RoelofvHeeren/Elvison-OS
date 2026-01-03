@@ -12,7 +12,7 @@ import { query } from '../../db/index.js';
  */
 export async function getExcludedDomains(userId) {
     try {
-        const result = await query(
+        const researched = await query(
             `SELECT DISTINCT domain 
              FROM researched_companies 
              WHERE user_id = $1 
@@ -21,7 +21,21 @@ export async function getExcludedDomains(userId) {
             [userId]
         );
 
-        return result.rows.map(row => row.domain);
+        // Also check leads table (CRM) for existing companies
+        const leads = await query(
+            `SELECT DISTINCT (custom_data->>'company_domain') as domain
+             FROM leads
+             WHERE user_id = $1 
+             AND (custom_data->>'company_domain') IS NOT NULL`,
+            [userId]
+        );
+
+        const allDomains = [...new Set([
+            ...researched.rows.map(row => row.domain),
+            ...leads.rows.map(row => row.domain)
+        ])];
+
+        return allDomains;
     } catch (err) {
         console.error('Failed to fetch excluded domains:', err);
         return [];
@@ -35,7 +49,7 @@ export async function getExcludedDomains(userId) {
  */
 export async function getExcludedCompanyNames(userId) {
     try {
-        const result = await query(
+        const researched = await query(
             `SELECT DISTINCT company_name 
              FROM researched_companies 
              WHERE user_id = $1 
@@ -43,7 +57,20 @@ export async function getExcludedCompanyNames(userId) {
             [userId]
         );
 
-        return result.rows.map(row => row.company_name);
+        // Also check leads table (CRM)
+        const leads = await query(
+            `SELECT DISTINCT company_name
+             FROM leads
+             WHERE user_id = $1`,
+            [userId]
+        );
+
+        const allNames = [...new Set([
+            ...researched.rows.map(row => row.company_name),
+            ...leads.rows.map(row => row.company_name)
+        ])];
+
+        return allNames;
     } catch (err) {
         console.error('Failed to fetch excluded company names:', err);
         return [];

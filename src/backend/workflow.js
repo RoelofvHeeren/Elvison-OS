@@ -231,6 +231,12 @@ export const runAgentWorkflow = async (input, config) => {
                     if (cfg.max_contacts) filters.maxLeads = cfg.max_contacts;
                     if (cfg.geography) filters.geography = cfg.geography;
                 }
+                // Capture used queries for diversification
+                if (cfg.used_queries && Array.isArray(cfg.used_queries)) {
+                    companyContext.usedQueries = cfg.used_queries;
+                } else {
+                    companyContext.usedQueries = [];
+                }
                 // Always pass excluded industries from company finder settings (outside the conditional block)
                 if (companyContext.excludedIndustries) {
                     // Split by common delimiters (comma, newline) and clean up
@@ -287,6 +293,7 @@ export const runAgentWorkflow = async (input, config) => {
         let masterQualifiedList = [];
         let totalDiscovered = 0;
         let totalDisqualified = 0;
+        let currentRunQueries = [];
 
         // --- Phase 1: Discovery & Profiling Loop ---
         // User Requirement: Stop ONLY when 30 qualified companies are found (or target met)
@@ -362,9 +369,10 @@ Companies to AVOID (already scraped): ${[...scrapedNamesSet, ...excludedNames, .
                                 properties: { query: { type: "string", description: "Google search query" } },
                                 required: ["query"]
                             },
-                            execute: async ({ query }) => {
-                                logStep('Company Finder', `🔍 Google Search: "${query}"`);
-                                const results = await performGoogleSearch(query, apifyToken, checkCancellation);
+                            execute: async ({ query: q }) => {
+                                logStep('Company Finder', `🔍 Google Search: "${q}"`);
+                                currentRunQueries.push(q);
+                                const results = await performGoogleSearch(q, apifyToken, checkCancellation);
                                 return results.map(r => `TITLE: ${r.title}\nURL: ${r.link}\nSNIPPET: ${r.snippet}`).join('\n---\n');
                             }
                         }
@@ -526,6 +534,20 @@ Companies to AVOID (already scraped): ${[...scrapedNamesSet, ...excludedNames, .
                 logStep('Company Profiler', `Round ${attempts}: +${qualified.length} Qualified.Total: ${masterQualifiedList.length} `);
             } catch (e) {
                 logStep('Company Profiler', `Analysis loop failed: ${e.message} `);
+            }
+        }
+
+        // Persistence: Save used queries back to ICP config for diversification in next run
+        if (icpId && currentRunQueries.length > 0) {
+            try {
+                const updatedQueries = [...new Set([...(companyContext.usedQueries || []), ...currentRunQueries])];
+                await query(
+                    `UPDATE icps SET config = config || jsonb_build_object('used_queries', $1::jsonb) WHERE id = $2`,
+                    [JSON.stringify(updatedQueries), icpId]
+                );
+                logStep('System', `💾 Persisted ${currentRunQueries.length} new search queries to ICP config.`);
+            } catch (e) {
+                console.error('Failed to persist used queries:', e.message);
             }
         }
 
@@ -846,6 +868,25 @@ const saveLeadsToDB = async (leads, userId, icpId, logStep, forceStatus = 'NEW')
         }
     }
     if (count > 0) logStep('Database', `Saved ${count} leads(Status: ${forceStatus}) to CRM.`);
+
+    // SYNC: Mark companies as researched to prevent discovery in future runs
+    if (leads.length > 0) {
+        try {
+            const { markCompaniesAsResearched } = await import('./company-tracker.js');
+            const companiesToMark = [...new Set(leads.map(l => l.company_name))].map(name => {
+                const lead = leads.find(l => l.company_name === name);
+                return {
+                    name,
+                    domain: lead.company_website || lead.company_domain || lead.domain,
+                    leadCount: leads.filter(l => l.company_name === name).length,
+                    metadata: { source: 'workflow_save', icp_id: icpId }
+                };
+            });
+            await markCompaniesAsResearched(userId, companiesToMark);
+        } catch (e) {
+            console.error('Failed to sync with researched_companies:', e.message);
+        }
+    }
 };
 
 /**

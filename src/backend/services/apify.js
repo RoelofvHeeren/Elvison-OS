@@ -167,7 +167,7 @@ export const buildApolloDomainPayload = (domains, filters = {}) => {
         skipLeadsWithoutEmails: true,
 
         // Limits
-        totalResults: Math.min(filters.maxLeads ? (filters.maxLeads * 100) : 1000, 1000)
+        totalResults: Math.max(1000, Math.min(filters.maxLeads ? (filters.maxLeads * 100) : 1000, 5000))
     };
 
     // STRICT MODE: If domains are provided, do NOT send broad filters (Country/Employee Size)
