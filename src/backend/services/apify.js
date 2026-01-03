@@ -387,12 +387,27 @@ export const performGoogleSearch = async (query, token, checkCancellation = null
             const textOutput = response.output.find(o => o.type === 'message' && o.role === 'assistant')?.content?.[0]?.text;
             if (textOutput) {
                 try {
-                    const json = JSON.parse(gemini.constructor.extractJson ? gemini.constructor.extractJson(textOutput) : textOutput.replace(/```json/g, '').replace(/```/g, '').trim());
+                    // Try robust parsing with JSON5 to handle unescaped newlines/comments
+                    const JSON5 = (await import('json5')).default;
+
+                    // 1. Strip markdown code blocks
+                    let cleanText = textOutput.replace(/```json/gi, '').replace(/```/g, '').trim();
+
+                    // 2. Locate outermost JSON object
+                    const firstBrace = cleanText.indexOf('{');
+                    const lastBrace = cleanText.lastIndexOf('}');
+                    if (firstBrace > -1 && lastBrace > firstBrace) {
+                        cleanText = cleanText.substring(firstBrace, lastBrace + 1);
+                    }
+
+                    const json = JSON5.parse(cleanText);
                     if (json.results && Array.isArray(json.results)) {
                         results = json.results;
                     }
                 } catch (e) {
                     console.warn("[Search] Could not parse JSON directly from model text:", e.message);
+                    // Last resort: Regex extraction if JSON fails completely
+                    // ... (could add regex fallback here if needed)
                 }
             }
         }
