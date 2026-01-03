@@ -127,15 +127,30 @@ export class GeminiModel {
     async getResponse(request) {
         const { systemInstructions, input, tools, outputType } = request;
 
-        // Build function declarations for Gemini
-        const functionDeclarations = buildFunctionDeclarations(tools);
+        // Check if "googleSearch" is requested in tools
+        const hasGoogleSearch = tools?.some(t => t.name === 'googleSearch');
+
+        // Build function declarations for OTHER tools
+        const otherTools = tools?.filter(t => t.name !== 'googleSearch') || [];
+        const functionDeclarations = buildFunctionDeclarations(otherTools);
 
         // Get model with optional tools
-        const modelConfig = {};
+        const modelConfig = { tools: [] };
+
+        if (hasGoogleSearch) {
+            modelConfig.tools.push({ googleSearch: {} });
+            console.log('[GeminiModel] Enabled Google Search Grounding');
+        }
+
         if (functionDeclarations && functionDeclarations.length > 0) {
-            modelConfig.tools = [{ functionDeclarations }];
-            console.log(`[GeminiModel] Using ${functionDeclarations.length} tools:`, functionDeclarations.map(f => f.name));
+            modelConfig.tools.push({ functionDeclarations });
+            console.log(`[GeminiModel] Using ${functionDeclarations.length} custom tools:`, functionDeclarations.map(f => f.name));
             console.log(`[GeminiModel] Tool declarations:`, JSON.stringify(functionDeclarations, null, 2));
+        }
+
+        // If tools array represents NO tools, remove the property to avoid errors
+        if (modelConfig.tools.length === 0) {
+            delete modelConfig.tools;
         }
 
         const model = this.genAI.getGenerativeModel({
@@ -228,6 +243,7 @@ export class GeminiModel {
 
             // Get usage metadata
             const usageMetadata = response.usageMetadata || {};
+            const groundingMetadata = candidate?.groundingMetadata;
 
             return {
                 usage: {
@@ -235,6 +251,7 @@ export class GeminiModel {
                     completionTokens: usageMetadata.candidatesTokenCount || 0,
                     totalTokens: usageMetadata.totalTokenCount || 0
                 },
+                groundingMetadata,
                 output: output
             };
 

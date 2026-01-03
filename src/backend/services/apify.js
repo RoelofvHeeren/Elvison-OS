@@ -1,5 +1,12 @@
-
 import axios from 'axios';
+import { GeminiModel } from "./gemini.js";
+import * as cheerio from 'cheerio';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const APIFY_API_URL = 'https://api.apify.com/v2';
 
@@ -300,79 +307,93 @@ export const scrapeCompanyWebsite = async (domain, token, checkCancellation = nu
 };
 
 /**
- * Perform a Google Search by scraping Google directly (FREE - no API key)
- * @param {string} query - The search query
- * @param {string} token - Apify API Token (unused, kept for compatibility)
- * @param {Function} checkCancellation - Optional callback to check for cancellation
+ * Performs a Google Search using Gemini Grounding (Built-in Tool)
+ * This avoids scraping blocks (CAPTCHA/IP bans) by letting Google's model do the search.
  */
 export const performGoogleSearch = async (query, token, checkCancellation = null) => {
     const cleanQuery = query || "";
     if (!cleanQuery) return [];
 
-    console.log(`[Search] Google search for: "${cleanQuery}"`);
+    console.log(`[Search] Performing Grounded Search for: "${cleanQuery}"`);
+
+    // We need the Gemini API Key. Since this is a service function, we might need to grab it from env
+    // or pass it in. If 'token' is the Apify token, we probably ignore it here.
+    // Assuming GOOGLE_API_KEY is in process.env (standard for this project)
+    const apiKey = process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+        console.error("❌ Missing GOOGLE_API_KEY for Grounded Search");
+        return [];
+    }
 
     try {
-        const cheerio = (await import('cheerio')).load;
-        const googleUrl = `https://www.google.com/search?q=${encodeURIComponent(cleanQuery)}&num=20&hl=en`;
+        const gemini = new GeminiModel(apiKey, 'gemini-2.0-flash-exp'); // Use flash-exp or 2.0-flash for search support
 
-        const response = await axios.get(googleUrl, {
-            timeout: 15000,
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.5',
-                'Accept-Encoding': 'gzip, deflate',
-                'Connection': 'keep-alive'
-            }
+        const prompt = `
+        Please search for the following query: "${cleanQuery}"
+        
+        Return a list of the top 20 most relevant search results.
+        For each result, provide the Title and the Link (URI).
+        
+        The output must be JSON format:
+        {
+            "results": [
+                { "title": "...", "link": "...", "snippet": "..." }
+            ]
+        }
+        `;
+
+        // Request usage of the googleSearch tool
+        const response = await gemini.getResponse({
+            input: prompt,
+            tools: [{ name: 'googleSearch' }]
         });
 
-        const $ = cheerio(response.data);
-        const results = [];
+        let results = [];
 
-        // Google search results are in div.g elements
-        $('div.g').each((i, el) => {
-            if (i >= 20) return false;
+        // 1. Try to extract results directly from Grounding Metadata (Most Reliable)
+        if (response.groundingMetadata?.groundingChunks) {
+            console.log(`[Search] Found ${response.groundingMetadata.groundingChunks.length} grounding chunks.`);
+            const groundResults = response.groundingMetadata.groundingChunks
+                .map(chunk => ({
+                    title: chunk.web?.title || "No Title",
+                    link: chunk.web?.uri || "",
+                    snippet: "" // Metadata uses 'groundingSupports' for snippets, complex to map back.
+                }))
+                .filter(r => r.link && r.link.startsWith('http'));
 
-            const title = $(el).find('h3').first().text().trim();
-            const linkEl = $(el).find('a').first();
-            let link = linkEl.attr('href') || '';
-
-            // Skip non-http links
-            if (!link.startsWith('http')) return;
-
-            // Get snippet from various possible selectors
-            let snippet = '';
-            const snippetSelectors = ['.VwiC3b', 'div[data-sncf]', '.aCOpRe', 'span.st'];
-            for (const sel of snippetSelectors) {
-                const found = $(el).find(sel).first().text().trim();
-                if (found) { snippet = found; break; }
+            if (groundResults.length > 0) {
+                // De-duplicate by link
+                const seen = new Set();
+                groundResults.forEach(r => {
+                    if (!seen.has(r.link)) {
+                        seen.add(r.link);
+                        results.push(r);
+                    }
+                });
             }
-            if (!snippet) {
-                snippet = $(el).text().substring(0, 200);
-            }
-
-            if (title && link) {
-                results.push({ title, link, snippet });
-            }
-        });
-
-        // Fallback: if no div.g results, try alternate selectors
-        if (results.length === 0) {
-            $('a[href^="http"]').each((i, el) => {
-                if (i >= 15) return false;
-                const link = $(el).attr('href');
-                const title = $(el).text().trim();
-                if (title && title.length > 10 && link && !link.includes('google.com')) {
-                    results.push({ title, link, snippet: '' });
-                }
-            });
         }
 
-        console.log(`[Search] Found ${results.length} results`);
+        // 2. Fallback: Parse JSON output if grounding metadata didn't give enough/any results
+        // (Only if results are empty, or maybe we want to merge? Usually metadata is better for pure links)
+        if (results.length === 0) {
+            const textOutput = response.output.find(o => o.type === 'message' && o.role === 'assistant')?.content?.[0]?.text;
+            if (textOutput) {
+                try {
+                    const json = JSON.parse(gemini.constructor.extractJson ? gemini.constructor.extractJson(textOutput) : textOutput.replace(/```json/g, '').replace(/```/g, '').trim());
+                    if (json.results && Array.isArray(json.results)) {
+                        results = json.results;
+                    }
+                } catch (e) {
+                    console.warn("[Search] Could not parse JSON directly from model text:", e.message);
+                }
+            }
+        }
+
+        console.log(`[Search] Grounded Search found ${results.length} results`);
         return results;
 
     } catch (e) {
-        console.error("[Search] Google search failed:", e.message);
+        console.error("[Search] Grounded Search failed:", e.message);
         return [];
     }
 };
