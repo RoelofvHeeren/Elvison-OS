@@ -152,7 +152,8 @@ export const buildApolloDomainPayload = (domains, filters = {}) => {
 
     const payload = {
         // Domain Filters - "Shotgun" approach to hit correct actor parameter
-        companyDomains: cleanDomains,
+        companyDomain: cleanDomains,       // MATCHED USER SUCCESS INPUT (Singular)
+        companyDomains: cleanDomains,      // Plural (Legacy/safety)
         organizationDomains: cleanDomains, // Common alias
         qOrganizationDomains: cleanDomains.join('\n'), // Apollo URL format (newline separated)
 

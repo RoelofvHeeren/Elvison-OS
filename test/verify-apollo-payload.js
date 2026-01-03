@@ -22,6 +22,7 @@ console.log("Testing Apollo Payload Construction...");
     assert.ok(!payload.companyEmployeeSize, "FAIL: companyEmployeeSize should be omitted in strict mode");
 
     // Domain Validations
+    assert.deepEqual(payload.companyDomain, ["example.com", "google.com"], "FAIL: companyDomain (singular) should be present");
     assert.deepEqual(payload.companyDomains, ["example.com", "google.com"], "FAIL: companyDomains should be cleaned");
     assert.deepEqual(payload.organizationDomains, ["example.com", "google.com"], "FAIL: organizationDomains should match");
     assert.equal(payload.qOrganizationDomains, "example.com\ngoogle.com", "FAIL: qOrganizationDomains should be newline separated");
