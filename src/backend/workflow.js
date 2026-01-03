@@ -1,5 +1,5 @@
 // NO MORE @openai/agents - Using direct SDK runners only
-import { checkApifyRun, getApifyResults, performGoogleSearch, scrapeCompanyWebsite, scanSiteStructure, scrapeSpecificPages } from "./services/apify.js";
+import { checkApifyRun, getApifyResults, performGoogleSearch, scrapeCompanyWebsite, scanSiteStructure, scrapeSpecificPages, scrapeWebsiteSmart } from "./services/apify.js";
 import { z } from "zod";
 import { query } from "../../db/index.js";
 import {
@@ -139,6 +139,58 @@ export const runAgentWorkflow = async (input, config) => {
         }
         return false;
     };
+
+    /**
+     * Helper: Smart Page Selection using LLM
+     */
+    const selectRelevantPages = async (domain, links, icpDescription) => {
+        if (!links || links.length === 0) return [];
+
+        try {
+            const prompt = `
+            I am analyzing the company at ${domain} to see if it matches this Ideal Customer Profile (ICP):
+            "${icpDescription || 'General analysis'}"
+            
+            AVAILABLE PAGES FROM SITEMAP:
+            ${links.slice(0, 150).join('\n')}
+            
+            TASK: Select the Top 10 most relevant URLs that would likely contain:
+            - Explicit investment criteria / strategy
+            - Portfolio / Track record / Case studies
+            - Team / Leadership / Partners
+            - About Us / Company Overview
+            
+            OUTPUT: Return ONLY a raw JSON object with a "urls" array. No markdown.
+            Example: {"urls": ["https://example.com/portfolio", "https://example.com/team"]}
+            `;
+
+            const response = await runGeminiAgent({
+                apiKey: googleKey,
+                modelName: 'gemini-2.0-flash', // Fast & Cheap
+                agentName: 'Page Selector',
+                instructions: "You are a web scraper helper. Pick the best URLs for analysis.",
+                userMessage: prompt,
+                tools: [] // No tools needed, just reasoning
+            });
+
+            // Parse JSON output
+            let selected = [];
+            try {
+                const jsonStr = response.finalOutput.replace(/```json/g, '').replace(/```/g, '').trim();
+                const parsed = JSON.parse(jsonStr);
+                if (parsed.urls && Array.isArray(parsed.urls)) selected = parsed.urls;
+            } catch (e) {
+                console.warn("Failed to parse page selection JSON", e);
+            }
+
+            return selected.length > 0 ? selected : links.slice(0, 10); // Fallback to first 10
+
+        } catch (err) {
+            console.warn(`Smart page selection failed for ${domain}:`, err.message);
+            return links.slice(0, 10); // Fallback
+        }
+    };
+
 
     // NOTE: getToolsForAgent removed - tools are now defined inline with runGeminiAgent() calls
 
@@ -356,80 +408,67 @@ Companies to AVOID (already scraped): ${[...scrapedNamesSet, ...excludedNames, .
                     if (await checkCancellation()) break;
 
                     try {
+                        logStep('Company Profiler', `Analyzing ${candidate.companyName} (${candidate.domain})...`);
+
+                        // 1. SMART SCRAPING (Discover -> Select -> Scrape)
+                        let finalContent = "";
+                        try {
+                            // Use scrapeWebsiteSmart for discovery + fallback selection
+                            const { links, content: fallbackContent } = await scrapeWebsiteSmart(candidate.domain);
+                            finalContent = fallbackContent;
+
+                            // If "Deep Dive" is requested or we have many links, use LLM to pick best pages
+                            if (companyContext.depth === "Deep Dive (News, LinkedIn, Reports)" && links.length > 5) {
+                                logStep('Company Profiler', `🧠 Smart Selecting pages for ${candidate.domain}...`);
+                                const bestUrls = await selectRelevantPages(candidate.domain, links, companyContext.icpDescription);
+
+                                // Re-scrape exactly the chosen pages
+                                if (bestUrls.length > 0) {
+                                    finalContent = await scrapeSpecificPages(bestUrls, apifyToken, checkCancellation);
+                                }
+                            }
+                        } catch (scrapeErr) {
+                            console.warn("Smart scraping failed, falling back to empty content", scrapeErr);
+                            finalContent = "Error scraping website.";
+                        }
+
+                        // 2. GENERATE PROFILE (Single LLM Call)
+                        const profilePrompt = `
+                        I have scraped the website of ${candidate.companyName} (${candidate.domain}).
+                        
+                        WEBSITE CONTENT:
+                        ${(finalContent || "").slice(0, 25000)} 
+                        
+                        YOUR TASK:
+                        Analyze this content and create a detailed Company Profile JSON.
+                        
+                        COMPANY PROFILE REQUIREMENTS:
+                        The company_profile MUST be 4-10 sentences long and comprehensive. Include:
+                        1. Company overview & core business
+                        2. Scale (AUM, employees, history)
+                        3. Geographic focus
+                        4. Key services (LP/GP status)
+                        5. Investment focus (Residential/Commercial/etc)
+                        
+                        USER REQUIREMENTS:
+                        ${companyContext.profileContent || "Extract key stats and focus."}
+                        
+                        SCORING CRITERIA (0-10):
+                        - 10: Perfect fit (${companyContext.keyAttributes || "Clear match"})
+                        - 1: Poor fit (${companyContext.redFlags || "Mismatch"})
+                        
+                        OUTPUT JSON:
+                        {"results": [{"company_name": "${candidate.companyName}", "domain": "${candidate.domain}", "company_profile": "...", "match_score": 8}]}
+                        `;
+
+                        // Single LLM Call
                         const profilerRes = await runGeminiAgent({
                             apiKey: googleKey,
                             modelName: 'gemini-2.0-flash',
                             agentName: 'Company Profiler',
-                            instructions: `You are a company research and qualification agent.
-                            
-Analyze this specific company:
-NAME: ${candidate.companyName}
-DOMAIN: ${candidate.domain}
-DESC: ${candidate.description}
-
-You need to:
-1. Use scan_site_structure('${candidate.domain}') to see pages
-2. Use scrape_specific_pages([urls]) to get About/Team/Portfolio/Services content
-3. Analyze if they are a good fit
-
-OUTPUT FORMAT: Return JSON:
-{"results": [{"company_name": "${candidate.companyName}", "domain": "${candidate.domain}", "company_profile": "...", "match_score": 8}]}
-
-COMPANY PROFILE REQUIREMENTS (CRITICAL):
-The company_profile MUST be 4-10 sentences long and comprehensive. Include ALL of the following:
-1. Company overview: What the company does (their core business/niche)
-2. Scale & Size: Quantitative data (e.g., "$X billion in assets", "X projects", "X employees", "founded in XXXX")
-3. Geographic focus: Where they operate (cities, regions, countries)
-4. Key services/products: What specific services or products they offer
-5. Notable achievements: Awards, rankings, major projects, partnerships
-6. Market position: Their competitive position or unique value proposition
-7. Why they might be a good fit for our services
-
-USER-SPECIFIC PROFILE REQUIREMENTS:
-${companyContext.profileContent || "Extract any notable data points about the company's size, focus, and market position."}
-
-BAD EXAMPLE (too short): "Fiera Capital manages assets."
-GOOD EXAMPLE (4-10 sentences): "Fiera Capital is a Montreal-based investment manager founded in 2003, managing over $180 billion in assets across multiple asset classes. They specialize in alternative investments including real estate, private debt, and infrastructure, with particular strength in Canadian institutional markets. The firm operates offices across Canada, the US, and Europe, serving pension funds, endowments, and high-net-worth individuals. Fiera has been recognized as one of Canada's fastest-growing independent asset managers and recently expanded their private credit portfolio through strategic acquisitions. They are actively seeking partnerships with real estate developers for co-investment opportunities in the residential sector."
-
-SCORING CRITERIA (match_score 1-10):
-- 10: Perfect match (Must have: ${companyContext.keyAttributes || "Clear fit"})
-- 7-9: Good fit with strong relevance
-- 4-6: Maybe, lacking key criteria
-- 1-3: Poor fit (Red Flags: ${companyContext.redFlags || "None defined"})
-
-USER RESEARCH INSTRUCTIONS:
-"${companyContext.manualResearch || "Check for fit."}"
-
-GOAL: ${companyContext.goal}`,
-                            userMessage: `Analyze ${candidate.companyName}. Create a COMPREHENSIVE company profile (4-10 sentences with specific details from their website). Focus on: ${companyContext.profileContent || 'size, market position, services'}. Verify these MUST-HAVES: ${companyContext.keyAttributes || 'General fit'}`,
-                            tools: [
-                                {
-                                    name: "scan_site_structure",
-                                    description: "Scan a website's homepage/sitemap to discover available pages and links",
-                                    parameters: {
-                                        properties: { domain: { type: "string", description: "Domain to scan, e.g. 'example.com'" } },
-                                        required: ["domain"]
-                                    },
-                                    execute: async ({ domain }) => {
-                                        logStep('Company Profiler', `📡 Scanning: ${domain}`);
-                                        return await scanSiteStructure(domain, apifyToken, checkCancellation);
-                                    }
-                                },
-                                {
-                                    name: "scrape_specific_pages",
-                                    description: "Scrape content from specific URLs",
-                                    parameters: {
-                                        properties: { urls: { type: "array", items: { type: "string" }, description: "URLs to scrape" } },
-                                        required: ["urls"]
-                                    },
-                                    execute: async ({ urls }) => {
-                                        logStep('Company Profiler', `📄 Scraping ${urls.length} pages`);
-                                        return await scrapeSpecificPages(urls, apifyToken, checkCancellation);
-                                    }
-                                }
-                            ],
-                            maxTurns: 5,
-                            logStep: logStep
+                            instructions: "You are a senior investment analyst. Analyze the scraped text and output JSON.",
+                            userMessage: profilePrompt,
+                            tools: []
                         });
 
                         costTracker.recordCall({
@@ -450,7 +489,7 @@ GOAL: ${companyContext.goal}`,
                         batchResults.push(...analyzed);
 
                     } catch (err) {
-                        logStep('Company Profiler', `Failed to analyze ${candidate.companyName}: ${err.message}`);
+                        logStep('Company Profiler', `Failed to analyze ${candidate.companyName}: ${err.message} `);
                     }
                 }
 
@@ -466,9 +505,9 @@ GOAL: ${companyContext.goal}`,
                 masterQualifiedList.push(...qualified);
                 // IMMEDIATELY add to scrapedNamesSet to prevent re-discovery in next round
                 qualified.forEach(c => scrapedNamesSet.add(c.company_name));
-                logStep('Company Profiler', `Round ${attempts}: +${qualified.length} Qualified. Total: ${masterQualifiedList.length}`);
+                logStep('Company Profiler', `Round ${attempts}: +${qualified.length} Qualified.Total: ${masterQualifiedList.length} `);
             } catch (e) {
-                logStep('Company Profiler', `Analysis loop failed: ${e.message}`);
+                logStep('Company Profiler', `Analysis loop failed: ${e.message} `);
             }
         }
 
@@ -492,14 +531,14 @@ GOAL: ${companyContext.goal}`,
 
                 // --- 4. Lead Scraping with Disqualified Tracking ---
                 // Pass idempotencyKey to prevent duplicate Apify runs on retries
-                const scrapeFilters = { ...filters, idempotencyKey: idempotencyKey || `wf_${Date.now()}` };
+                const scrapeFilters = { ...filters, idempotencyKey: idempotencyKey || `wf_${Date.now()} ` };
                 const scrapeResult = await leadScraper.fetchLeads(masterQualifiedList, scrapeFilters, logStep, checkCancellation);
 
                 // Handle new return structure { leads, disqualified }
                 const leadsFound = scrapeResult.leads || (Array.isArray(scrapeResult) ? scrapeResult : []);
                 const disqualifiedFound = scrapeResult.disqualified || [];
 
-                logStep('Lead Finder', `Found ${leadsFound.length} valid leads. Saving ${disqualifiedFound.length} disqualified leads for review.`);
+                logStep('Lead Finder', `Found ${leadsFound.length} valid leads.Saving ${disqualifiedFound.length} disqualified leads for review.`);
 
                 // Save Disqualified Leads Immediately
                 if (disqualifiedFound.length > 0) {
@@ -530,18 +569,18 @@ GOAL: ${companyContext.goal}`,
                                 apiKey: googleKey,
                                 modelName: 'gemini-2.0-flash',
                                 agentName: 'Data Architect',
-                                instructions: `You are a data normalization agent. Your job is to fix and validate lead data.
+                                instructions: `You are a data normalization agent.Your job is to fix and validate lead data.
 
 For each lead:
-1. Fix capitalization (FirstName LastName)
-2. Validate email format
-3. Fix broken URLs
-4. Mark is_valid: true if data is usable, false if unsalvageable
+                        1. Fix capitalization(FirstName LastName)
+                        2. Validate email format
+                        3. Fix broken URLs
+                        4. Mark is_valid: true if data is usable, false if unsalvageable
 
 OUTPUT FORMAT: Return JSON:
-{"leads": [{"first_name": "...", "last_name": "...", "email": "...", "is_valid": true, "company_profile": "PRESERVE_ORIGINAL_VALUE", ...}]}
-CRITICAL: You MUST preserve the 'company_profile' field for every lead. Do not modify or drop it.`,
-                                userMessage: `Normalize these ambiguous leads: ${JSON.stringify(ambiguousLeads)}`,
+                        { "leads": [{ "first_name": "...", "last_name": "...", "email": "...", "is_valid": true, "company_profile": "PRESERVE_ORIGINAL_VALUE", ...}] }
+                        CRITICAL: You MUST preserve the 'company_profile' field for every lead.Do not modify or drop it.`,
+                                userMessage: `Normalize these ambiguous leads: ${JSON.stringify(ambiguousLeads)} `,
                                 tools: [],
                                 maxTurns: 2,
                                 logStep: logStep
@@ -563,7 +602,7 @@ CRITICAL: You MUST preserve the 'company_profile' field for every lead. Do not m
                                 success: true
                             });
                         } catch (e) {
-                            logStep('Data Architect', `Normalization failed: ${e.message}`);
+                            logStep('Data Architect', `Normalization failed: ${e.message} `);
                         }
                     }
 
@@ -576,21 +615,20 @@ CRITICAL: You MUST preserve the 'company_profile' field for every lead. Do not m
                                 apiKey: googleKey,
                                 modelName: 'gemini-2.0-flash',
                                 agentName: 'Lead Ranker',
-                                instructions: `You are a lead ranking agent.Score each lead from 1 - 10 based on fit.
+                                instructions: `You are a lead ranking agent. Score each lead from 1-10 based on fit.
 
 SCORING CRITERIA:
-                                - 10: Perfect title match, decision maker at target company
-                                - 7 - 9: Good title, relevant role
-                                - 4 - 6: Related role, might be useful
-                                - 1 - 3: Low relevance
+- 10: Perfect title match, decision maker at target company
+- 7-9: Good title, relevant role
+- 4-6: Related role, might be useful
+- 1-3: Low relevance
 
 GOAL: ${companyContext.goal}
 TARGET TITLES: ${companyContext.baselineTitles?.join(', ') || 'Decision makers'}
 
-OUTPUT FORMAT: Return JSON array with match_score added:
-                            { "leads": [{ "first_name": "...", "match_score": 8, "company_profile": "PRESERVE_ORIGINAL_VALUE", ...}] }
-CRITICAL: You MUST preserve the 'company_profile' field for every lead.Do not modify or drop it.`,
-                                userMessage: `Rank these leads: ${JSON.stringify(validatedLeads.slice(0, 50))}`,
+OUTPUT FORMAT: Return JSON array with email and match_score:
+{ "leads": [{ "email": "...", "match_score": 8 }] }`,
+                                userMessage: `Rank these leads: ${JSON.stringify(validatedLeads.slice(0, 50).map(l => ({ email: l.email, title: l.title, company: l.company_name })))}`,
                                 tools: [],
                                 maxTurns: 2,
                                 logStep: logStep
@@ -599,9 +637,22 @@ CRITICAL: You MUST preserve the 'company_profile' field for every lead.Do not mo
                             const rankedParsed = enforceAgentContract({
                                 agentName: "Lead Ranker",
                                 rawOutput: rankRes.finalOutput,
-                                schema: z.object({ leads: z.array(z.any()) })
+                                schema: z.object({
+                                    leads: z.array(z.object({
+                                        email: z.string(),
+                                        match_score: z.number()
+                                    }))
+                                })
                             });
-                            const ranked = rankedParsed.leads || validatedLeads;
+
+                            // MERGE SCORES BACK to validatedLeads (Preserves company_profile)
+                            const scoreMap = new Map((rankedParsed.leads || []).map(l => [l.email, l.match_score]));
+
+                            const ranked = validatedLeads.map(l => ({
+                                ...l,
+                                match_score: scoreMap.get(l.email) || 5 // Default score if ranking fails/skips
+                            }));
+
                             const sorted = ranked.sort((a, b) => (b.match_score || 0) - (a.match_score || 0));
 
                             costTracker.recordCall({
@@ -624,8 +675,9 @@ CRITICAL: You MUST preserve the 'company_profile' field for every lead.Do not mo
                             logStep('Workflow', `✅ Finalized ${globalLeads.length} leads.`);
                         } catch (e) {
                             logStep('Lead Ranker', `Ranking failed: ${e.message}`);
-                            // Fallback: use unranked leads
-                            globalLeads.push(...validatedLeads.slice(0, 20));
+                            // Fallback: use unranked leads with default score
+                            const fallback = validatedLeads.slice(0, 20).map(l => ({ ...l, match_score: 5 }));
+                            globalLeads.push(...fallback);
                         }
                     }
                 }
@@ -633,7 +685,7 @@ CRITICAL: You MUST preserve the 'company_profile' field for every lead.Do not mo
                 // Mark companies as processed
                 masterQualifiedList.forEach(c => scrapedNamesSet.add(c.company_name));
             } catch (e) {
-                logStep('Lead Finder', `Scraping failed: ${e.message}`);
+                logStep('Lead Finder', `Scraping failed: ${e.message} `);
             }
         }
 
@@ -645,20 +697,20 @@ CRITICAL: You MUST preserve the 'company_profile' field for every lead.Do not mo
                 apiKey: googleKey,
                 modelName: 'gemini-2.0-flash',
                 agentName: 'Outreach Creator',
-                instructions: `You are an outreach copywriter. Create personalized messages for these leads.
+                instructions: `You are an outreach copywriter.Create personalized messages for these leads.
 
-TEMPLATE: ${companyContext.outreachTemplate || "Hi {{First_name}}, saw you're at {{Company}}. We help companies like yours with X."}
+                            TEMPLATE: ${companyContext.outreachTemplate || "Hi {{First_name}}, saw you're at {{Company}}. We help companies like yours with X."}
 
-INSTRUCTIONS:
-1. Replace {{...}} placeholders using the lead's data.
-2. For {{research fact}} or similar placeholders, EXTRACT a specific, impressive fact from the 'company_profile' field.
-3. CRITICAL: 'connection_request' MUST be under 300 characters. This is the LinkedIn connection request message.
+                        INSTRUCTIONS:
+                        1. Replace { {... } } placeholders using the lead's data.
+                        2. For { {research fact } } or similar placeholders, EXTRACT a specific, impressive fact from the 'company_profile' field.
+3. CRITICAL: 'connection_request' MUST be under 300 characters.This is the LinkedIn connection request message.
 4. Be professional but conversational.
 5. No hashtags or emojis.
 
 OUTPUT FORMAT: Return JSON:
-{"leads": [{"first_name": "...", "email": "...", "connection_request": "LinkedIn message under 300 chars", "email_subject": "...", "email_body": "..."}]}`,
-                userMessage: `Draft outreach for these leads. Use their 'company_profile' to find specific facts: ${JSON.stringify(globalLeads.slice(0, 20))}`,
+                        { "leads": [{ "first_name": "...", "email": "...", "connection_request": "LinkedIn message under 300 chars", "email_subject": "...", "email_body": "..." }] } `,
+                userMessage: `Draft outreach for these leads.Use their 'company_profile' to find specific facts: ${JSON.stringify(globalLeads.slice(0, 20))} `,
                 tools: [],
                 maxTurns: 2,
                 logStep: logStep
@@ -686,7 +738,7 @@ OUTPUT FORMAT: Return JSON:
             // SAFETY: Enforce 300-char hard limit for connection_request
             newLeads.forEach(l => {
                 if (l.connection_request && l.connection_request.length > 300) {
-                    logStep('Outreach Creator', `⚠️ Message too long (${l.connection_request.length} chars). Truncating for ${l.email}.`);
+                    logStep('Outreach Creator', `⚠️ Message too long(${l.connection_request.length} chars).Truncating for ${l.email}.`);
                     l.connection_request = l.connection_request.substring(0, 295) + '...';
                 }
             });
@@ -711,7 +763,7 @@ OUTPUT FORMAT: Return JSON:
                 finalLeads = globalLeads;
             }
         } catch (e) {
-            logStep('Outreach Creator', `Failed: ${e.message}`);
+            logStep('Outreach Creator', `Failed: ${e.message} `);
             finalLeads = globalLeads;
         }
 
@@ -754,9 +806,9 @@ const saveLeadsToDB = async (leads, userId, icpId, logStep, forceStatus = 'NEW')
             const exists = await query("SELECT id FROM leads WHERE email = $1 AND user_id = $2", [lead.email, userId]);
             if (exists.rows.length > 0) continue;
 
-            await query(`INSERT INTO leads (company_name, person_name, email, job_title, linkedin_url, status, source, user_id, custom_data)
-            VALUES ($1, $2, $3, $4, $5, $6, 'Outbound Agent', $7, $8)`,
-                [lead.company_name, `${lead.first_name} ${lead.last_name}`, lead.email, lead.title, lead.linkedin_url, forceStatus, userId, {
+            await query(`INSERT INTO leads(company_name, person_name, email, job_title, linkedin_url, status, source, user_id, custom_data)
+                        VALUES($1, $2, $3, $4, $5, $6, 'Outbound Agent', $7, $8)`,
+                [lead.company_name, `${lead.first_name} ${lead.last_name} `, lead.email, lead.title, lead.linkedin_url, forceStatus, userId, {
                     icp_id: icpId,
                     score: lead.match_score,
                     company_profile: lead.company_profile, // Renamed from 'profile' for clarity
@@ -772,7 +824,7 @@ const saveLeadsToDB = async (leads, userId, icpId, logStep, forceStatus = 'NEW')
             console.error('Failed to save lead:', e.message);
         }
     }
-    if (count > 0) logStep('Database', `Saved ${count} leads (Status: ${forceStatus}) to CRM.`);
+    if (count > 0) logStep('Database', `Saved ${count} leads(Status: ${forceStatus}) to CRM.`);
 };
 
 /**

@@ -423,12 +423,44 @@ export const scanSiteStructure = async (domain, token = null, checkCancellation 
         });
 
         const uniqueLinks = [...new Set(links)];
-        return `HOMEPAGE SCAN (${url}):\n${text}\n\nDISCOVERED LINKS:\n${uniqueLinks.slice(0, 50).join('\n')}`;
+
+        // Return object structure for Smart Select logic
+        return {
+            text: `HOMEPAGE SCAN (${url}):\n${text}`,
+            links: uniqueLinks,
+            error: null
+        };
 
     } catch (e) {
         console.warn(`[Local Scraper] Scan Error for ${domain}:`, e.message);
-        return `Error scanning ${domain}: ${e.message}`;
+        return { text: "", links: [], error: e.message };
     }
+};
+
+/**
+ * Smart Scraper: Discover -> Select -> Scrape
+ * This combines discovery and scraping for the single-pass profiler
+ * @param {string} domain 
+ */
+export const scrapeWebsiteSmart = async (domain) => {
+    // 1. Scan Homepage
+    const structure = await scanSiteStructure(domain);
+
+    // 2. Select default relevant pages if LLM selection isn't used yet
+    // (The LLM selection logic will be in workflow.js, this provides a fallback smart selection)
+    const keyPages = structure.links.filter(link =>
+        /about|team|people|portfolio|project|invest|service|contact|company/i.test(link)
+    ).slice(0, 10);
+
+    // 3. Scrape Selected
+    const urlsToScrape = [`https://${domain}`, ...keyPages];
+    const content = await scrapeSpecificPages(urlsToScrape);
+
+    return {
+        content: content,
+        links: structure.links, // Return all links in case we want to Select again
+        scrapedUrls: urlsToScrape
+    };
 };
 
 /**
