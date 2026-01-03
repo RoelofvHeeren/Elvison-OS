@@ -162,6 +162,11 @@ export const runAgentWorkflow = async (input, config) => {
                     if (profiler.red_flags) companyContext.redFlags = profiler.red_flags;
                     if (profiler.profile_content) companyContext.profileContent = profiler.profile_content;
                 }
+                // Read Company Finder exclusions
+                if (cfg.surveys && cfg.surveys.company_finder) {
+                    const finder = cfg.surveys.company_finder;
+                    if (finder.excluded_industries) companyContext.excludedIndustries = finder.excluded_industries;
+                }
 
                 // --- CRITICAL: Populate Filters from ICP Config ---
                 // If filters were not passed explicitly, use ICP config
@@ -247,12 +252,13 @@ export const runAgentWorkflow = async (input, config) => {
 ICP TARGET: ${input.input_as_text}
 MUST-HAVE CRITERIA: ${companyContext.keyAttributes || 'Not specified'}
 AVOID THESE TYPES: ${companyContext.redFlags || 'Not specified'}
+EXCLUDED INDUSTRIES (NEVER INCLUDE): ${companyContext.excludedIndustries || 'Not specified'}
 
 STEP 1: Call the google_search_and_extract tool ONCE with a query that will find companies matching the ICP above. Be specific with industry, geography, and company type.
 
 STEP 2: Parse the search results. For each result, evaluate if it ACTUALLY matches the ICP. Only include companies that:
 - Are in the correct industry/sector specified in the ICP
-- Are the right company type (e.g., investment firm vs. restaurant)
+- Are NOT in any excluded industry listed above
 - Have a real business website (not directories, blogs, or news articles)
 
 STEP 3: Return a JSON object with ONLY the companies that match the ICP. Example:
@@ -262,14 +268,14 @@ CRITICAL RULES:
 - Do NOT call the search tool more than 1-2 times
 - After searching, you MUST return JSON results
 - ONLY include companies that match the ICP - do not include random companies from search results
-- Reject restaurant/food companies unless the ICP specifically targets them
-- Reject small local businesses unless that's what the ICP wants
+- STRICTLY REJECT any company in these excluded industries: ${companyContext.excludedIndustries || 'None specified'}
 - Extract at least 5-10 RELEVANT companies from search results
 - If a URL is like "example.com/page", the domain is "example.com"
 - Do not include directories like "top 10 lists" as companies themselves`,
                     userMessage: `Find companies matching this ICP: ${input.input_as_text}. 
 
 MUST-HAVE ATTRIBUTES: ${companyContext.keyAttributes || 'General fit'}
+EXCLUDED INDUSTRIES: ${companyContext.excludedIndustries || 'None'}
 
 Companies to AVOID (already scraped): ${[...scrapedNamesSet, ...excludedNames, ...masterQualifiedList.map(c => c.company_name)].slice(0, 30).join(', ') || 'none yet'}`,
                     tools: [

@@ -69,12 +69,14 @@ export const AGENTS = [
         description: 'Define your strictly qualified Ideal Customer Profile (ICP).',
         questions: [
             { id: 'org_types', label: 'Target Industries / Sectors', type: 'multi-select', options: ORG_TYPE_OPTIONS, helper: 'Select all that apply.' },
+            { id: 'excluded_industries', label: 'Excluded Industries (Strictly Avoid)', type: 'textarea', placeholder: 'e.g. "Restaurants, Food & Beverage, Small retail shops, Local service businesses"', helper: 'List company types or industries to NEVER include, even if they appear in search results.' },
             { id: 'geography', label: 'Geographic Scope', type: 'multi-select', options: COUNTRY_SUGGESTIONS, helper: 'Where are they headquartered?' },
             { id: 'intent', label: 'Campaign Goal', type: 'radio', options: INTENT_OPTIONS, helper: 'This determines how strict our filtering is.' },
             { id: 'quality_bar', label: 'Specific Criteria', placeholder: 'e.g. "Revenue > $10M", "Using HubSpot", "Recently funded"', type: 'textarea' },
         ],
         template: (a) => `You are an expert lead researcher. Find companies matching this strict profile:
 Org Types: ${Array.isArray(a.org_types) ? a.org_types.join(', ') : a.org_types}
+EXCLUDED Industries (NEVER include): ${a.excluded_industries || 'None specified'}
 Geo: ${Array.isArray(a.geography) ? a.geography.join(', ') : a.geography}
 Intent: ${a.intent}
 Quality Bar: ${a.quality_bar}
