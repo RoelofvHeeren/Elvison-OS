@@ -234,12 +234,34 @@ export class LeadScraperService {
             console.log(`[ApolloDomain] Batch ${batchId} raw items: ${items.length}`);
 
             // --- STRICT FILTERING LAYER ---
-            // Deprioritize or Remove Excluded Functions
-            // --- STRICT FILTERING LAYER ---
+            // First check: Domain validation (CRITICAL)
+            // Second: Job title/function exclusions
             const validItems = [];
             const disqualifiedItems = [];
 
+            // Build set of requested domains for O(1) lookup
+            const requestedDomains = new Set(domains.map(d => d.toLowerCase().trim()));
+            console.log(`[ApolloDomain] Batch ${batchId}: Validating against domains: ${[...requestedDomains].join(', ')}`);
+
             items.forEach(item => {
+                // STEP 1: STRICT DOMAIN VALIDATION
+                const leadDomain = (item.organizationWebsite || item.companyWebsite || "")
+                    .replace(/^https?:\/\//, '')
+                    .replace(/^www\./, '')
+                    .split('/')[0]
+                    .toLowerCase()
+                    .trim();
+
+                if (!leadDomain || !requestedDomains.has(leadDomain)) {
+                    console.log(`[ApolloDomain] ❌ DOMAIN MISMATCH: ${item.firstName || 'Unknown'} ${item.lastName || ''} from "${leadDomain}" (not in requested: ${[...requestedDomains].slice(0, 5).join(', ')}...)`);
+                    disqualifiedItems.push({
+                        ...item,
+                        disqualification_reason: `Domain mismatch: "${leadDomain}" not in requested list`
+                    });
+                    return;
+                }
+
+                // STEP 2: Job Title Check
                 const title = (item.position || item.title || item.personTitle || "").toLowerCase();
 
                 if (!title) {
@@ -276,6 +298,19 @@ export class LeadScraperService {
                                 disqualifiedItems.push({ ...item, disqualification_reason: `Excluded Function: ${exclusion}` });
                                 return;
                             }
+                        }
+                    }
+                }
+
+                // Check Industry (if exclusions provided)
+                const companyIndustry = (item.organizationIndustry || item.industry || "").toLowerCase();
+                if (filters.excludedIndustries && Array.isArray(filters.excludedIndustries) && companyIndustry) {
+                    for (const excluded of filters.excludedIndustries) {
+                        const excludedLower = excluded.toLowerCase().trim();
+                        if (excludedLower && companyIndustry.includes(excludedLower)) {
+                            console.log(`[ApolloDomain] Excluded by industry "${excluded}": ${item.organizationName} (${companyIndustry})`);
+                            disqualifiedItems.push({ ...item, disqualification_reason: `Excluded Industry: ${excluded}` });
+                            return;
                         }
                     }
                 }

@@ -179,6 +179,15 @@ export const runAgentWorkflow = async (input, config) => {
                     if (cfg.max_contacts) filters.maxLeads = cfg.max_contacts;
                     if (cfg.geography) filters.geography = cfg.geography;
                 }
+                // Always pass excluded industries from company finder settings (outside the conditional block)
+                if (companyContext.excludedIndustries) {
+                    // Split by common delimiters (comma, newline) and clean up
+                    const industries = companyContext.excludedIndustries
+                        .split(/[,\n]/)
+                        .map(s => s.trim())
+                        .filter(Boolean);
+                    if (industries.length > 0) filters.excludedIndustries = industries;
+                }
             }
         } catch (e) { console.warn("Context fetch failed", e); }
     }
@@ -455,6 +464,8 @@ GOAL: ${companyContext.goal}`,
                 });
 
                 masterQualifiedList.push(...qualified);
+                // IMMEDIATELY add to scrapedNamesSet to prevent re-discovery in next round
+                qualified.forEach(c => scrapedNamesSet.add(c.company_name));
                 logStep('Company Profiler', `Round ${attempts}: +${qualified.length} Qualified. Total: ${masterQualifiedList.length}`);
             } catch (e) {
                 logStep('Company Profiler', `Analysis loop failed: ${e.message}`);
