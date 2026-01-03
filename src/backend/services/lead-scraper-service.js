@@ -252,7 +252,13 @@ export class LeadScraperService {
                     .toLowerCase()
                     .trim();
 
-                if (!leadDomain || !requestedDomains.has(leadDomain)) {
+                // Check for match:
+                // 1. Exact match (fast Set lookup)
+                // 2. Subdomain match (e.g. leads.google.com matches google.com)
+                const isExactMatch = requestedDomains.has(leadDomain);
+                const isSubdomainMatch = !isExactMatch && [...requestedDomains].some(req => leadDomain.endsWith('.' + req));
+
+                if (!leadDomain || (!isExactMatch && !isSubdomainMatch)) {
                     console.log(`[ApolloDomain] ❌ DOMAIN MISMATCH: ${item.firstName || 'Unknown'} ${item.lastName || ''} from "${leadDomain}" (not in requested: ${[...requestedDomains].slice(0, 5).join(', ')}...)`);
                     disqualifiedItems.push({
                         ...item,

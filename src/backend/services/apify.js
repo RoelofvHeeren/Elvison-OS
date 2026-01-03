@@ -150,29 +150,33 @@ export const buildApolloDomainPayload = (domains, filters = {}) => {
         mappedFunctions = [...new Set(mappedFunctions)];
     }
 
-    return {
+    const payload = {
         companyDomains: cleanDomains,
-        companyCountry: filters.countries || filters.geography || ["United States", "Canada"],
-        companyEmployeeSize: sizeMapping,
 
         // Person Filters
         personTitle: (filters.job_titles && filters.job_titles.length > 0) ? filters.job_titles : defaultTitles,
         seniority: (mappedSeniority && mappedSeniority.length > 0) ? mappedSeniority : defaultSeniorities,
-        // functional: mappedFunctions, // REMOVED: Strict function mapping drops empty-function executives. We filter locally.
-
-        // Location (Optional - usually inferred from company but can be specific)
-        // personCountry: ["United States"], 
 
         // Email Settings
         contactEmailStatus: "verified", // Strict verification
         includeEmails: true,
         skipLeadsWithoutEmails: true,
 
-        // Limits - Calculate a reasonable limit based on batch size and expected leads per company
-        // User's max_contacts (e.g., 4) * number of domains (max 10) = ~40 leads max per batch
-        // But allow up to 1000 max per run to catch larger batches
+        // Limits
         totalResults: Math.min(filters.maxLeads ? (filters.maxLeads * 100) : 1000, 1000)
     };
+
+    // STRICT MODE: If domains are provided, do NOT send broad filters (Country/Employee Size)
+    // This prevents the "OR" logic in Apify that returns random companies in the target country
+    if (cleanDomains.length > 0) {
+        console.log(`[ApolloDomain] 🔒 STRICT MODE: Omitting country/size filters to enforce valid domain matches.`);
+    } else {
+        // Only valid if we were doing a broad search (which this function isn't really for, but as fallback)
+        payload.companyCountry = filters.countries || filters.geography || ["United States", "Canada"];
+        payload.companyEmployeeSize = sizeMapping;
+    }
+
+    return payload;
 };
 
 /**
