@@ -135,6 +135,42 @@ function Companies() {
         setExpandedCompany(expandedCompany === companyName ? null : companyName)
     }
 
+    const renderReportSection = (title, content, icon) => {
+        if (!content) return null;
+
+        const formatted = (content || '')
+            .replace(/\*\*(.*?)\*\*/g, '<strong class="text-white">$1</strong>')
+            .replace(/\n/g, '<br />');
+
+        return (
+            <div className="bg-white/5 border border-white/10 rounded-xl p-5 hover:bg-white/[0.07] transition-all">
+                <div className="flex items-center gap-2 mb-3">
+                    {icon}
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-[#139187]">{title}</h4>
+                </div>
+                <div
+                    className="text-sm text-gray-300 leading-relaxed font-light"
+                    dangerouslySetInnerHTML={{ __html: formatted }}
+                />
+            </div>
+        );
+    }
+
+    const parseProfileIntoSections = (profile) => {
+        if (!profile) return {};
+        const sections = {};
+        const parts = profile.split(/^#\s+/m);
+
+        parts.forEach(part => {
+            const lines = part.split('\n');
+            const title = lines[0].trim();
+            const content = lines.slice(1).join('\n').trim();
+            if (title) sections[title] = content;
+        });
+
+        return sections;
+    }
+
     return (
         <div className="min-h-screen p-6 lg:p-8">
             <div className="max-w-[1400px] mx-auto space-y-6">
@@ -265,67 +301,101 @@ function Companies() {
 
                                 {/* Expanded Content */}
                                 {expandedCompany === company.name && (
-                                    <div className="border-t border-white/5 p-6 bg-black/20">
-                                        {/* Company Profile */}
-                                        {company.profile && (
-                                            <div className="mt-4 mb-6 p-4 bg-gray-700/30 rounded-lg border border-gray-600/50">
-                                                <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">
-                                                    Company Profile
-                                                </h4>
-                                                <div className="text-sm text-gray-300 leading-relaxed space-y-2">
-                                                    {company.profile ? company.profile.split('**').map((part, i) =>
-                                                        i % 2 === 1 ? <strong key={i} className="text-white">{part}</strong> : part
-                                                    ).map((seg, j) => {
-                                                        // Split by newlines and wrap in p tags or handle breaks
-                                                        if (typeof seg === 'string') {
-                                                            return seg.split('\n').map((line, k) => <span key={`${j}-${k}`}>{line}<br /></span>)
-                                                        }
-                                                        return seg
-                                                    }) : 'No profile available'}
-                                                </div>
+                                    <div className="border-t border-white/5 p-8 bg-black/40">
+                                        {/* Company Report Section */}
+                                        <div className="mb-10">
+                                            <div className="flex items-center gap-3 mb-6">
+                                                <div className="h-px flex-1 bg-gradient-to-r from-transparent via-white/10 to-transparent"></div>
+                                                <span className="text-[10px] uppercase tracking-[0.3em] font-bold text-gray-500">Intelligence Report</span>
+                                                <div className="h-px flex-1 bg-gradient-to-r from-white/10 via-white/10 to-transparent"></div>
                                             </div>
-                                        )}
 
-                                        {/* Leads */}
-                                        <div className="space-y-3">
-                                            {company.leads.map((lead) => {
-                                                const initials = lead.personName?.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || '?'
-                                                return (
-                                                    <div key={lead.id} className="flex items-center gap-4 p-4 bg-black/20 border border-white/10 rounded-xl hover:border-[#139187]/30 transition-colors">
-                                                        <div className="flex items-center gap-4">
-                                                            <div className="flex-shrink-0">
-                                                                <div className="w-10 h-10 rounded-full bg-[#139187]/10 border border-[#139187]/20 flex items-center justify-center flex-shrink-0">
-                                                                    <span className="text-teal-400 font-semibold text-sm">{initials}</span>
+                                            {company.profile ? (
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                                    {(() => {
+                                                        const sections = parseProfileIntoSections(company.profile);
+                                                        const defaultIcons = {
+                                                            'Summary': <Building2 className="w-4 h-4 text-teal-400" />,
+                                                            'Investment Strategy': <Users className="w-4 h-4 text-purple-400" />,
+                                                            'Scale & Geographic Focus': <Users className="w-4 h-4 text-orange-400" />,
+                                                            'Portfolio Observations': <Building2 className="w-4 h-4 text-blue-400" />,
+                                                            'Key Highlights': <ChevronDown className="w-4 h-4 text-yellow-400" />
+                                                        };
+
+                                                        // If no headers found, fallback to old style
+                                                        if (Object.keys(sections).length === 0) {
+                                                            return (
+                                                                <div className="col-span-2 bg-white/5 border border-white/10 rounded-xl p-5">
+                                                                    <div className="text-sm text-gray-300 leading-relaxed space-y-2">
+                                                                        {company.profile.split('**').map((part, i) =>
+                                                                            i % 2 === 1 ? <strong key={i} className="text-white">{part}</strong> : part
+                                                                        ).map((seg, j) => (
+                                                                            <span key={j}>{typeof seg === 'string' ? seg.split('\n').map((line, k) => <span key={k}>{line}<br /></span>) : seg}</span>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        }
+
+                                                        return Object.entries(sections).map(([title, content]) => (
+                                                            <div key={title} className={title === 'Summary' || title === 'Key Highlights' ? 'col-span-1 md:col-span-2' : ''}>
+                                                                {renderReportSection(title, content, defaultIcons[title] || <Building2 className="w-4 h-4 text-teal-400" />)}
+                                                            </div>
+                                                        ));
+                                                    })()}
+                                                </div>
+                                            ) : (
+                                                <div className="p-12 text-center bg-white/5 rounded-2xl border border-dashed border-white/10">
+                                                    <p className="text-gray-500 italic text-sm">Target analysis has not been performed for this entity.</p>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Contact Decision Makers Section */}
+                                        <div className="space-y-4">
+                                            <div className="flex items-center gap-3 mb-4">
+                                                <div className="h-px flex-1 bg-gradient-to-r from-transparent via-white/10 to-transparent"></div>
+                                                <span className="text-[10px] uppercase tracking-[0.3em] font-bold text-gray-500">Decision Makers</span>
+                                                <div className="h-px flex-1 bg-gradient-to-r from-white/10 via-white/10 to-transparent"></div>
+                                            </div>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                                {company.leads.map((lead) => {
+                                                    const initials = lead.personName?.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || '?'
+                                                    return (
+                                                        <div key={lead.id} className="flex flex-col p-5 bg-white/5 border border-white/10 rounded-2xl hover:border-[#139187]/40 hover:bg-white/[0.08] transition-all group/card">
+                                                            <div className="flex items-start justify-between mb-4">
+                                                                <div className="w-12 h-12 rounded-2xl bg-[#139187]/10 border border-[#139187]/20 flex items-center justify-center group-hover/card:scale-110 transition-transform">
+                                                                    <span className="text-teal-400 font-bold text-sm tracking-tighter">{initials}</span>
+                                                                </div>
+                                                                <div className="flex items-center gap-2">
+                                                                    {lead.linkedinUrl && (
+                                                                        <a
+                                                                            href={lead.linkedinUrl}
+                                                                            target="_blank"
+                                                                            rel="noreferrer"
+                                                                            className="p-2 bg-white/5 rounded-lg text-gray-400 hover:text-white hover:bg-[#139187]/20 transition-all"
+                                                                        >
+                                                                            <Users className="w-4 h-4" />
+                                                                        </a>
+                                                                    )}
                                                                 </div>
                                                             </div>
-                                                            <div className="flex-1 min-w-0">
-                                                                <h4 className="font-semibold text-white">{lead.personName}</h4>
-                                                                <span className="text-sm font-bold text-[#139187]">{lead.jobTitle || 'No title'}</span>
+                                                            <div className="min-w-0">
+                                                                <h4 className="font-bold text-white text-base truncate mb-1">{lead.personName}</h4>
+                                                                <p className="text-xs font-semibold text-[#139187] uppercase tracking-wide truncate mb-4">{lead.jobTitle || 'Unspecified Role'}</p>
                                                             </div>
-                                                            <div className="flex items-center gap-3">
-                                                                {lead.email && (
-                                                                    <a
-                                                                        href={`mailto:${lead.email}`}
-                                                                        className="text-teal-400 hover:text-teal-300 text-sm font-medium"
-                                                                    >
-                                                                        Email
-                                                                    </a>
-                                                                )}
-                                                                {lead.linkedinUrl && (
-                                                                    <a
-                                                                        href={lead.linkedinUrl}
-                                                                        target="_blank"
-                                                                        rel="noreferrer"
-                                                                        className="text-teal-400 hover:text-teal-300 text-sm font-medium"
-                                                                    >
-                                                                        LinkedIn
-                                                                    </a>
-                                                                )}
-                                                            </div>
+                                                            {lead.email && (
+                                                                <a
+                                                                    href={`mailto:${lead.email}`}
+                                                                    className="w-full py-2 bg-[#139187] hover:bg-[#139187]/80 text-white rounded-xl text-xs font-bold transition-all text-center shadow-lg shadow-[#139187]/20"
+                                                                >
+                                                                    Contact Direct
+                                                                </a>
+                                                            )}
                                                         </div>
-                                                    </div>
-                                                )
-                                            })}
+                                                    )
+                                                })}
+                                            </div>
                                         </div>
                                     </div>
                                 )}

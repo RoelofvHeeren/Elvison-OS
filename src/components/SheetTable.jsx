@@ -42,6 +42,15 @@ const SheetTable = ({ rows, loading, error, onDeleteRow, selectedLeads, onToggle
     return `https://${url}`
   }
 
+  const renderFormattedText = (text) => {
+    if (!text) return '—'
+    const formatted = (text || '')
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\n/g, '<br />')
+
+    return <div dangerouslySetInnerHTML={{ __html: formatted }} />
+  }
+
   if (error) {
     return (
       <div className="rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3 text-rose-800 shadow-md shadow-rose-100">
@@ -228,10 +237,12 @@ const SheetTable = ({ rows, loading, error, onDeleteRow, selectedLeads, onToggle
                       />
                     ) : (
                       <div className="relative group/cell cursor-pointer">
-                        <div className="max-w-xs line-clamp-2">{row.connectionRequest || '—'}</div>
+                        <div className="max-w-xs line-clamp-3 text-[11px] leading-relaxed">
+                          {renderFormattedText(row.connectionRequest)}
+                        </div>
                         {row.connectionRequest?.length > 50 && (
                           <span className="text-[10px] text-primary font-bold opacity-0 group-hover/cell:opacity-100 transition-opacity absolute -bottom-1 right-0 bg-white/90 px-1 shadow-sm border border-glass-border rounded">
-                            Click to view
+                            Click to edit
                           </span>
                         )}
                       </div>
@@ -252,10 +263,12 @@ const SheetTable = ({ rows, loading, error, onDeleteRow, selectedLeads, onToggle
                       />
                     ) : (
                       <div className="relative group/cell cursor-pointer">
-                        <div className="max-w-xs line-clamp-2">{row.emailMessage || '—'}</div>
+                        <div className="max-w-xs line-clamp-3 text-[11px] leading-relaxed">
+                          {renderFormattedText(row.emailMessage)}
+                        </div>
                         {row.emailMessage?.length > 50 && (
                           <span className="text-[10px] text-primary font-bold opacity-0 group-hover/cell:opacity-100 transition-opacity absolute -bottom-1 right-0 bg-white/90 px-1 shadow-sm border border-glass-border rounded">
-                            Click to view
+                            Click to edit
                           </span>
                         )}
                       </div>
@@ -276,10 +289,12 @@ const SheetTable = ({ rows, loading, error, onDeleteRow, selectedLeads, onToggle
                       />
                     ) : (
                       <div className="relative group/cell cursor-pointer">
-                        <div className="max-w-md line-clamp-2">{row.companyProfile || '—'}</div>
+                        <div className="max-w-md line-clamp-4 text-[11px] leading-relaxed">
+                          {renderFormattedText(row.companyProfile)}
+                        </div>
                         {row.companyProfile?.length > 60 && (
                           <span className="text-[10px] text-primary font-bold opacity-0 group-hover/cell:opacity-100 transition-opacity absolute -bottom-1 right-0 bg-white/90 px-1 shadow-sm border border-glass-border rounded">
-                            Click to view
+                            Click to edit
                           </span>
                         )}
                       </div>
@@ -301,9 +316,9 @@ const SheetTable = ({ rows, loading, error, onDeleteRow, selectedLeads, onToggle
               ))
             )}
           </tbody>
-        </table>
-      </div>
-    </div>
+        </table >
+      </div >
+    </div >
   )
 }
 

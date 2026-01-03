@@ -312,8 +312,16 @@ export const runAgentWorkflow = async (input, config) => {
                     agentName: 'Company Finder',
                     instructions: `You are a company discovery agent. Your task is to find companies that match a SPECIFIC Ideal Customer Profile (ICP).
 
-USER'S ICP DESCRIPTION:
-"${companyContext.icpDescription || input.input_as_text}"
+                    CRITICAL NEGATIVE FILTERS:
+                    - NO Stock Exchanges (e.g. NASDAQ / NYSE)
+                    - NO Market Indices (e.g. S&P 500)
+                    - NO Job Boards / Recruitment Sites / CV databases
+                    - NO General News Sites / Wikipedia
+                    - NO Government Portals / Regulatory agencies
+                    - NO Service Providers (unless they are also investors)
+
+                    USER'S ICP DESCRIPTION:
+                    "${companyContext.icpDescription || input.input_as_text}"
 
 STRICTNESS LEVEL: ${companyContext.strictness || 'Moderate'}
 ${companyContext.strictness?.includes('Strict') ? '⚠️ STRICT MODE: Only include EXACT matches. No adjacent industries or company types.' : ''}
@@ -443,13 +451,23 @@ Companies to AVOID (already scraped): ${[...scrapedNamesSet, ...excludedNames, .
                         Analyze this content and create a detailed Company Profile JSON.
                         
                         COMPANY PROFILE REQUIREMENTS:
-                        The company_profile MUST be 4-10 sentences long and comprehensive. Include:
-                        1. Company overview & core business
-                        2. Scale (AUM, employees, history)
-                        3. Geographic focus
-                        4. Key services (LP/GP status)
-                        5. Investment focus (Residential/Commercial/etc)
+                        Structure the company_profile into a "Proper Report" using these Markdown headers:
                         
+                        # Summary
+                        (2-3 sentences about core business and scale)
+                        
+                        # Investment Strategy 
+                        (Detailed breakdown of their approach, target asset classes, and GP/LP status)
+                        
+                        # Scale & Geographic Focus
+                        (AUM, office locations, and history)
+                        
+                        # Portfolio Observations
+                        (Key insights about their existing portfolio or previous similar deals)
+
+                        # Key Highlights
+                        - Use bullet points for critical stats or unique edges.
+
                         USER REQUIREMENTS:
                         ${companyContext.profileContent || "Extract key stats and focus."}
                         
@@ -690,96 +708,99 @@ OUTPUT FORMAT: Return JSON array with email and match_score:
         }
 
         // --- Outreach Generation ---
-        logStep('Outreach Creator', `Drafting messages for ${globalLeads.length} leads...`);
+        logStep('Outreach Creator', `Drafting messages for ${globalLeads.length} leads in batches...`);
         let finalLeads = [];
-        try {
-            const outreachRes = await runGeminiAgent({
-                apiKey: googleKey,
-                modelName: 'gemini-2.0-flash',
-                agentName: 'Outreach Creator',
-                instructions: `You are an outreach copywriter.Create personalized messages for these leads.
+        const BATCH_SIZE = 20;
 
-                            TEMPLATE: ${companyContext.outreachTemplate || "Hi {{First_name}}, saw you're at {{Company}}. We help companies like yours with X."}
+        for (let i = 0; i < globalLeads.length; i += BATCH_SIZE) {
+            const batch = globalLeads.slice(i, i + BATCH_SIZE);
+            logStep('Outreach Creator', `Processing batch ${Math.floor(i / BATCH_SIZE) + 1} of ${Math.ceil(globalLeads.length / BATCH_SIZE)}...`);
+
+            try {
+                const outreachRes = await runGeminiAgent({
+                    apiKey: googleKey,
+                    modelName: 'gemini-2.0-flash',
+                    agentName: 'Outreach Creator',
+                    instructions: `You are an outreach copywriter. Create personalized messages for these leads.
+
+                            TEMPLATE: ${companyContext.outreachTemplate || "Hi {{first_name}}, saw you're at {{company_name}}."}
 
                         INSTRUCTIONS:
-                        1. Replace { {... } } placeholders using the lead's data.
-                        2. For { {research fact } } or similar placeholders, EXTRACT a specific, impressive fact from the 'company_profile' field.
-3. CRITICAL: 'connection_request' MUST be under 300 characters.This is the LinkedIn connection request message.
-4. Be professional but conversational.
-5. No hashtags or emojis.
+                        1. Replace placeholders using lead data.
+                        2. EXTRACT specific, impressive facts from 'company_profile'. 
+                        3. DO NOT use generic placeholders like "X", "[Industry]", or "[Topic]". If you don't find a specific fact, use a high-quality observation about their market position.
+                        4. CRITICAL: 'connection_request' MUST be under 300 characters.
+                        5. Professional but conversational. No hashtags or emojis.
 
-OUTPUT FORMAT: Return JSON:
-                        { "leads": [{ "first_name": "...", "email": "...", "connection_request": "LinkedIn message under 300 chars", "email_subject": "...", "email_body": "..." }] } `,
-                userMessage: `Draft outreach for these leads.Use their 'company_profile' to find specific facts: ${JSON.stringify(globalLeads.slice(0, 20))} `,
-                tools: [],
-                maxTurns: 2,
-                logStep: logStep
-            });
+                        OUTPUT FORMAT: Return JSON:
+                        { "leads": [{ "email": "...", "connection_request": "...", "email_subject": "...", "email_message": "..." }] } `,
+                    userMessage: `Draft outreach for these leads. Use their 'company_profile' for personalization: ${JSON.stringify(batch)} `,
+                    tools: [],
+                    maxTurns: 2,
+                    logStep: logStep
+                });
 
-            // HARD CONTRACT ENFORCEMENT
-            const normalizedOutreach = enforceAgentContract({
-                agentName: "Outreach Creator",
-                rawOutput: outreachRes.finalOutput,
-                schema: OutreachCreatorSchema
-            });
+                // HARD CONTRACT ENFORCEMENT
+                const normalizedOutreach = enforceAgentContract({
+                    agentName: "Outreach Creator",
+                    rawOutput: outreachRes.finalOutput,
+                    schema: OutreachCreatorSchema
+                });
 
-            costTracker.recordCall({
-                agent: 'Outreach Creator',
-                model: 'gemini-2.0-flash',
-                inputTokens: outreachRes.usage?.inputTokens || 0,
-                outputTokens: outreachRes.usage?.outputTokens || 0,
-                duration: 0,
-                success: true
-            });
+                costTracker.recordCall({
+                    agent: 'Outreach Creator',
+                    model: 'gemini-2.0-flash',
+                    inputTokens: outreachRes.usage?.inputTokens || 0,
+                    outputTokens: outreachRes.usage?.outputTokens || 0,
+                    duration: 0,
+                    success: true
+                });
 
-            // Merge AI output with existing leads to preserve data
-            const newLeads = normalizedOutreach.leads || [];
+                const batchResponses = normalizedOutreach.leads || [];
 
-            // SAFETY: Enforce 300-char hard limit for connection_request
-            newLeads.forEach(l => {
-                if (l.connection_request && l.connection_request.length > 300) {
-                    logStep('Outreach Creator', `⚠️ Message too long(${l.connection_request.length} chars).Truncating for ${l.email}.`);
-                    l.connection_request = l.connection_request.substring(0, 295) + '...';
-                }
-            });
+                // Map results for this batch
+                const outreachMap = new Map(batchResponses.map(l => [l.email, l]));
 
-            if (newLeads.length > 0) {
-                // Map new data by email for O(1) lookup
-                const outreachMap = new Map(newLeads.map(l => [l.email, l]));
-
-                finalLeads = globalLeads.map(original => {
+                batch.forEach(original => {
+                    let processedLead = { ...original };
                     const update = outreachMap.get(original.email);
+
                     if (update) {
-                        return {
+                        processedLead = {
                             ...original,
                             email_message: update.email_message || update.email_body || original.email_message,
                             email_subject: update.email_subject || original.email_subject,
                             connection_request: update.connection_request || original.connection_request
                         };
                     }
-                    return original;
+
+                    // SAFETY: Enforce 300-char hard limit
+                    if (processedLead.connection_request && processedLead.connection_request.length > 300) {
+                        processedLead.connection_request = processedLead.connection_request.substring(0, 295) + '...';
+                    }
+
+                    finalLeads.push(processedLead);
                 });
-            } else {
-                finalLeads = globalLeads;
+
+            } catch (e) {
+                logStep('Outreach Creator', `Batch failed: ${e.message}. Falling back to original data for this batch.`);
+                finalLeads.push(...batch);
             }
-        } catch (e) {
-            logStep('Outreach Creator', `Failed: ${e.message} `);
-            finalLeads = globalLeads;
         }
 
         // --- Save to CRM ---
         await saveLeadsToDB(finalLeads, userId, icpId, logStep);
 
         return {
-            status: globalLeads.length >= targetLeads ? 'success' : 'partial',
+            status: finalLeads.length >= targetLeads ? 'success' : 'partial',
             leads: finalLeads,
             stats: {
-                total: globalLeads.length,
+                leads_returned: finalLeads.length,
+                qualified: finalLeads.length,
+                leadsDisqualified: totalDisqualified,
+                companies_discovered: masterQualifiedList.length,
                 attempts,
-                cost: costTracker.getSummary(),
-                companies_discovered: masterQualifiedList.length + totalDisqualified,
-                qualified: masterQualifiedList.length,
-                disqualified: totalDisqualified
+                cost: costTracker.getSummary()
             }
         };
 
