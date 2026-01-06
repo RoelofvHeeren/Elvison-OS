@@ -222,6 +222,17 @@ export const runAgentWorkflow = async (input, config) => {
                     if (finder.strictness) companyContext.strictness = finder.strictness;
                 }
 
+                // Read Outreach Creator settings (NEW)
+                if (cfg.surveys && cfg.surveys.outreach_creator) {
+                    const outreach = cfg.surveys.outreach_creator;
+                    if (outreach.template) companyContext.outreachTemplate = outreach.template;
+                    if (outreach.forbidden) companyContext.outreachForbidden = outreach.forbidden;
+                    if (outreach.credibility) companyContext.outreachCredibility = outreach.credibility;
+                    if (outreach.facts_to_mention) companyContext.outreachFactsToMention = outreach.facts_to_mention;
+                    if (outreach.channels) companyContext.outreachChannels = outreach.channels;
+                    if (outreach.company_description) companyContext.companyDescription = outreach.company_description;
+                }
+
                 // --- CRITICAL: Populate Filters from ICP Config ---
                 // If filters were not passed explicitly, use ICP config
                 if (Object.keys(filters).length === 0 || !filters.job_titles) {
@@ -743,20 +754,96 @@ OUTPUT FORMAT: Return JSON array with email and match_score:
                     apiKey: googleKey,
                     modelName: 'gemini-2.0-flash',
                     agentName: 'Outreach Creator',
-                    instructions: `You are an outreach copywriter. Create personalized messages for these leads.
+                    instructions: `You are an expert outreach copywriter writing on behalf of ${companyContext.name || 'the user'}.
 
-                            TEMPLATE: ${companyContext.outreachTemplate || "Hi {{first_name}}, saw you're at {{company_name}}."}
+Your sole objective is to generate outreach messages that get replies.
 
-                        INSTRUCTIONS:
-                        1. Replace placeholders using lead data.
-                        2. EXTRACT specific, impressive facts from 'company_profile'. 
-                        3. DO NOT use generic placeholders like "X", "[Industry]", or "[Topic]". If you don't find a specific fact, use a high-quality observation about their market position.
-                        4. CRITICAL: 'connection_request' MUST be under 300 characters.
-                        5. Professional but conversational. No hashtags or emojis.
+SUCCESS CRITERIA:
+- LinkedIn: accepted connection request + reply
+- Email: a reply
 
-                        OUTPUT FORMAT: Return JSON:
-                        { "leads": [{ "email": "...", "connection_request": "...", "email_subject": "...", "email_message": "..." }] } `,
-                    userMessage: `Draft outreach for these leads. Use their 'company_profile' for personalization: ${JSON.stringify(batch)} `,
+USER'S MESSAGE TEMPLATE:
+${companyContext.outreachTemplate || "Hi {{first_name}}, we noticed {{research_fact}}. We frequently have similar opportunities come through our pipeline. Think connecting could be mutually beneficial."}
+
+FORBIDDEN (NEVER DO THESE):
+${companyContext.outreachForbidden || "- Do not be too general (e.g., 'your work in real estate is impressive')\n- Do not mention multiple facts - pick ONE strong reference\n- Do not sound robotic or use placeholder brackets like [X] or [Topic]\n- Do not use emojis or hashtags"}
+
+CREDIBILITY SIGNALS TO INCLUDE:
+${companyContext.outreachCredibility || "Reference a specific recent investment, fund, development project, or geographic expansion."}
+
+FACTS TO LOOK FOR IN COMPANY PROFILES:
+${companyContext.outreachFactsToMention || "Previous investments in residential developments, AUM figures, specific property acquisitions, fund launches, market expansions."}
+
+CRITICAL RULES:
+1. Each message MUST reference EXACTLY ONE specific fact from the company_profile field
+2. The fact must be CONCRETE: a dollar amount, a property name, a fund name, a geographic focus
+3. If company_profile is empty/vague, use their company name and a specific observation about their market position
+4. connection_request MUST be UNDER 300 CHARACTERS - this is a HARD LIMIT (LinkedIn rejects longer messages)
+5. Professional but conversational tone - warm, direct, confident
+6. If you cannot find a specific fact, DO NOT generate a generic message - leave the field empty
+
+LINKEDIN MESSAGE STRUCTURE (connection_request):
+1. Personal greeting: "Hi [first_name],"
+2. One specific company reference that proves research
+3. One sentence tying that reference to your pipeline
+4. Soft close inviting a connection
+Example: "Hi Sarah, I saw Alpine Start's focus on ground-up multifamily in North Texas, especially projects like Alpine Village. We see similar residential developments flow through our pipeline and thought it could be useful to connect."
+
+EMAIL STRUCTURE (FOLLOW EXACTLY):
+
+email_subject format: "Introduction | [High_level_asset_class_or_theme]"
+Example: "Introduction | Residential Real Estate"
+
+email_message format:
+---
+Hi [First_name],
+
+I came across [Lead_Company_Name] and your [specific_researched_fact_from_company_profile].
+
+At ${companyContext.name || '[Your_Company_Name]'}, ${companyContext.companyDescription || 'we work on similar opportunities'}, which is why I thought it could make sense to connect.
+
+If it makes sense, I'm happy to share more information about our current projects.
+
+Best regards,
+${companyContext.userName || '[Your_Name]'}
+${companyContext.name || '[Your_Company_Name]'}
+---
+
+REAL EXAMPLE:
+---
+Hi Mark,
+
+I came across Morguard Corporation and your long standing focus on multi suite residential across North America.
+
+At Fifth Avenue Properties, we work on residential development and investment opportunities across North America, which is why I thought it could make sense to connect.
+
+If it makes sense, I'm happy to share more information about our current projects.
+
+Best regards,
+Roelof van Heeren
+Fifth Avenue Properties
+---
+
+WRITING STYLE:
+- Write like a sharp operator, not a marketing intern
+- Confident but not arrogant
+- Curious rather than salesy
+- No emojis, no hype, no long explanations, no multiple references
+- If it sounds like AI wrote it, rewrite it
+
+OUTPUT FORMAT: Return JSON:
+{ "leads": [{ "email": "...", "connection_request": "...", "email_subject": "...", "email_message": "..." }] }`,
+                    userMessage: `Draft outreach for these leads. Each lead has a 'company_profile' field (the Intelligence Report) - extract ONE specific fact from it for personalization.
+
+CRITICAL: connection_request must be under 300 characters including the greeting.
+
+${JSON.stringify(batch.map(l => ({
+                        email: l.email,
+                        first_name: l.first_name,
+                        company_name: l.company_name,
+                        title: l.title,
+                        company_profile: (l.company_profile || "").substring(0, 2000) // Limit profile size
+                    })))}`,
                     tools: [],
                     maxTurns: 2,
                     logStep: logStep
@@ -839,13 +926,63 @@ OUTPUT FORMAT: Return JSON array with email and match_score:
 };
 
 /**
- * DB Persistence
+ * CRM Admission Gate - Validates a lead before persistence
+ * @returns {{ pass: boolean, reason?: string }}
+ */
+const validateLeadForCRM = (lead, status) => {
+    // Rule 1: Must have email
+    if (!lead.email) return { pass: false, reason: 'Missing email' };
+
+    // Rule 2: Email domain must not be generic/fake
+    const emailDomain = lead.email.split('@')[1]?.toLowerCase();
+    const BLOCKED_DOMAINS = [
+        'linktr.ee', 'linktree.com', 'example.com', 'test.com',
+        'temp-mail.org', 'mailinator.com', 'guerrillamail.com',
+        'bio.link', 'beacons.ai', 'stan.store', 'carrd.co'
+    ];
+    if (!emailDomain || BLOCKED_DOMAINS.includes(emailDomain)) {
+        return { pass: false, reason: `Blocked email domain: ${emailDomain || 'missing'}` };
+    }
+
+    // Rule 3: Must have company_name
+    if (!lead.company_name || lead.company_name.trim() === '' || lead.company_name === 'Unknown') {
+        return { pass: false, reason: 'Missing or invalid company_name' };
+    }
+
+    // Rule 4: For NEW status, must have outreach (connection_request or email_message)
+    if (status === 'NEW') {
+        if (!lead.connection_request && !lead.email_message && !lead.email_body) {
+            return { pass: false, reason: 'Missing outreach messages (required for NEW status)' };
+        }
+    }
+
+    // Rule 5: Must have some company association data
+    if (!lead.company_profile && !lead.company_website && !lead.company_domain) {
+        return { pass: false, reason: 'No company association data' };
+    }
+
+    return { pass: true };
+};
+
+/**
+ * DB Persistence with CRM Admission Gate
  */
 const saveLeadsToDB = async (leads, userId, icpId, logStep, forceStatus = 'NEW') => {
     if (!leads || leads.length === 0) return;
-    let count = 0;
+
+    let savedCount = 0;
+    let rejectedCount = 0;
+
     for (const lead of leads) {
         try {
+            // === CRM ADMISSION GATE ===
+            const gateResult = validateLeadForCRM(lead, forceStatus);
+            if (!gateResult.pass) {
+                console.log(`[CRM Gate] ❌ Rejected: ${lead.email || 'no-email'} - ${gateResult.reason}`);
+                rejectedCount++;
+                continue;
+            }
+
             const exists = await query("SELECT id FROM leads WHERE email = $1 AND user_id = $2", [lead.email, userId]);
             if (exists.rows.length > 0) continue;
 
@@ -854,31 +991,35 @@ const saveLeadsToDB = async (leads, userId, icpId, logStep, forceStatus = 'NEW')
                 [lead.company_name, `${lead.first_name} ${lead.last_name} `, lead.email, lead.title, lead.linkedin_url, forceStatus, userId, {
                     icp_id: icpId,
                     score: lead.match_score,
-                    company_profile: lead.company_profile, // Renamed from 'profile' for clarity
+                    company_profile: lead.company_profile,
                     company_website: lead.company_website || lead.company_domain,
                     company_domain: lead.company_domain,
                     email_message: lead.email_message || lead.email_body,
                     email_subject: lead.email_subject,
-                    connection_request: lead.connection_request, // Single source for LinkedIn message
+                    connection_request: lead.connection_request,
                     disqualification_reason: lead.disqualification_reason
                 }]);
-            count++;
+            savedCount++;
         } catch (e) {
             console.error('Failed to save lead:', e.message);
         }
     }
-    if (count > 0) logStep('Database', `Saved ${count} leads(Status: ${forceStatus}) to CRM.`);
+
+    if (savedCount > 0 || rejectedCount > 0) {
+        logStep('Database', `Saved ${savedCount} leads, Rejected ${rejectedCount} at gate (Status: ${forceStatus})`);
+    }
 
     // SYNC: Mark companies as researched to prevent discovery in future runs
-    if (leads.length > 0) {
+    if (savedCount > 0) {
         try {
             const { markCompaniesAsResearched } = await import('./company-tracker.js');
-            const companiesToMark = [...new Set(leads.map(l => l.company_name))].map(name => {
-                const lead = leads.find(l => l.company_name === name);
+            const savedLeads = leads.filter(l => validateLeadForCRM(l, forceStatus).pass);
+            const companiesToMark = [...new Set(savedLeads.map(l => l.company_name))].map(name => {
+                const lead = savedLeads.find(l => l.company_name === name);
                 return {
                     name,
                     domain: lead.company_website || lead.company_domain || lead.domain,
-                    leadCount: leads.filter(l => l.company_name === name).length,
+                    leadCount: savedLeads.filter(l => l.company_name === name).length,
                     metadata: { source: 'workflow_save', icp_id: icpId }
                 };
             });

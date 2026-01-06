@@ -131,17 +131,65 @@ Use Apollo API.`
     {
         id: 'outreach_creator',
         name: 'Outreach Creator',
-        description: 'Generate outreach messages you actually want to send.',
+        description: 'Generate personalized outreach messages that get replies.',
         questions: [
-            { id: 'template', label: 'Write your ideal first-message template', placeholder: 'Hi {{first_name}}, I noticed {{research_fact}}...', type: 'textarea' },
+            {
+                id: 'template',
+                label: 'Write your ideal first-message template',
+                placeholder: 'Hi {{first_name}}, I noticed {{research_fact}}. We frequently see similar opportunities come through our pipeline. Think connecting could be mutually beneficial.',
+                type: 'textarea',
+                helper: 'Use {{first_name}} for personalization and {{research_fact}} where the specific company reference should go.'
+            },
             { id: 'channels', label: 'Messaging channels', type: 'multi-select', options: CHANNEL_OPTIONS },
-            { id: 'success_definition', label: 'What does a successful first message mean?', placeholder: 'What do you want the person to do?', type: 'textarea' },
+            {
+                id: 'success_definition',
+                label: 'What does a successful first message achieve?',
+                placeholder: 'e.g. "LinkedIn: accepted connection + reply. Email: a reply."',
+                type: 'textarea'
+            },
+            {
+                id: 'forbidden',
+                label: 'What should the AI NEVER do in messages?',
+                placeholder: 'e.g. "Don\'t be too general (\'your work in real estate is impressive\'), don\'t mention multiple facts - pick ONE, don\'t sound robotic"',
+                type: 'textarea',
+                helper: 'List things to avoid - generic phrases, multiple references, robotic language, etc.'
+            },
+            {
+                id: 'credibility',
+                label: 'What credibility signals should be referenced?',
+                placeholder: 'e.g. "Reference a specific recent investment, fund, development project, or geographic expansion."',
+                type: 'textarea',
+                helper: 'What types of company facts make for strong personalization?'
+            },
+            {
+                id: 'facts_to_mention',
+                label: 'What specific facts should the AI look for in company profiles?',
+                placeholder: 'e.g. "Previous investments in residential developments, AUM figures, specific property acquisitions, fund launches, market expansions."',
+                type: 'textarea',
+                helper: 'Guide the AI on what to extract from the Intelligence Report for personalization.'
+            },
+            {
+                id: 'company_description',
+                label: 'How should we describe what your company does? (for emails)',
+                placeholder: 'e.g. "we work on residential development and investment opportunities across North America"',
+                type: 'textarea',
+                helper: 'This appears in email messages: "At [Company], we [your description], which is why..."'
+            },
         ],
-        template: (a) => `You are an expert copywriter. Draft outreach messages.
-Template: ${a.template}
-Channels: ${Array.isArray(a.channels) ? a.channels.join(', ') : a.channels}
-Goal: ${a.success_definition}
-Create unique drafts.`
+        template: (a) => `You are an expert outreach copywriter.
+
+USER TEMPLATE: ${a.template || "Hi {{first_name}}, we noticed {{research_fact}}. We frequently have similar opportunities in our pipeline. Think connecting could be mutually beneficial."}
+
+FORBIDDEN: ${a.forbidden || "Do not be too general. Do not mention multiple facts - pick ONE. Do not sound robotic."}
+
+CREDIBILITY SIGNALS: ${a.credibility || "Reference a specific recent investment, fund, or development project."}
+
+FACTS TO LOOK FOR: ${a.facts_to_mention || "Previous investments, AUM figures, property acquisitions, fund launches, market expansions."}
+
+CHANNELS: ${Array.isArray(a.channels) ? a.channels.join(', ') : a.channels}
+SUCCESS: ${a.success_definition || "LinkedIn: accepted connection + reply. Email: a reply."}
+
+Generate personalized messages using ONE specific fact from each company profile.`
     },
     {
         id: 'data_architect',

@@ -1,15 +1,31 @@
 
 import { LeadScraperService } from '../src/backend/services/lead-scraper-service.js';
-import { query } from '../db/index.js';
 import { WORKFLOW_CONFIG } from '../src/config/workflow.js';
 
 async function recoverLeads() {
     console.log('🚀 Starting Lead Recovery Script...');
-    const userId = '81c0ce2f-64e2-4af5-9bbd-5ba4818f9230'; // Current user ID based on context
+
+    // Fallback for local dev if env vars are missing
+    if (!process.env.DATABASE_URL && !process.env.DATABASE_PUBLIC_URL) {
+        process.env.DATABASE_URL = "postgresql://postgres:postgres@localhost:51214/postgres";
+        console.log("DEBUG: Using local fallback URL (port 51214):", process.env.DATABASE_URL);
+    }
 
     try {
-        // 1. Find companies with 1 or fewer leads in the CRM
-        const res = await query(`
+        // DYNAMIC IMPORT: Ensure DATABASE_URL is set BEFORE initializing the pool
+        const { query: dbQuery } = await import('../db/index.js');
+
+        // 1. Get User ID by email
+        const userRes = await dbQuery("SELECT id FROM users WHERE email = 'roelof@elvison.com'");
+        if (userRes.rows.length === 0) {
+            console.error('❌ User roelof@elvison.com not found.');
+            return;
+        }
+        const userId = userRes.rows[0].id;
+        console.log(`✅ Using User ID: ${userId}`);
+
+        // 2. Find companies with 1 or fewer leads in the CRM
+        const res = await dbQuery(`
             SELECT company_name, 
                    custom_data->>'company_domain' as domain,
                    custom_data->>'icp_id' as icp_id,
@@ -57,13 +73,38 @@ async function recoverLeads() {
 
                 console.log(`✅ Found ${leadsFound.length} new leads for this batch.`);
 
-                // Save to DB
+                // Save to DB with validation
+                const BLOCKED_EMAIL_DOMAINS = [
+                    'linktr.ee', 'linktree.com', 'example.com', 'test.com',
+                    'temp-mail.org', 'bio.link', 'beacons.ai', 'stan.store', 'carrd.co'
+                ];
+                let savedCount = 0;
+                let rejectedCount = 0;
+
                 for (const lead of leadsFound) {
                     try {
-                        const exists = await query("SELECT id FROM leads WHERE email = $1 AND user_id = $2", [lead.email, userId]);
+                        // === VALIDATION GATE ===
+                        const emailDomain = lead.email?.split('@')[1]?.toLowerCase();
+                        if (!lead.email || !emailDomain) {
+                            console.log(`  ❌ Skipping lead without email`);
+                            rejectedCount++;
+                            continue;
+                        }
+                        if (BLOCKED_EMAIL_DOMAINS.includes(emailDomain)) {
+                            console.log(`  ❌ Blocked email domain: ${emailDomain}`);
+                            rejectedCount++;
+                            continue;
+                        }
+                        if (!lead.company_name || lead.company_name === 'Unknown') {
+                            console.log(`  ❌ Missing company_name for ${lead.email}`);
+                            rejectedCount++;
+                            continue;
+                        }
+
+                        const exists = await dbQuery("SELECT id FROM leads WHERE email = $1 AND user_id = $2", [lead.email, userId]);
                         if (exists.rows.length > 0) continue;
 
-                        await query(`
+                        await dbQuery(`
                             INSERT INTO leads(company_name, person_name, email, job_title, linkedin_url, status, source, user_id, custom_data)
                             VALUES($1, $2, $3, $4, $5, 'NEW', 'Lead Recovery', $6, $7)
                         `, [
@@ -81,10 +122,12 @@ async function recoverLeads() {
                                 company_domain: lead.company_domain
                             }
                         ]);
+                        savedCount++;
                     } catch (e) {
                         console.error(`Failed to save recovered lead ${lead.email}:`, e.message);
                     }
                 }
+                console.log(`✅ Saved ${savedCount} leads, Rejected ${rejectedCount} at gate.`);
             } catch (err) {
                 console.error(`Batch ${i} failed:`, err.message);
             }
@@ -95,7 +138,7 @@ async function recoverLeads() {
 
         console.log('\n✨ Lead Recovery Complete!');
     } catch (err) {
-        console.error('Fatal Error in Lead Recovery:', err.message);
+        console.error('Fatal Error in Lead Recovery:', err);
     }
 }
 

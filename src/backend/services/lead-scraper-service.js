@@ -234,10 +234,11 @@ export class LeadScraperService {
             console.log(`[ApolloDomain] Batch ${batchId} raw items: ${items.length}`);
 
             // --- STRICT FILTERING LAYER ---
-            // First check: Domain validation (CRITICAL)
-            // Second: Job title/function exclusions
+            // First check: Domain validation (CRITICAL) - leads failing this are DISCARDED (not disqualified)
+            // Second: Job title/function exclusions - leads failing this are DISQUALIFIED (for review)
             const validItems = [];
-            const disqualifiedItems = [];
+            const disqualifiedItems = []; // Wrong title/function FROM approved domains - saved for review
+            let discardedCount = 0; // Wrong domain or fake email - completely ignored
 
             // Build set of requested domains for O(1) lookup
             const requestedDomains = new Set(domains.map(d => d.toLowerCase().trim()));
@@ -258,13 +259,52 @@ export class LeadScraperService {
                 const isExactMatch = requestedDomains.has(leadDomain);
                 const isSubdomainMatch = !isExactMatch && [...requestedDomains].some(req => leadDomain.endsWith('.' + req));
 
-                if (!leadDomain || (!isExactMatch && !isSubdomainMatch)) {
-                    console.log(`[ApolloDomain] ❌ DOMAIN MISMATCH: ${item.firstName || 'Unknown'} ${item.lastName || ''} from "${leadDomain}" (not in requested: ${[...requestedDomains].slice(0, 5).join(', ')}...)`);
-                    disqualifiedItems.push({
-                        ...item,
-                        disqualification_reason: `Domain mismatch: "${leadDomain}" not in requested list`
-                    });
+                // STRICT: Never allow leads with missing domain metadata - DISCARD (don't even save as disqualified)
+                if (!leadDomain) {
+                    console.log(`[ApolloDomain] 🗑️ DISCARDED (no domain): ${item.firstName || 'Unknown'} ${item.lastName || ''}`);
+                    discardedCount++;
                     return;
+                }
+
+                // Domain mismatch = DISCARD (wrong company, we don't care)
+                if (!isExactMatch && !isSubdomainMatch) {
+                    console.log(`[ApolloDomain] 🗑️ DISCARDED (domain mismatch): ${item.firstName || 'Unknown'} from "${leadDomain}"`);
+                    discardedCount++;
+                    return;
+                }
+
+                // STEP 1.5: EMAIL DOMAIN VALIDATION
+                // Block fake/generic email providers that indicate scraped placeholder profiles
+                const BLOCKED_EMAIL_DOMAINS = [
+                    'linktr.ee', 'linktree.com', 'example.com', 'test.com',
+                    'temp-mail.org', 'mailinator.com', 'guerrillamail.com',
+                    'bio.link', 'beacons.ai', 'stan.store', 'carrd.co'
+                ];
+                const GENERIC_EMAIL_PROVIDERS = [
+                    'gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com',
+                    'icloud.com', 'aol.com', 'protonmail.com', 'live.com'
+                ];
+
+                const emailDomain = (item.email || "").split('@')[1]?.toLowerCase();
+
+                // Missing or fake email = DISCARD (not a real lead)
+                if (!emailDomain) {
+                    console.log(`[ApolloDomain] 🗑️ DISCARDED (no email): ${item.firstName || 'Unknown'}`);
+                    discardedCount++;
+                    return;
+                }
+
+                if (BLOCKED_EMAIL_DOMAINS.includes(emailDomain)) {
+                    console.log(`[ApolloDomain] 🗑️ DISCARDED (fake email): ${item.email}`);
+                    discardedCount++;
+                    return;
+                }
+
+                // For personal emails, require strong domain match to validate legitimacy
+                if (GENERIC_EMAIL_PROVIDERS.includes(emailDomain)) {
+                    // Personal email is acceptable ONLY if we have confirmed domain match
+                    // (isExactMatch or isSubdomainMatch is already true at this point)
+                    console.log(`[ApolloDomain] ⚠️ Personal email (${emailDomain}) for ${item.firstName} - Allowing due to verified company domain match`);
                 }
 
                 // STEP 2: Job Title Check
@@ -324,7 +364,7 @@ export class LeadScraperService {
                 validItems.push(item);
             });
 
-            console.log(`[ApolloDomain] Batch ${batchId}: ${validItems.length} valid, ${disqualifiedItems.length} disqualified.`);
+            console.log(`[ApolloDomain] Batch ${batchId}: ${validItems.length} valid, ${disqualifiedItems.length} disqualified (for review), ${discardedCount} discarded (wrong domain/email).`);
 
             return { valid: validItems, disqualified: disqualifiedItems };
 
