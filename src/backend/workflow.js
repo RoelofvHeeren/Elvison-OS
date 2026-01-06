@@ -1,7 +1,7 @@
 // NO MORE @openai/agents - Using direct SDK runners only
 import { checkApifyRun, getApifyResults, scrapeCompanyWebsite, scanSiteStructure, scrapeSpecificPages, scrapeWebsiteSmart } from "./services/apify.js";
 import { runGoogleSearch } from "./services/google-search-service.js";
-import { getTermStrings, markTermsAsUsed, initializeSearchTermsIfEmpty } from "./services/search-term-manager.js";
+import { getTermStrings, markTermsAsUsed, initializeSearchTermsIfEmpty, generateSearchTerms, addSearchTerms } from "./services/search-term-manager.js";
 import { z } from "zod";
 import { query } from "../../db/index.js";
 import {
@@ -317,7 +317,24 @@ export const runAgentWorkflow = async (input, config) => {
         }
 
         // Get ordered search terms (least recently used first)
-        const searchTermQueue = icpId ? await getTermStrings(icpId) : [];
+        // Get ordered search terms (least recently used first)
+        let searchTermQueue = icpId ? await getTermStrings(icpId) : [];
+
+        // FALLBACK: If queue is empty (e.g. ad-hoc prompt or new ICP), generate terms now
+        if (searchTermQueue.length === 0) {
+            const promptForTerms = companyContext.icpDescription || input.input_as_text || "";
+            if (promptForTerms) {
+                logStep('Company Finder', `📋 No existing search terms found. Generating dynamically...`);
+                const newTerms = await generateSearchTerms(promptForTerms, 10);
+                searchTermQueue = newTerms;
+
+                // If this is a real ICP, save them for next time
+                if (icpId && newTerms.length > 0) {
+                    await addSearchTerms(icpId, newTerms);
+                    logStep('Company Finder', `💾 Saved ${newTerms.length} generated terms to ICP`);
+                }
+            }
+        }
         let searchTermIndex = 0;
         const MAX_SEARCH_TERMS = 10; // Max terms to use in one run
         let termsUsedThisRun = [];
