@@ -232,6 +232,12 @@ const Logbook = () => {
         const executionTimeline = outputData.execution_timeline || stats.execution_timeline || []
         const executionLogs = outputData.execution_logs || stats.execution_logs || []
 
+        // NEW: Extract search stats for Logbook display
+        const searchStats = stats.searchStats || {}
+        const termsUsed = searchStats.terms_used || []
+        const resultsPerTerm = searchStats.results_per_term || {}
+        const totalSearchResults = searchStats.total_results || 0
+
         return {
             companies: stats.companies_discovered || stats.companiesFound || 0,
             totalLeads: stats.leads_returned || stats.leadsGenerated || 0,
@@ -242,6 +248,12 @@ const Logbook = () => {
             timeline: executionTimeline,
             leads: leads,
             companies_list: Array.from(new Set(leads.map(l => l.company_name).filter(Boolean))),
+            // Search stats for display
+            searchStats: {
+                termsUsed,
+                resultsPerTerm,
+                totalSearchResults
+            },
             // API Cost tracking - normalized from either format
             apiCosts: {
                 totalCost,
@@ -431,6 +443,29 @@ const Logbook = () => {
                                                                         <span className="text-white truncate">{company}</span>
                                                                     </div>
                                                                 ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Search Terms Used - NEW */}
+                                                    {stats.searchStats?.termsUsed && stats.searchStats.termsUsed.length > 0 && (
+                                                        <div className="bg-gradient-to-br from-blue-500/5 to-purple-500/5 rounded-xl p-6 border border-blue-500/20">
+                                                            <h4 className="text-xs font-bold uppercase tracking-wider text-blue-400 mb-4 flex items-center gap-2">
+                                                                🔍 Search Terms Used ({stats.searchStats.termsUsed.length})
+                                                            </h4>
+                                                            <div className="space-y-2">
+                                                                {stats.searchStats.termsUsed.map((term, idx) => (
+                                                                    <div key={idx} className="flex items-center justify-between bg-black/20 rounded-lg p-3 border border-white/5">
+                                                                        <span className="text-sm text-white font-medium">"{term}"</span>
+                                                                        <span className="text-xs bg-blue-500/20 text-blue-300 px-2 py-1 rounded-full">
+                                                                            {stats.searchStats.resultsPerTerm[term] || 0} results
+                                                                        </span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                            <div className="mt-4 pt-4 border-t border-white/10 flex items-center justify-between text-sm">
+                                                                <span className="text-gray-400">Total Search Results</span>
+                                                                <span className="text-white font-bold">{stats.searchStats.totalSearchResults}</span>
                                                             </div>
                                                         </div>
                                                     )}

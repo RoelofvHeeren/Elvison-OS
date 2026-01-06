@@ -1300,6 +1300,124 @@ app.post('/api/icps/:id/optimize', requireAuth, async (req, res) => {
     }
 });
 
+// --- SEARCH TERM MANAGEMENT ENDPOINTS ---
+import { getOrderedTerms, addSearchTerms, removeSearchTerm, reorderSearchTerms, generateSearchTerms } from './src/backend/services/search-term-manager.js';
+
+// Get search terms for an ICP
+app.get('/api/icps/:id/search-terms', requireAuth, async (req, res) => {
+    const { id } = req.params;
+    try {
+        // Verify ownership
+        const verify = await query('SELECT id FROM icps WHERE id = $1 AND user_id = $2', [id, req.userId]);
+        if (verify.rows.length === 0) return res.status(404).json({ error: 'ICP not found' });
+
+        const terms = await getOrderedTerms(id);
+        res.json({ terms });
+    } catch (err) {
+        console.error('Failed to get search terms:', err);
+        res.status(500).json({ error: 'Failed to get search terms' });
+    }
+});
+
+// Add search terms to an ICP
+app.post('/api/icps/:id/search-terms', requireAuth, async (req, res) => {
+    const { id } = req.params;
+    const { terms } = req.body;
+
+    if (!terms || !Array.isArray(terms)) {
+        return res.status(400).json({ error: 'terms array required' });
+    }
+
+    try {
+        // Verify ownership
+        const verify = await query('SELECT id FROM icps WHERE id = $1 AND user_id = $2', [id, req.userId]);
+        if (verify.rows.length === 0) return res.status(404).json({ error: 'ICP not found' });
+
+        await addSearchTerms(id, terms);
+        const updated = await getOrderedTerms(id);
+        res.json({ success: true, terms: updated });
+    } catch (err) {
+        console.error('Failed to add search terms:', err);
+        res.status(500).json({ error: 'Failed to add search terms' });
+    }
+});
+
+// Reorder search terms
+app.put('/api/icps/:id/search-terms/reorder', requireAuth, async (req, res) => {
+    const { id } = req.params;
+    const { orderedTerms } = req.body;
+
+    if (!orderedTerms || !Array.isArray(orderedTerms)) {
+        return res.status(400).json({ error: 'orderedTerms array required' });
+    }
+
+    try {
+        // Verify ownership
+        const verify = await query('SELECT id FROM icps WHERE id = $1 AND user_id = $2', [id, req.userId]);
+        if (verify.rows.length === 0) return res.status(404).json({ error: 'ICP not found' });
+
+        await reorderSearchTerms(id, orderedTerms);
+        const updated = await getOrderedTerms(id);
+        res.json({ success: true, terms: updated });
+    } catch (err) {
+        console.error('Failed to reorder search terms:', err);
+        res.status(500).json({ error: 'Failed to reorder search terms' });
+    }
+});
+
+// Delete a search term
+app.delete('/api/icps/:id/search-terms/:term', requireAuth, async (req, res) => {
+    const { id, term } = req.params;
+
+    try {
+        // Verify ownership
+        const verify = await query('SELECT id FROM icps WHERE id = $1 AND user_id = $2', [id, req.userId]);
+        if (verify.rows.length === 0) return res.status(404).json({ error: 'ICP not found' });
+
+        await removeSearchTerm(id, decodeURIComponent(term));
+        const updated = await getOrderedTerms(id);
+        res.json({ success: true, terms: updated });
+    } catch (err) {
+        console.error('Failed to delete search term:', err);
+        res.status(500).json({ error: 'Failed to delete search term' });
+    }
+});
+
+// Generate AI search terms from ICP description
+app.post('/api/icps/:id/search-terms/generate', requireAuth, async (req, res) => {
+    const { id } = req.params;
+    const { count = 20 } = req.body;
+
+    try {
+        // Verify ownership and get ICP config
+        const icpRes = await query('SELECT id, config FROM icps WHERE id = $1 AND user_id = $2', [id, req.userId]);
+        if (icpRes.rows.length === 0) return res.status(404).json({ error: 'ICP not found' });
+
+        const config = icpRes.rows[0].config || {};
+        const icpDescription = config.surveys?.company_finder?.icp_description ||
+            config.icp_description ||
+            config.description ||
+            '';
+
+        if (!icpDescription) {
+            return res.status(400).json({ error: 'ICP has no description to generate terms from' });
+        }
+
+        const terms = await generateSearchTerms(icpDescription, count);
+
+        if (terms.length > 0) {
+            await addSearchTerms(id, terms);
+        }
+
+        const updated = await getOrderedTerms(id);
+        res.json({ success: true, generated: terms.length, terms: updated });
+    } catch (err) {
+        console.error('Failed to generate search terms:', err);
+        res.status(500).json({ error: 'Failed to generate search terms' });
+    }
+});
+
+
 // Trigger Analysis Run (SSE Streaming)
 app.post('/api/agents/run', requireAuth, async (req, res) => {
     let { prompt, vectorStoreId, agentConfigs, mode, filters, idempotencyKey, icpId } = req.body
@@ -1729,6 +1847,11 @@ const initDB = async () => {
             );
             CREATE INDEX IF NOT EXISTS idx_workflow_logs_run_id ON workflow_logs(run_id);
         `);
+
+        // Migration 08: Search Term Rotation
+        await query(`ALTER TABLE icps ADD COLUMN IF NOT EXISTS search_terms JSONB DEFAULT '[]'::jsonb;`);
+        await query(`ALTER TABLE workflow_runs ADD COLUMN IF NOT EXISTS search_stats JSONB DEFAULT '{}'::jsonb;`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_icps_search_terms ON icps USING gin(search_terms);`);
 
         console.log('Database Schema Verified.')
     } catch (err) {

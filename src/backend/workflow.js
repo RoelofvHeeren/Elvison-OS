@@ -1,5 +1,7 @@
 // NO MORE @openai/agents - Using direct SDK runners only
-import { checkApifyRun, getApifyResults, performGoogleSearch, scrapeCompanyWebsite, scanSiteStructure, scrapeSpecificPages, scrapeWebsiteSmart } from "./services/apify.js";
+import { checkApifyRun, getApifyResults, scrapeCompanyWebsite, scanSiteStructure, scrapeSpecificPages, scrapeWebsiteSmart } from "./services/apify.js";
+import { runGoogleSearch } from "./services/google-search-service.js";
+import { getTermStrings, markTermsAsUsed, initializeSearchTermsIfEmpty } from "./services/search-term-manager.js";
 import { z } from "zod";
 import { query } from "../../db/index.js";
 import {
@@ -297,171 +299,306 @@ export const runAgentWorkflow = async (input, config) => {
         let scrapedNamesSet = new Set();
         const excludedNames = await getExcludedCompanyNames(userId);
         const leadScraper = new LeadScraperService();
-        let attempts = 0;
-        const MAX_ATTEMPTS = 5; // Allow for thorough discovery
-        let totalSearches = 0;
-        const MAX_SEARCHES = 20;
         let masterQualifiedList = [];
         let totalDiscovered = 0;
         let totalDisqualified = 0;
-        let currentRunQueries = [];
 
-        // --- Phase 1: Discovery & Profiling Loop ---
-        // User Requirement: Stop ONLY when 30 qualified companies are found (or target met)
-        while (masterQualifiedList.length < targetLeads && attempts < MAX_ATTEMPTS) {
+        // --- NEW: Search Term Tracking for Logbook ---
+        const searchStats = {
+            terms_used: [],
+            results_per_term: {},
+            total_results: 0
+        };
+
+        // --- Phase 1: Discovery & Profiling with Rotating Search Terms ---
+        // Initialize search terms if this ICP doesn't have any yet
+        if (icpId) {
+            await initializeSearchTermsIfEmpty(icpId);
+        }
+
+        // Get ordered search terms (least recently used first)
+        const searchTermQueue = icpId ? await getTermStrings(icpId) : [];
+        let searchTermIndex = 0;
+        const MAX_SEARCH_TERMS = 10; // Max terms to use in one run
+        let termsUsedThisRun = [];
+
+        logStep('Company Finder', `📋 Search term queue has ${searchTermQueue.length} terms. Starting discovery...`);
+
+        // Loop through search terms until we hit target or exhaust terms
+        while (masterQualifiedList.length < targetLeads && searchTermIndex < searchTermQueue.length && searchTermIndex < MAX_SEARCH_TERMS) {
             if (await checkCancellation()) break;
-            attempts++;
-            logStep('Workflow', `Discovery Round ${attempts}: Collecting companies...`);
 
-            // 1. Discovery
-            let candidates = [];
+            const currentTerm = searchTermQueue[searchTermIndex];
+            searchTermIndex++;
+            termsUsedThisRun.push(currentTerm);
+
+            logStep('Company Finder', `🔍 Search Term ${searchTermIndex}/${Math.min(searchTermQueue.length, MAX_SEARCH_TERMS)}: "${currentTerm}"`);
+
+            // 1. Run Apify Google Search (up to 100 results per term)
+            let searchResults = [];
             try {
-                if (totalSearches >= MAX_SEARCHES) {
-                    logStep('Company Finder', `🛑 Search limit reached (${MAX_SEARCHES}). Stopping discovery.`);
-                    break;
-                }
-                totalSearches++;
+                const { results, count } = await runGoogleSearch(currentTerm, {
+                    maxPagesPerQuery: 10, // 10 pages × 10 results = 100 max
+                    countryCode: 'ca', // Default to Canada
+                    checkCancellation
+                });
+                searchResults = results;
 
-                // Use direct Gemini runner with proper tool execution
-                const apifyToken = process.env.APIFY_API_TOKEN;
-                const finderRes = await runGeminiAgent({
-                    apiKey: googleKey,
-                    modelName: 'gemini-2.0-flash',
-                    agentName: 'Company Finder',
-                    instructions: `You are a company discovery agent. Your task is to find companies that match a SPECIFIC Ideal Customer Profile (ICP).
+                // Track for Logbook
+                searchStats.terms_used.push(currentTerm);
+                searchStats.results_per_term[currentTerm] = count;
+                searchStats.total_results += count;
 
-                    CRITICAL NEGATIVE FILTERS:
-                    - NO Stock Exchanges (e.g. NASDAQ / NYSE)
-                    - NO Market Indices (e.g. S&P 500)
-                    - NO Job Boards / Recruitment Sites / CV databases
-                    - NO General News Sites / Wikipedia
-                    - NO Government Portals / Regulatory agencies
-                    - NO Service Providers (unless they are also investors)
+                logStep('Company Finder', `✅ Got ${count} results for "${currentTerm}"`);
+            } catch (e) {
+                logStep('Company Finder', `❌ Search failed for "${currentTerm}": ${e.message}`);
+                continue; // Try next term
+            }
 
-                    USER'S ICP DESCRIPTION:
-                    "${companyContext.icpDescription || input.input_as_text}"
+            if (searchResults.length === 0) {
+                logStep('Company Finder', `⚠️ No results for "${currentTerm}", trying next term...`);
+                continue;
+            }
+
+            // 2. Filter ALL search results through AI in batches
+            // Process in batches of 30 to fit in context window while using ALL 100 results
+            const BATCH_SIZE = 30;
+            let allCandidates = [];
+            let listArticlesToScrape = []; // NEW: Track list articles separately
+            let resultIndex = 0;
+
+            while (resultIndex < searchResults.length) {
+                if (await checkCancellation()) break;
+
+                const batch = searchResults.slice(resultIndex, resultIndex + BATCH_SIZE);
+                resultIndex += BATCH_SIZE;
+
+                try {
+                    logStep('Company Finder', `🔍 Filtering results ${resultIndex - BATCH_SIZE + 1}-${Math.min(resultIndex, searchResults.length)} of ${searchResults.length}...`);
+
+                    const filterPrompt = `
+You are a company discovery agent. Analyze these search results and CATEGORIZE each one.
+
+ICP DESCRIPTION:
+"${companyContext.icpDescription || input.input_as_text}"
 
 STRICTNESS LEVEL: ${companyContext.strictness || 'Moderate'}
-${companyContext.strictness?.includes('Strict') ? '⚠️ STRICT MODE: Only include EXACT matches. No adjacent industries or company types.' : ''}
-${companyContext.strictness?.includes('Flexible') ? '✅ FLEXIBLE MODE: Include companies from adjacent/similar industries if they might be relevant.' : ''}
-
-MUST-HAVE CRITERIA: ${companyContext.keyAttributes || 'See ICP description'}
-EXCLUDED INDUSTRIES (NEVER INCLUDE): ${companyContext.excludedIndustries || 'None specified'}
-
-STEP 1: Call the google_search_and_extract tool ONCE with a query that will find companies matching the ICP above. Be specific with industry, geography, and company type.
-
-STEP 2: Parse the search results. For each result, evaluate if it ACTUALLY matches the ICP based on the strictness level:
-- STRICT: Company must be in the EXACT industry described. No exceptions.
-- MODERATE: Company should be in the target industry or closely related.
-- FLEXIBLE: Company can be in adjacent industries if there's potential overlap.
-
-STEP 3: Return a JSON object with ONLY the companies that match. Example:
-{"results": [{"companyName": "Tricon Residential", "domain": "triconresidential.com", "description": "Multi-family rental housing investor in Canada with $10B+ AUM"}, ...]}
-
-CRITICAL RULES:
-- Do NOT call the search tool more than 1-2 times
-- After searching, you MUST return JSON results
-- STRICTLY REJECT any company in these excluded industries: ${companyContext.excludedIndustries || 'None specified'}
-- Apply the strictness level when deciding which companies to include
-- Extract at least 5-10 RELEVANT companies from search results
-- If a URL is like "example.com/page", the domain is "example.com"
-- Do not include directories like "top 10 lists" as companies themselves`,
-                    userMessage: `Find companies matching this ICP: "${companyContext.icpDescription || input.input_as_text}"
-
-STRICTNESS: ${companyContext.strictness || 'Moderate'}
 EXCLUDED INDUSTRIES: ${companyContext.excludedIndustries || 'None'}
+MUST-HAVE CRITERIA: ${companyContext.keyAttributes || 'See ICP description'}
 
-Companies to AVOID (already scraped): ${[...scrapedNamesSet, ...excludedNames, ...masterQualifiedList.map(c => c.company_name)].slice(0, 30).join(', ') || 'none yet'}`,
-                    tools: [
-                        {
-                            name: "google_search_and_extract",
-                            description: "Search using Google and return organic results (Title, URL, Snippet). Use this to find company websites.",
-                            parameters: {
-                                properties: { query: { type: "string", description: "Google search query" } },
-                                required: ["query"]
-                            },
-                            execute: async ({ query: q }) => {
-                                logStep('Company Finder', `🔍 Google Search: "${q}"`);
-                                currentRunQueries.push(q);
-                                const results = await performGoogleSearch(q, apifyToken, checkCancellation);
-                                return results.map(r => `TITLE: ${r.title}\nURL: ${r.link}\nSNIPPET: ${r.snippet}`).join('\n---\n');
-                            }
+SEARCH RESULTS (Batch ${Math.ceil(resultIndex / BATCH_SIZE)} of ${Math.ceil(searchResults.length / BATCH_SIZE)}):
+${batch.map((r, i) => `${resultIndex - BATCH_SIZE + i + 1}. ${r.title}\n   URL: ${r.link}\n   Domain: ${r.domain}\n   Snippet: ${r.snippet}`).join('\n\n')}
+
+COMPANIES TO SKIP (already processed):
+${[...scrapedNamesSet, ...excludedNames, ...masterQualifiedList.map(c => c.company_name), ...allCandidates.map(c => c.companyName || c.company_name)].slice(0, 50).join(', ') || 'none yet'}
+
+CATEGORIZE EACH RESULT INTO ONE OF THREE TYPES:
+
+1. "company" - Direct company website that matches or MIGHT match the ICP
+   → Include companyName, domain, description
+
+2. "list" - A CURATED LIST ARTICLE (e.g., "Top 50 Real Estate Firms", "Best PE Funds in Canada")
+   → These are VALUABLE! Include the URL so we can scrape the list and extract all companies from it
+   → Include listUrl, listTitle, estimatedCompanies (your guess of how many companies are listed)
+
+3. "skip" - Job boards, news sites (not lists), government portals, stock exchanges, irrelevant content
+   → Do not include in output
+
+OUTPUT JSON:
+{
+  "companies": [{"companyName": "...", "domain": "...", "description": "..."}],
+  "lists": [{"listUrl": "...", "listTitle": "...", "estimatedCompanies": 20}]
+}
+`;
+
+                    const filterRes = await runGeminiAgent({
+                        apiKey: googleKey,
+                        modelName: 'gemini-2.0-flash',
+                        agentName: 'Company Filter',
+                        instructions: "You are a company discovery agent. Categorize search results into companies, valuable list articles, or skip. Output JSON only.",
+                        userMessage: filterPrompt,
+                        tools: [],
+                        maxTurns: 1
+                    });
+
+                    costTracker.recordCall({
+                        agent: 'Company Filter',
+                        model: 'gemini-2.0-flash',
+                        inputTokens: filterRes.usage?.inputTokens || 0,
+                        outputTokens: filterRes.usage?.outputTokens || 0,
+                        duration: 0,
+                        success: true
+                    });
+
+                    // Parse with fallback for both old and new format
+                    let parsed = {};
+                    try {
+                        const jsonMatch = filterRes.finalOutput.match(/\{[\s\S]*\}/);
+                        if (jsonMatch) {
+                            parsed = JSON.parse(jsonMatch[0]);
                         }
-                    ],
-                    maxTurns: 3, // 1 search + extraction + maybe 1 more search
-                    logStep: logStep
-                });
+                    } catch (e) {
+                        // Fallback to old schema if new format fails
+                        const normalized = enforceAgentContract({
+                            agentName: "Company Filter",
+                            rawOutput: filterRes.finalOutput,
+                            schema: CompanyFinderSchema
+                        });
+                        parsed = { companies: normalized.results || [], lists: [] };
+                    }
 
-                // Track cost
-                costTracker.recordCall({
-                    agent: 'Company Finder',
-                    model: 'gemini-2.0-flash',
-                    inputTokens: finderRes.usage?.inputTokens || 0,
-                    outputTokens: finderRes.usage?.outputTokens || 0,
-                    duration: 0,
-                    success: true
-                });
+                    const batchCompanies = (parsed.companies || parsed.results || [])
+                        .filter(c => !scrapedNamesSet.has(c.company_name || c.companyName))
+                        .filter(c => !excludedNames.includes(c.company_name || c.companyName))
+                        .filter(c => !allCandidates.some(existing =>
+                            (existing.domain || '').toLowerCase() === (c.domain || '').toLowerCase()));
 
-                // HARD CONTRACT ENFORCEMENT
-                const normalizedFinder = enforceAgentContract({
-                    agentName: "Company Finder",
-                    rawOutput: finderRes.finalOutput,
-                    schema: CompanyFinderSchema
-                });
+                    const batchLists = (parsed.lists || [])
+                        .filter(l => l.listUrl && !listArticlesToScrape.some(existing => existing.listUrl === l.listUrl));
 
-                candidates = (normalizedFinder.results || []).filter(c => !scrapedNamesSet.has(c.company_name || c.companyName));
-                totalDiscovered += candidates.length;
-            } catch (e) {
-                logStep('Company Finder', `Failed: ${e.message}`);
+                    allCandidates.push(...batchCompanies);
+                    listArticlesToScrape.push(...batchLists);
+
+                    logStep('Company Finder', `📋 Batch: ${batchCompanies.length} companies, ${batchLists.length} list articles (Total: ${allCandidates.length} companies, ${listArticlesToScrape.length} lists)`);
+
+                } catch (e) {
+                    logStep('Company Finder', `⚠️ Batch filter failed: ${e.message}`);
+                }
             }
 
-            if (candidates.length === 0) {
-                logStep('Workflow', 'No new candidates found in this round.');
-                break;
-            }
+            // 2b. NEW: Extract companies from list articles
+            const MAX_LISTS_TO_SCRAPE = 3; // Limit to prevent runaway costs
+            if (listArticlesToScrape.length > 0) {
+                logStep('Company Finder', `📰 Found ${listArticlesToScrape.length} list articles to mine for companies...`);
 
-            // 2. Profiling & Filtering - Use direct Gemini runner
-            // 2. Profiling & Filtering - Use direct Gemini runner
-            // SEQUENTIAL PROCESSING to control costs (Apify is expensive)
-            try {
-                if (await checkCancellation()) break;
-                logStep('Company Profiler', `Analyzing ${candidates.length} candidates sequentially...`);
-
-                const apifyToken = process.env.APIFY_API_TOKEN;
-                const batchResults = [];
-
-                // Process each candidate one by one
-                for (const candidate of candidates) {
+                for (const listArticle of listArticlesToScrape.slice(0, MAX_LISTS_TO_SCRAPE)) {
                     if (await checkCancellation()) break;
 
                     try {
-                        logStep('Company Profiler', `Analyzing ${candidate.companyName} (${candidate.domain})...`);
+                        logStep('Company Finder', `🔗 Scraping list: "${listArticle.listTitle}"...`);
 
-                        // 1. SMART SCRAPING (Discover -> Select -> Scrape)
-                        let finalContent = "";
-                        try {
-                            // Use scrapeWebsiteSmart for discovery + fallback selection
-                            const { links, content: fallbackContent } = await scrapeWebsiteSmart(candidate.domain);
-                            finalContent = fallbackContent;
+                        // Scrape the list page
+                        const { content: listContent } = await scrapeWebsiteSmart(listArticle.listUrl);
 
-                            // If "Deep Dive" is requested or we have many links, use LLM to pick best pages
-                            if (companyContext.depth === "Deep Dive (News, LinkedIn, Reports)" && links.length > 5) {
-                                logStep('Company Profiler', `🧠 Smart Selecting pages for ${candidate.domain}...`);
-                                const bestUrls = await selectRelevantPages(candidate.domain, links, companyContext.icpDescription);
-
-                                // Re-scrape exactly the chosen pages
-                                if (bestUrls.length > 0) {
-                                    finalContent = await scrapeSpecificPages(bestUrls, apifyToken, checkCancellation);
-                                }
-                            }
-                        } catch (scrapeErr) {
-                            console.warn("Smart scraping failed, falling back to empty content", scrapeErr);
-                            finalContent = "Error scraping website.";
+                        if (!listContent || listContent.length < 200) {
+                            logStep('Company Finder', `⚠️ Could not scrape list page, skipping`);
+                            continue;
                         }
 
-                        // 2. GENERATE PROFILE (Single LLM Call)
-                        const profilePrompt = `
-                        I have scraped the website of ${candidate.companyName} (${candidate.domain}).
+                        // Extract companies from the list content
+                        const extractPrompt = `
+You scraped a list article titled "${listArticle.listTitle}".
+Extract ALL companies mentioned with their domains (if available).
+
+LIST CONTENT:
+${(listContent || '').slice(0, 20000)}
+
+ICP CRITERIA TO MATCH:
+"${companyContext.icpDescription || input.input_as_text}"
+
+COMPANIES TO SKIP (already have):
+${[...scrapedNamesSet, ...allCandidates.map(c => c.companyName || c.company_name)].slice(0, 50).join(', ')}
+
+TASK:
+1. Extract company names and domains from this list
+2. Only include companies that MIGHT match the ICP
+3. If domain is not visible, try to infer it (e.g., "ABC Capital" → "abccapital.com")
+
+OUTPUT JSON:
+{"companies": [{"companyName": "...", "domain": "...", "description": "From list: ${listArticle.listTitle}"}]}
+`;
+
+                        const extractRes = await runGeminiAgent({
+                            apiKey: googleKey,
+                            modelName: 'gemini-2.0-flash',
+                            agentName: 'List Extractor',
+                            instructions: "Extract company names and domains from a curated list article. Output JSON only.",
+                            userMessage: extractPrompt,
+                            tools: [],
+                            maxTurns: 1
+                        });
+
+                        costTracker.recordCall({
+                            agent: 'List Extractor',
+                            model: 'gemini-2.0-flash',
+                            inputTokens: extractRes.usage?.inputTokens || 0,
+                            outputTokens: extractRes.usage?.outputTokens || 0,
+                            duration: 0,
+                            success: true
+                        });
+
+                        let extracted = [];
+                        try {
+                            const jsonMatch = extractRes.finalOutput.match(/\{[\s\S]*\}/);
+                            if (jsonMatch) {
+                                const parsed = JSON.parse(jsonMatch[0]);
+                                extracted = parsed.companies || [];
+                            }
+                        } catch (e) {
+                            logStep('Company Finder', `⚠️ Failed to parse list extraction`);
+                        }
+
+                        // Filter and add to candidates
+                        const newFromList = extracted
+                            .filter(c => c.companyName && c.domain)
+                            .filter(c => !scrapedNamesSet.has(c.companyName))
+                            .filter(c => !allCandidates.some(existing =>
+                                (existing.domain || '').toLowerCase() === (c.domain || '').toLowerCase()));
+
+                        allCandidates.push(...newFromList);
+                        logStep('Company Finder', `✅ Extracted ${newFromList.length} NEW companies from "${listArticle.listTitle}"`);
+
+                    } catch (e) {
+                        logStep('Company Finder', `⚠️ List scraping failed for "${listArticle.listTitle}": ${e.message}`);
+                    }
+                }
+            }
+
+            // Now we have ALL candidates from this search term
+            const candidates = allCandidates;
+            totalDiscovered += candidates.length;
+            logStep('Company Finder', `📊 Total ${candidates.length} candidate companies from "${currentTerm}" (processed all ${searchResults.length} results)`);
+
+            if (candidates.length === 0) {
+                logStep('Company Finder', `⚠️ No new candidates from "${currentTerm}", trying next term...`);
+                continue;
+            }
+
+            // 3. Profile each candidate (existing profiling logic)
+            const apifyToken = process.env.APIFY_API_TOKEN;
+            const batchResults = [];
+
+            for (const candidate of candidates) {
+                if (await checkCancellation()) break;
+                if (masterQualifiedList.length >= targetLeads) {
+                    logStep('Company Finder', `🎯 Target of ${targetLeads} qualified companies reached!`);
+                    break;
+                }
+
+                try {
+                    logStep('Company Profiler', `Analyzing ${candidate.companyName || candidate.company_name} (${candidate.domain})...`);
+
+                    // 3a. SMART SCRAPING
+                    let finalContent = "";
+                    try {
+                        const { links, content: fallbackContent } = await scrapeWebsiteSmart(candidate.domain);
+                        finalContent = fallbackContent;
+
+                        if (companyContext.depth === "Deep Dive (News, LinkedIn, Reports)" && links.length > 5) {
+                            logStep('Company Profiler', `🧠 Smart Selecting pages for ${candidate.domain}...`);
+                            const bestUrls = await selectRelevantPages(candidate.domain, links, companyContext.icpDescription);
+                            if (bestUrls.length > 0) {
+                                finalContent = await scrapeSpecificPages(bestUrls, apifyToken, checkCancellation);
+                            }
+                        }
+                    } catch (scrapeErr) {
+                        console.warn("Smart scraping failed, falling back to empty content", scrapeErr);
+                        finalContent = "Error scraping website.";
+                    }
+
+                    // 3b. GENERATE PROFILE
+                    const profilePrompt = `
+                        I have scraped the website of ${candidate.companyName || candidate.company_name} (${candidate.domain}).
                         
                         WEBSITE CONTENT:
                         ${(finalContent || "").slice(0, 25000)} 
@@ -495,72 +632,65 @@ Companies to AVOID (already scraped): ${[...scrapedNamesSet, ...excludedNames, .
                         - 1: Poor fit (${companyContext.redFlags || "Mismatch"})
                         
                         OUTPUT JSON:
-                        {"results": [{"company_name": "${candidate.companyName}", "domain": "${candidate.domain}", "company_profile": "...", "match_score": 8}]}
+                        {"results": [{"company_name": "${candidate.companyName || candidate.company_name}", "domain": "${candidate.domain}", "company_profile": "...", "match_score": 8}]}
                         `;
 
-                        // Single LLM Call
-                        const profilerRes = await runGeminiAgent({
-                            apiKey: googleKey,
-                            modelName: 'gemini-2.0-flash',
-                            agentName: 'Company Profiler',
-                            instructions: "You are a senior investment analyst. Analyze the scraped text and output JSON.",
-                            userMessage: profilePrompt,
-                            tools: []
-                        });
+                    const profilerRes = await runGeminiAgent({
+                        apiKey: googleKey,
+                        modelName: 'gemini-2.0-flash',
+                        agentName: 'Company Profiler',
+                        instructions: "You are a senior investment analyst. Analyze the scraped text and output JSON.",
+                        userMessage: profilePrompt,
+                        tools: []
+                    });
 
-                        costTracker.recordCall({
-                            agent: 'Company Profiler',
-                            model: 'gemini-2.0-flash',
-                            inputTokens: profilerRes.usage?.inputTokens || 0,
-                            outputTokens: profilerRes.usage?.outputTokens || 0,
-                            duration: 0,
-                            success: true
-                        });
+                    costTracker.recordCall({
+                        agent: 'Company Profiler',
+                        model: 'gemini-2.0-flash',
+                        inputTokens: profilerRes.usage?.inputTokens || 0,
+                        outputTokens: profilerRes.usage?.outputTokens || 0,
+                        duration: 0,
+                        success: true
+                    });
 
-                        const analyzed = enforceAgentContract({
-                            agentName: "Company Profiler",
-                            rawOutput: profilerRes.finalOutput,
-                            schema: CompanyProfilerSchema
-                        }).results || [];
+                    const analyzed = enforceAgentContract({
+                        agentName: "Company Profiler",
+                        rawOutput: profilerRes.finalOutput,
+                        schema: CompanyProfilerSchema
+                    }).results || [];
 
-                        batchResults.push(...analyzed);
-
-                    } catch (err) {
-                        logStep('Company Profiler', `Failed to analyze ${candidate.companyName}: ${err.message} `);
+                    // Filter by score
+                    for (const company of analyzed) {
+                        const isHighQuality = (company.match_score || 0) >= 7;
+                        if (isHighQuality) {
+                            masterQualifiedList.push(company);
+                            scrapedNamesSet.add(company.company_name);
+                            logStep('Company Profiler', `✅ Qualified: ${company.company_name} (Score: ${company.match_score}/10)`);
+                        } else {
+                            totalDisqualified++;
+                            logStep('Company Profiler', `🗑️ Dropped: ${company.company_name} (Score: ${company.match_score}/10)`);
+                        }
                     }
+
+                } catch (err) {
+                    logStep('Company Profiler', `Failed to analyze ${candidate.companyName || candidate.company_name}: ${err.message}`);
                 }
-
-                const qualified = batchResults.filter(c => {
-                    const isHighQuality = (c.match_score || 0) >= 7;
-                    if (!isHighQuality) {
-                        logStep('Profiler', `🗑️ Dropped ${c.company_name} (Score: ${c.match_score}/10)`);
-                        totalDisqualified++;
-                    }
-                    return isHighQuality;
-                });
-
-                masterQualifiedList.push(...qualified);
-                // IMMEDIATELY add to scrapedNamesSet to prevent re-discovery in next round
-                qualified.forEach(c => scrapedNamesSet.add(c.company_name));
-                logStep('Company Profiler', `Round ${attempts}: +${qualified.length} Qualified.Total: ${masterQualifiedList.length} `);
-            } catch (e) {
-                logStep('Company Profiler', `Analysis loop failed: ${e.message} `);
             }
+
+            logStep('Company Finder', `📈 Progress: ${masterQualifiedList.length}/${targetLeads} qualified companies`);
         }
 
-        // Persistence: Save used queries back to ICP config for diversification in next run
-        if (icpId && currentRunQueries.length > 0) {
+        // --- Rotate used search terms to back of queue ---
+        if (icpId && termsUsedThisRun.length > 0) {
             try {
-                const updatedQueries = [...new Set([...(companyContext.usedQueries || []), ...currentRunQueries])];
-                await query(
-                    `UPDATE icps SET config = config || jsonb_build_object('used_queries', $1::jsonb) WHERE id = $2`,
-                    [JSON.stringify(updatedQueries), icpId]
-                );
-                logStep('System', `💾 Persisted ${currentRunQueries.length} new search queries to ICP config.`);
+                await markTermsAsUsed(icpId, termsUsedThisRun, searchStats.results_per_term);
+                logStep('System', `🔄 Rotated ${termsUsedThisRun.length} search terms to back of queue`);
             } catch (e) {
-                console.error('Failed to persist used queries:', e.message);
+                console.error('Failed to rotate search terms:', e.message);
             }
         }
+
+        logStep('Company Finder', `✅ Discovery complete: ${masterQualifiedList.length} qualified, ${totalDisqualified} disqualified, ${totalDiscovered} total discovered`);
 
         // --- Phase 1 Check: Data Starvation Protection ---
         if (masterQualifiedList.length === 0) {
@@ -568,7 +698,7 @@ Companies to AVOID (already scraped): ${[...scrapedNamesSet, ...excludedNames, .
             return {
                 status: 'failed',
                 leads: [],
-                stats: { total: 0, attempts, cost: costTracker.getSummary() },
+                stats: { total: 0, searchStats, cost: costTracker.getSummary() },
                 error: "Discovery failed: No qualified companies found."
             };
         }
@@ -601,7 +731,7 @@ Companies to AVOID (already scraped): ${[...scrapedNamesSet, ...excludedNames, .
                     return {
                         status: 'failed',
                         leads: [],
-                        stats: { total: 0, attempts, cost: costTracker.getSummary() },
+                        stats: { total: 0, searchStats, cost: costTracker.getSummary() },
                         error: "Scraping failed: No leads found."
                     };
                 }
@@ -908,7 +1038,7 @@ ${JSON.stringify(batch.map(l => ({
                 qualified: finalLeads.length,
                 leadsDisqualified: totalDisqualified,
                 companies_discovered: masterQualifiedList.length,
-                attempts,
+                searchStats,
                 cost: costTracker.getSummary()
             }
         };
