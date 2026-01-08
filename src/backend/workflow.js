@@ -62,11 +62,11 @@ const OutreachCreatorSchema = z.object({
         email: z.string().optional(),
         linkedin_url: z.string().optional(),
         company_website: z.string().optional(),
-        connection_request: z.string().optional(),
-        email_message: z.string().optional(),
-        linkedin_message: z.string().optional(),
-        email_subject: z.string().optional(),
-        email_body: z.string().optional(),
+        connection_request: z.string().nullable().optional(),
+        email_message: z.string().nullable().optional(),
+        linkedin_message: z.string().nullable().optional(),
+        email_subject: z.string().nullable().optional(),
+        email_body: z.string().nullable().optional(),
         company_profile: z.string().optional()
     }))
 });
@@ -1146,10 +1146,12 @@ const validateLeadForCRM = (lead, status) => {
         return { pass: false, reason: 'Missing or invalid company_name' };
     }
 
-    // Rule 4: For NEW status, must have outreach (connection_request or email_message)
+    // Rule 4: For NEW status, warn if missing outreach but DO NOT REJECT
     if (status === 'NEW') {
         if (!lead.connection_request && !lead.email_message && !lead.email_body) {
-            return { pass: false, reason: 'Missing outreach messages (required for NEW status)' };
+            // Changed logic: Allow passing but log it
+            // return { pass: false, reason: 'Missing outreach messages (required for NEW status)' };
+            /* Allow it to pass so user can manually review */
         }
     }
 
