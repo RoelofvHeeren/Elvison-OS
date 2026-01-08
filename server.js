@@ -1464,10 +1464,11 @@ app.post('/api/icps/:id/search-terms/generate', requireAuth, async (req, res) =>
 
 // Trigger Analysis Run (SSE Streaming)
 app.post('/api/agents/run', requireAuth, async (req, res) => {
-    let { prompt, vectorStoreId, agentConfigs, mode, filters, idempotencyKey, icpId } = req.body
+    let { prompt, vectorStoreId, agentConfigs, mode, filters, idempotencyKey, icpId, manualDomains } = req.body
     console.log(`Starting live workflow (Mode: ${mode || 'default'}) with prompt:`, prompt)
     if (idempotencyKey) console.log(`🔑 Idempotency Key received: ${idempotencyKey}`)
     if (icpId) console.log(`📋 Running for ICP ID: ${icpId}`)
+    if (manualDomains) console.log(`📋 Manual Domains provided: ${manualDomains.length} domains`)
 
     // NEW: If icpId is provided, fetch latest optimized config from DB
     if (icpId) {
@@ -1563,6 +1564,7 @@ app.post('/api/agents/run', requireAuth, async (req, res) => {
             mode: mode,
             filters: filters || {},
             idempotencyKey: idempotencyKey,
+            manualDomains: manualDomains,
             listeners: {
                 onLog: async (logParams) => {
                     const timestamp = new Date().toISOString();

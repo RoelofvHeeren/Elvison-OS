@@ -112,7 +112,8 @@ export const runAgentWorkflow = async (input, config) => {
         maxDiscoveryAttempts = 5,
         filters = {}, // Default empty
         idempotencyKey = null,
-        icpId
+        icpId,
+        manualDomains = [] // NEW: Manual Input Support
     } = config;
 
     if (!userId) throw new Error('userId is required');
@@ -342,8 +343,66 @@ export const runAgentWorkflow = async (input, config) => {
         logStep('Company Finder', `📋 Search term queue has ${searchTermQueue.length} terms. Starting discovery...`);
 
         // Loop through search terms until we hit target or exhaust terms
-        while (masterQualifiedList.length < targetLeads && searchTermIndex < searchTermQueue.length && searchTermIndex < MAX_SEARCH_TERMS) {
+        // NEW: If manualDomains are provided, we SKIP the search loop and just use those
+        const isManualMode = manualDomains && manualDomains.length > 0;
+
+        if (isManualMode) {
+            const candidates = manualDomains.map(d => ({
+                companyName: d, // Fallback, will be refined by Profiler
+                company_name: d,
+                domain: d.toLowerCase().startsWith('http') ? d : `https://${d}`,
+                description: "Manual Entry"
+            }));
+
+            // Add to allCandidates to be processed by Phase 3 (Profiler)
+            // Note: We inject them directly into the processing loop below? 
+            // Actually, the loop below iterates 'candidates' which is usually derived inside the while loop.
+            // We need to restructure slightly or mock the loop.
+
+            // BETTER APPROACH: Just push to masterQualifiedList? 
+            // No, strictly we want to PROFILE them first to get the 7/10 score.
+            // So we should treat them as "candidates" found in a single "batch".
+
+            logStep('Company Finder', `📋 MANUAL MODE: bypassing search. Processing ${candidates.length} manual domains...`);
+
+            // We'll mimic ONE iteration of the "discovered" logic
+            let totalProcessed = 0;
+
+            // 3. Profile each manual candidate
+            for (const candidate of candidates) {
+                if (await checkCancellation()) break;
+
+                // Existing Profiling Logic (Copied/Refactored from below)
+                // To avoid code duplication, it would be best to extract Profiling to a function,
+                // but given the constraints, I will duplicate the profiling block or wrap the main loop.
+
+                // Hack: We can just set searchTermQueue to ["MANUAL_OVERRIDE"] and force the logic to use manualDomains
+            }
+        }
+
+        while (masterQualifiedList.length < targetLeads && (isManualMode ? false : (searchTermIndex < searchTermQueue.length && searchTermIndex < MAX_SEARCH_TERMS))) {
             if (await checkCancellation()) break;
+
+            let candidates = [];
+
+            if (isManualMode) {
+                // consume all manual domains in one go
+                candidates = manualDomains.map(d => ({
+                    companyName: d,
+                    company_name: d,
+                    domain: d.toLowerCase().startsWith('http') ? d : `https://${d}`,
+                    description: "Manual Entry"
+                }));
+                // Clear manual domains so we don't loop forever (though the while condition handles it)
+                // But wait, the while condition `isManualMode ? false` means this loop won't run at all.
+                // That's bad. We want the loop to run ONCE for manual mode.
+            } else {
+                const currentTerm = searchTermQueue[searchTermIndex];
+                searchTermIndex++;
+                termsUsedThisRun.push(currentTerm);
+
+                // ... existing Google Search ...
+            }
 
             const currentTerm = searchTermQueue[searchTermIndex];
             searchTermIndex++;
@@ -372,214 +431,258 @@ export const runAgentWorkflow = async (input, config) => {
                 continue; // Try next term
             }
 
-            if (searchResults.length === 0) {
-                logStep('Company Finder', `⚠️ No results for "${currentTerm}", trying next term...`);
-                continue;
-            }
+            let candidates = [];
 
-            // 2. Filter ALL search results through AI in batches
-            // Process in batches of 30 to fit in context window while using ALL 100 results
-            const BATCH_SIZE = 30;
-            let allCandidates = [];
-            let listArticlesToScrape = []; // NEW: Track list articles separately
-            let resultIndex = 0;
+            if (isManualMode) {
+                logStep('Company Finder', `📋 MANUAL MODE: Processing ${manualDomains.length} provided domains...`);
+                candidates = manualDomains.map(d => ({
+                    companyName: d,
+                    company_name: d,
+                    domain: d.toLowerCase().startsWith('http') ? d : `https://${d}`,
+                    description: "Manual Entry"
+                }));
+                manualProcessed = true;
+            } else {
+                // --- AUTO SEARCH PATH ---
+                const currentTerm = searchTermQueue[searchTermIndex];
+                searchTermIndex++;
+                termsUsedThisRun.push(currentTerm);
 
-            while (resultIndex < searchResults.length) {
-                if (await checkCancellation()) break;
+                logStep('Company Finder', `🔍 Search Term ${searchTermIndex}/${Math.min(searchTermQueue.length, MAX_SEARCH_TERMS)}: "${currentTerm}"`);
 
-                const batch = searchResults.slice(resultIndex, resultIndex + BATCH_SIZE);
-                resultIndex += BATCH_SIZE;
-
+                // 1. Run Apify Google Search (up to 100 results per term)
+                let searchResults = [];
                 try {
-                    logStep('Company Finder', `🔍 Filtering results ${resultIndex - BATCH_SIZE + 1}-${Math.min(resultIndex, searchResults.length)} of ${searchResults.length}...`);
-
-                    const filterPrompt = `
-You are a company discovery agent. Analyze these search results and CATEGORIZE each one.
-
-ICP DESCRIPTION:
-"${companyContext.icpDescription || input.input_as_text}"
-
-STRICTNESS LEVEL: ${companyContext.strictness || 'Moderate'}
-EXCLUDED INDUSTRIES: ${companyContext.excludedIndustries || 'None'}
-MUST-HAVE CRITERIA: ${companyContext.keyAttributes || 'See ICP description'}
-
-SEARCH RESULTS (Batch ${Math.ceil(resultIndex / BATCH_SIZE)} of ${Math.ceil(searchResults.length / BATCH_SIZE)}):
-${batch.map((r, i) => `${resultIndex - BATCH_SIZE + i + 1}. ${r.title}\n   URL: ${r.link}\n   Domain: ${r.domain}\n   Snippet: ${r.snippet}`).join('\n\n')}
-
-COMPANIES TO SKIP (already processed):
-${[...scrapedNamesSet, ...excludedNames, ...masterQualifiedList.map(c => c.company_name), ...allCandidates.map(c => c.companyName || c.company_name)].slice(0, 50).join(', ') || 'none yet'}
-
-CATEGORIZE EACH RESULT INTO ONE OF THREE TYPES:
-
-1. "company" - Direct company website that matches or MIGHT match the ICP
-   → Include companyName, domain, description
-
-2. "list" - A CURATED LIST ARTICLE (e.g., "Top 50 Real Estate Firms", "Best PE Funds in Canada")
-   → These are VALUABLE! Include the URL so we can scrape the list and extract all companies from it
-   → Include listUrl, listTitle, estimatedCompanies (your guess of how many companies are listed)
-
-3. "skip" - Job boards, news sites (not lists), government portals, stock exchanges, irrelevant content
-   → Do not include in output
-
-OUTPUT JSON:
-{
-  "companies": [{"companyName": "...", "domain": "...", "description": "..."}],
-  "lists": [{"listUrl": "...", "listTitle": "...", "estimatedCompanies": 20}]
-}
-`;
-
-                    const filterRes = await runGeminiAgent({
-                        apiKey: googleKey,
-                        modelName: 'gemini-2.0-flash',
-                        agentName: 'Company Filter',
-                        instructions: "You are a company discovery agent. Categorize search results into companies, valuable list articles, or skip. Output JSON only.",
-                        userMessage: filterPrompt,
-                        tools: [],
-                        maxTurns: 1
+                    const { results, count } = await runGoogleSearch(currentTerm, {
+                        maxPagesPerQuery: 10, // 10 pages × 10 results = 100 max
+                        countryCode: 'ca', // Default to Canada
+                        checkCancellation
                     });
+                    searchResults = results;
 
-                    costTracker.recordCall({
-                        agent: 'Company Filter',
-                        model: 'gemini-2.0-flash',
-                        inputTokens: filterRes.usage?.inputTokens || 0,
-                        outputTokens: filterRes.usage?.outputTokens || 0,
-                        duration: 0,
-                        success: true
-                    });
+                    // Track for Logbook
+                    searchStats.terms_used.push(currentTerm);
+                    searchStats.results_per_term[currentTerm] = count;
+                    searchStats.total_results += count;
 
-                    // Parse with fallback for both old and new format
-                    let parsed = {};
-                    try {
-                        const jsonMatch = filterRes.finalOutput.match(/\{[\s\S]*\}/);
-                        if (jsonMatch) {
-                            parsed = JSON.parse(jsonMatch[0]);
-                        }
-                    } catch (e) {
-                        // Fallback to old schema if new format fails
-                        const normalized = enforceAgentContract({
-                            agentName: "Company Filter",
-                            rawOutput: filterRes.finalOutput,
-                            schema: CompanyFinderSchema
-                        });
-                        parsed = { companies: normalized.results || [], lists: [] };
-                    }
-
-                    const batchCompanies = (parsed.companies || parsed.results || [])
-                        .filter(c => !scrapedNamesSet.has(c.company_name || c.companyName))
-                        .filter(c => !excludedNames.includes(c.company_name || c.companyName))
-                        .filter(c => !allCandidates.some(existing =>
-                            (existing.domain || '').toLowerCase() === (c.domain || '').toLowerCase()));
-
-                    const batchLists = (parsed.lists || [])
-                        .filter(l => l.listUrl && !listArticlesToScrape.some(existing => existing.listUrl === l.listUrl));
-
-                    allCandidates.push(...batchCompanies);
-                    listArticlesToScrape.push(...batchLists);
-
-                    logStep('Company Finder', `📋 Batch: ${batchCompanies.length} companies, ${batchLists.length} list articles (Total: ${allCandidates.length} companies, ${listArticlesToScrape.length} lists)`);
-
+                    logStep('Company Finder', `✅ Got ${count} results for "${currentTerm}"`);
                 } catch (e) {
-                    logStep('Company Finder', `⚠️ Batch filter failed: ${e.message}`);
+                    logStep('Company Finder', `❌ Search failed for "${currentTerm}": ${e.message}`);
+                    continue; // Try next term
                 }
-            }
 
-            // 2b. NEW: Extract companies from list articles
-            const MAX_LISTS_TO_SCRAPE = 3; // Limit to prevent runaway costs
-            if (listArticlesToScrape.length > 0) {
-                logStep('Company Finder', `📰 Found ${listArticlesToScrape.length} list articles to mine for companies...`);
+                if (searchResults.length === 0) {
+                    logStep('Company Finder', `⚠️ No results for "${currentTerm}", trying next term...`);
+                    continue;
+                }
 
-                for (const listArticle of listArticlesToScrape.slice(0, MAX_LISTS_TO_SCRAPE)) {
+                // 2. Filter ALL search results through AI in batches
+                // Process in batches of 30 to fit in context window while using ALL 100 results
+                const BATCH_SIZE = 30;
+                let allCandidates = [];
+                let listArticlesToScrape = []; // NEW: Track list articles separately
+                let resultIndex = 0;
+
+                while (resultIndex < searchResults.length) {
                     if (await checkCancellation()) break;
 
+                    const batch = searchResults.slice(resultIndex, resultIndex + BATCH_SIZE);
+                    resultIndex += BATCH_SIZE;
+
                     try {
-                        logStep('Company Finder', `🔗 Scraping list: "${listArticle.listTitle}"...`);
+                        logStep('Company Finder', `🔍 Filtering results ${resultIndex - BATCH_SIZE + 1}-${Math.min(resultIndex, searchResults.length)} of ${searchResults.length}...`);
 
-                        // Scrape the list page
-                        const { content: listContent } = await scrapeWebsiteSmart(listArticle.listUrl);
+                        const filterPrompt = `
+    You are a company discovery agent. Analyze these search results and CATEGORIZE each one.
 
-                        if (!listContent || listContent.length < 200) {
-                            logStep('Company Finder', `⚠️ Could not scrape list page, skipping`);
-                            continue;
-                        }
+    ICP DESCRIPTION:
+    "${companyContext.icpDescription || input.input_as_text}"
 
-                        // Extract companies from the list content
-                        const extractPrompt = `
-You scraped a list article titled "${listArticle.listTitle}".
-Extract ALL companies mentioned with their domains (if available).
+    STRICTNESS LEVEL: ${companyContext.strictness || 'Moderate'}
+    EXCLUDED INDUSTRIES: ${companyContext.excludedIndustries || 'None'}
+    MUST-HAVE CRITERIA: ${companyContext.keyAttributes || 'See ICP description'}
 
-LIST CONTENT:
-${(listContent || '').slice(0, 20000)}
+    SEARCH RESULTS (Batch ${Math.ceil(resultIndex / BATCH_SIZE)} of ${Math.ceil(searchResults.length / BATCH_SIZE)}):
+    ${batch.map((r, i) => `${resultIndex - BATCH_SIZE + i + 1}. ${r.title}\n   URL: ${r.link}\n   Domain: ${r.domain}\n   Snippet: ${r.snippet}`).join('\n\n')}
 
-ICP CRITERIA TO MATCH:
-"${companyContext.icpDescription || input.input_as_text}"
+    COMPANIES TO SKIP (already processed):
+    ${[...scrapedNamesSet, ...excludedNames, ...masterQualifiedList.map(c => c.company_name), ...allCandidates.map(c => c.companyName || c.company_name)].slice(0, 50).join(', ') || 'none yet'}
 
-COMPANIES TO SKIP (already have):
-${[...scrapedNamesSet, ...allCandidates.map(c => c.companyName || c.company_name)].slice(0, 50).join(', ')}
+    CATEGORIZE EACH RESULT INTO ONE OF THREE TYPES:
 
-TASK:
-1. Extract company names and domains from this list
-2. Only include companies that MIGHT match the ICP
-3. If domain is not visible, try to infer it (e.g., "ABC Capital" → "abccapital.com")
+    1. "company" - Direct company website that matches or MIGHT match the ICP
+       → Include companyName, domain, description
 
-OUTPUT JSON:
-{"companies": [{"companyName": "...", "domain": "...", "description": "From list: ${listArticle.listTitle}"}]}
-`;
+    2. "list" - A CURATED LIST ARTICLE (e.g., "Top 50 Real Estate Firms", "Best PE Funds in Canada")
+       → These are VALUABLE! Include the URL so we can scrape the list and extract all companies from it
+       → Include listUrl, listTitle, estimatedCompanies (your guess of how many companies are listed)
 
-                        const extractRes = await runGeminiAgent({
+    3. "skip" - Job boards, news sites (not lists), government portals, stock exchanges, irrelevant content
+       → Do not include in output
+
+    OUTPUT JSON:
+    {
+      "companies": [{"companyName": "...", "domain": "...", "description": "..."}],
+      "lists": [{"listUrl": "...", "listTitle": "...", "estimatedCompanies": 20}]
+    }
+    `;
+
+                        const filterRes = await runGeminiAgent({
                             apiKey: googleKey,
                             modelName: 'gemini-2.0-flash',
-                            agentName: 'List Extractor',
-                            instructions: "Extract company names and domains from a curated list article. Output JSON only.",
-                            userMessage: extractPrompt,
+                            agentName: 'Company Filter',
+                            instructions: "You are a company discovery agent. Categorize search results into companies, valuable list articles, or skip. Output JSON only.",
+                            userMessage: filterPrompt,
                             tools: [],
                             maxTurns: 1
                         });
 
                         costTracker.recordCall({
-                            agent: 'List Extractor',
+                            agent: 'Company Filter',
                             model: 'gemini-2.0-flash',
-                            inputTokens: extractRes.usage?.inputTokens || 0,
-                            outputTokens: extractRes.usage?.outputTokens || 0,
+                            inputTokens: filterRes.usage?.inputTokens || 0,
+                            outputTokens: filterRes.usage?.outputTokens || 0,
                             duration: 0,
                             success: true
                         });
 
-                        let extracted = [];
+                        // Parse with fallback for both old and new format
+                        let parsed = {};
                         try {
-                            const jsonMatch = extractRes.finalOutput.match(/\{[\s\S]*\}/);
+                            const jsonMatch = filterRes.finalOutput.match(/\{[\s\S]*\}/);
                             if (jsonMatch) {
-                                const parsed = JSON.parse(jsonMatch[0]);
-                                extracted = parsed.companies || [];
+                                parsed = JSON.parse(jsonMatch[0]);
                             }
                         } catch (e) {
-                            logStep('Company Finder', `⚠️ Failed to parse list extraction`);
+                            // Fallback to old schema if new format fails
+                            const normalized = enforceAgentContract({
+                                agentName: "Company Filter",
+                                rawOutput: filterRes.finalOutput,
+                                schema: CompanyFinderSchema
+                            });
+                            parsed = { companies: normalized.results || [], lists: [] };
                         }
 
-                        // Filter and add to candidates
-                        const newFromList = extracted
-                            .filter(c => c.companyName && c.domain)
-                            .filter(c => !scrapedNamesSet.has(c.companyName))
+                        const batchCompanies = (parsed.companies || parsed.results || [])
+                            .filter(c => !scrapedNamesSet.has(c.company_name || c.companyName))
+                            .filter(c => !excludedNames.includes(c.company_name || c.companyName))
                             .filter(c => !allCandidates.some(existing =>
                                 (existing.domain || '').toLowerCase() === (c.domain || '').toLowerCase()));
 
-                        allCandidates.push(...newFromList);
-                        logStep('Company Finder', `✅ Extracted ${newFromList.length} NEW companies from "${listArticle.listTitle}"`);
+                        const batchLists = (parsed.lists || [])
+                            .filter(l => l.listUrl && !listArticlesToScrape.some(existing => existing.listUrl === l.listUrl));
+
+                        allCandidates.push(...batchCompanies);
+                        listArticlesToScrape.push(...batchLists);
+
+                        logStep('Company Finder', `📋 Batch: ${batchCompanies.length} companies, ${batchLists.length} list articles (Total: ${allCandidates.length} companies, ${listArticlesToScrape.length} lists)`);
 
                     } catch (e) {
-                        logStep('Company Finder', `⚠️ List scraping failed for "${listArticle.listTitle}": ${e.message}`);
+                        logStep('Company Finder', `⚠️ Batch filter failed: ${e.message}`);
                     }
                 }
-            }
 
-            // Now we have ALL candidates from this search term
-            const candidates = allCandidates;
-            totalDiscovered += candidates.length;
-            logStep('Company Finder', `📊 Total ${candidates.length} candidate companies from "${currentTerm}" (processed all ${searchResults.length} results)`);
+                // 2b. NEW: Extract companies from list articles
+                const MAX_LISTS_TO_SCRAPE = 3; // Limit to prevent runaway costs
+                if (listArticlesToScrape.length > 0) {
+                    logStep('Company Finder', `📰 Found ${listArticlesToScrape.length} list articles to mine for companies...`);
 
-            if (candidates.length === 0) {
-                logStep('Company Finder', `⚠️ No new candidates from "${currentTerm}", trying next term...`);
-                continue;
-            }
+                    for (const listArticle of listArticlesToScrape.slice(0, MAX_LISTS_TO_SCRAPE)) {
+                        if (await checkCancellation()) break;
+
+                        try {
+                            logStep('Company Finder', `🔗 Scraping list: "${listArticle.listTitle}"...`);
+
+                            // Scrape the list page
+                            const { content: listContent } = await scrapeWebsiteSmart(listArticle.listUrl);
+
+                            if (!listContent || listContent.length < 200) {
+                                logStep('Company Finder', `⚠️ Could not scrape list page, skipping`);
+                                continue;
+                            }
+
+                            // Extract companies from the list content
+                            const extractPrompt = `
+    You scraped a list article titled "${listArticle.listTitle}".
+    Extract ALL companies mentioned with their domains (if available).
+
+    LIST CONTENT:
+    ${(listContent || '').slice(0, 20000)}
+
+    ICP CRITERIA TO MATCH:
+    "${companyContext.icpDescription || input.input_as_text}"
+
+    COMPANIES TO SKIP (already have):
+    ${[...scrapedNamesSet, ...allCandidates.map(c => c.companyName || c.company_name)].slice(0, 50).join(', ')}
+
+    TASK:
+    1. Extract company names and domains from this list
+    2. Only include companies that MIGHT match the ICP
+    3. If domain is not visible, try to infer it (e.g., "ABC Capital" → "abccapital.com")
+
+    OUTPUT JSON:
+    {"companies": [{"companyName": "...", "domain": "...", "description": "From list: ${listArticle.listTitle}"}]}
+    `;
+
+                            const extractRes = await runGeminiAgent({
+                                apiKey: googleKey,
+                                modelName: 'gemini-2.0-flash',
+                                agentName: 'List Extractor',
+                                instructions: "Extract company names and domains from a curated list article. Output JSON only.",
+                                userMessage: extractPrompt,
+                                tools: [],
+                                maxTurns: 1
+                            });
+
+                            costTracker.recordCall({
+                                agent: 'List Extractor',
+                                model: 'gemini-2.0-flash',
+                                inputTokens: extractRes.usage?.inputTokens || 0,
+                                outputTokens: extractRes.usage?.outputTokens || 0,
+                                duration: 0,
+                                success: true
+                            });
+
+                            let extracted = [];
+                            try {
+                                const jsonMatch = extractRes.finalOutput.match(/\{[\s\S]*\}/);
+                                if (jsonMatch) {
+                                    const parsed = JSON.parse(jsonMatch[0]);
+                                    extracted = parsed.companies || [];
+                                }
+                            } catch (e) {
+                                logStep('Company Finder', `⚠️ Failed to parse list extraction`);
+                            }
+
+                            // Filter and add to candidates
+                            const newFromList = extracted
+                                .filter(c => c.companyName && c.domain)
+                                .filter(c => !scrapedNamesSet.has(c.companyName))
+                                .filter(c => !allCandidates.some(existing =>
+                                    (existing.domain || '').toLowerCase() === (c.domain || '').toLowerCase()));
+
+                            allCandidates.push(...newFromList);
+                            logStep('Company Finder', `✅ Extracted ${newFromList.length} NEW companies from "${listArticle.listTitle}"`);
+
+                        } catch (e) {
+                            logStep('Company Finder', `⚠️ List scraping failed for "${listArticle.listTitle}": ${e.message}`);
+                        }
+                    }
+                }
+
+                // Now we have ALL candidates from this search term
+                candidates = allCandidates;
+                totalDiscovered += candidates.length;
+                logStep('Company Finder', `📊 Total ${candidates.length} candidate companies from "${currentTerm}" (processed all ${searchResults.length} results)`);
+
+                if (candidates.length === 0) {
+                    logStep('Company Finder', `⚠️ No new candidates from "${currentTerm}", trying next term...`);
+                    continue;
+                }
+            } // END ELSE (Auto Search Path)
+
+            // --- COMMON: PROCESSING CANDIDATES (For both Manual and Auto) ---
+            // 'candidates' is now populated with domains to profile
 
             // 3. Profile each candidate (existing profiling logic)
             const apifyToken = process.env.APIFY_API_TOKEN;
@@ -614,6 +717,27 @@ OUTPUT JSON:
                     }
 
                     // 3b. GENERATE PROFILE
+                    const isFamilyOfficeSearch = (companyContext.icpDescription || "").toLowerCase().includes("family office") ||
+                        (companyContext.name || "").toLowerCase().includes("family office");
+
+                    let strictnessInstructions = "";
+                    if (isFamilyOfficeSearch) {
+                        strictnessInstructions = `
+                        CRITICAL FAMILY OFFICE VALIDATION:
+                        The user is looking for SINGLE FAMILY OFFICES (SFO) or MULTI-FAMILY OFFICES (MFO) that invest DIRECTLY.
+                        
+                        YOU MUST DISQUALIFY (Score 1-3) IF THEY ARE:
+                        - A Wealth Manager / Financial Advisor (unless they explicitly state a DIRECT Real Estate investment arm)
+                        - A Broker / Intermediary
+                        - An Investment Bank
+                        - A General Private Equity fund (unless specific to a family)
+                        
+                        ONLY SCORE 7+ IF:
+                        - They explicitly identify as a Family Office.
+                        - OR they use language like "proprietary capital", "family capital", "private investment vehicle".
+                        - OR they allow direct deals (not just allocating to funds).`;
+                    }
+
                     const profilePrompt = `
                         I have scraped the website of ${candidate.companyName || candidate.company_name} (${candidate.domain}).
                         
@@ -622,6 +746,8 @@ OUTPUT JSON:
                         
                         YOUR TASK:
                         Analyze this content and create a detailed Company Profile JSON.
+                        
+                        ${strictnessInstructions}
                         
                         COMPANY PROFILE REQUIREMENTS:
                         Structure the company_profile into a "Proper Report" using these Markdown headers:

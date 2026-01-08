@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { safeUUID } from '../utils/security'
-import { PlayCircle, Terminal, CheckCircle, AlertCircle, Loader2, Send, FileText, Bot, Users, StopCircle, Clock, ChevronRight, Activity, RefreshCw } from 'lucide-react'
+import { PlayCircle, Terminal, CheckCircle, AlertCircle, Loader2, Send, FileText, Bot, Users, StopCircle, Clock, ChevronRight, Activity, RefreshCw, Search, List } from 'lucide-react'
 import { useIcp } from '../context/IcpContext'
 
 const STEPS = [
@@ -16,6 +16,8 @@ const AgentRunner = () => {
     const navigate = useNavigate()
     const { icps, selectedIcp, setSelectedIcp } = useIcp()
     const [prompt, setPrompt] = useState('Find 3 law firms in Toronto, Canada and identify 1 Partner per firm.')
+    const [runMode, setRunMode] = useState('search') // 'search' or 'manual'
+    const [manualDomains, setManualDomains] = useState('')
 
     // Run State
     const [runs, setRuns] = useState([])
@@ -219,7 +221,11 @@ const AgentRunner = () => {
                     targetLeads: 50,
                     maxLeadsPerCompany: filters.max_contacts,
                     idempotencyKey,
-                    icpId: selectedIcp?.id
+                    targetLeads: 50,
+                    maxLeadsPerCompany: filters.max_contacts,
+                    idempotencyKey,
+                    icpId: selectedIcp?.id,
+                    manualDomains: runMode === 'manual' ? manualDomains.split('\n').map(d => d.trim()).filter(Boolean) : null
                 }),
                 signal: abortController.signal
             });
@@ -342,20 +348,48 @@ const AgentRunner = () => {
                         </select>
                     </div>
 
-                    <textarea
-                        value={prompt}
-                        onChange={(e) => setPrompt(e.target.value)}
-                        placeholder="Describe your objective..."
-                        className="w-full h-20 rounded bg-black/20 border border-white/10 p-2 text-xs text-white focus:border-[#139187] focus:outline-none resize-none"
-                    />
+                    <div className="flex gap-2 p-1 bg-black/20 rounded-lg mb-2">
+                        <button
+                            onClick={() => setRunMode('search')}
+                            className={`flex-1 text-[10px] font-bold py-1.5 rounded transition-colors ${runMode === 'search' ? 'bg-[#139187] text-white' : 'text-gray-500 hover:text-gray-300'}`}
+                        >
+                            <div className="flex items-center justify-center gap-1">
+                                <Search className="h-3 w-3" /> Auto Search
+                            </div>
+                        </button>
+                        <button
+                            onClick={() => setRunMode('manual')}
+                            className={`flex-1 text-[10px] font-bold py-1.5 rounded transition-colors ${runMode === 'manual' ? 'bg-[#139187] text-white' : 'text-gray-500 hover:text-gray-300'}`}
+                        >
+                            <div className="flex items-center justify-center gap-1">
+                                <List className="h-3 w-3" /> Manual List
+                            </div>
+                        </button>
+                    </div>
+
+                    {runMode === 'search' ? (
+                        <textarea
+                            value={prompt}
+                            onChange={(e) => setPrompt(e.target.value)}
+                            placeholder="Describe your objective (e.g. Find SaaS companies in Canada)..."
+                            className="w-full h-24 rounded bg-black/20 border border-white/10 p-2 text-xs text-white focus:border-[#139187] focus:outline-none resize-none"
+                        />
+                    ) : (
+                        <textarea
+                            value={manualDomains}
+                            onChange={(e) => setManualDomains(e.target.value)}
+                            placeholder="Enter domains (one per line)&#10;example.com&#10;another-company.ca"
+                            className="w-full h-24 rounded bg-black/20 border border-white/10 p-2 text-xs text-white focus:border-[#139187] focus:outline-none resize-none font-mono"
+                        />
+                    )}
 
                     <button
                         onClick={handleStartRun}
-                        disabled={!prompt.trim()}
-                        className="flex items-center justify-center gap-2 rounded bg-[#139187] py-2 text-sm font-bold text-white shadow-lg hover:bg-[#139187]/90 transition-all disabled:opacity-50"
+                        disabled={runMode === 'search' ? !prompt.trim() : !manualDomains.trim()}
+                        className="flex items-center justify-center gap-2 rounded bg-[#139187] py-2 text-sm font-bold text-white shadow-lg hover:bg-[#139187]/90 transition-all disabled:opacity-50 mt-2"
                     >
                         <PlayCircle className="h-4 w-4" />
-                        Start Workflow
+                        Start {runMode === 'search' ? 'Search' : 'Processing'}
                     </button>
                 </div>
 
@@ -380,8 +414,8 @@ const AgentRunner = () => {
                                         key={run.id}
                                         onClick={() => setSelectedRunId(run.id)}
                                         className={`w-full text-left p-3 rounded-lg border transition-all flex flex-col gap-1 relative ${isActive
-                                                ? 'bg-[#139187]/10 border-[#139187] shadow-[0_0_15px_rgba(19,145,135,0.1)]'
-                                                : 'bg-transparent border-transparent hover:bg-white/5'
+                                            ? 'bg-[#139187]/10 border-[#139187] shadow-[0_0_15px_rgba(19,145,135,0.1)]'
+                                            : 'bg-transparent border-transparent hover:bg-white/5'
                                             }`}
                                     >
                                         <div className="flex justify-between items-center w-full">
@@ -421,8 +455,8 @@ const AgentRunner = () => {
                                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
                                     {currentRun.run_name}
                                     <span className={`text-[10px] px-2 py-0.5 rounded border ${currentRun.status === 'RUNNING' ? 'border-[#139187] text-[#139187] animate-pulse' :
-                                            currentRun.status === 'COMPLETED' ? 'border-emerald-500/50 text-emerald-400' :
-                                                'border-red-500/50 text-red-400'
+                                        currentRun.status === 'COMPLETED' ? 'border-emerald-500/50 text-emerald-400' :
+                                            'border-red-500/50 text-red-400'
                                         }`}>{currentRun.status}</span>
                                 </h3>
                             </div>
@@ -480,10 +514,10 @@ const AgentRunner = () => {
                                 </span>
                                 <div className="flex-1 break-words">
                                     <span className={`font-bold mr-2 text-xs uppercase tracking-wide ${log.step.includes('Finder') ? 'text-blue-400' :
-                                            log.step.includes('Profiler') ? 'text-purple-400' :
-                                                log.step.includes('Outreach') ? 'text-amber-400' :
-                                                    log.step.includes('System') ? 'text-gray-400' :
-                                                        'text-[#139187]'
+                                        log.step.includes('Profiler') ? 'text-purple-400' :
+                                            log.step.includes('Outreach') ? 'text-amber-400' :
+                                                log.step.includes('System') ? 'text-gray-400' :
+                                                    'text-[#139187]'
                                         }`}>[{log.step}]</span>
                                     <span className="text-gray-300">{log.detail}</span>
                                 </div>
@@ -534,18 +568,18 @@ const AgentRunner = () => {
                             return (
                                 <div key={step.id} className="flex items-center gap-3">
                                     <div className={`h-8 w-8 rounded-full flex items-center justify-center border-2 z-10 transition-all ${status === 'completed' ? 'bg-emerald-500 border-emerald-500 text-white' :
-                                            status === 'active' ? 'bg-[#139187] border-[#139187] text-white shadow-[0_0_10px_#139187]' :
-                                                status === 'error' ? 'bg-red-500 border-red-500 text-white' :
-                                                    'bg-[#0f1115] border-white/10 text-gray-600'
+                                        status === 'active' ? 'bg-[#139187] border-[#139187] text-white shadow-[0_0_10px_#139187]' :
+                                            status === 'error' ? 'bg-red-500 border-red-500 text-white' :
+                                                'bg-[#0f1115] border-white/10 text-gray-600'
                                         }`}>
                                         {status === 'completed' ? <CheckCircle className="h-4 w-4" /> :
                                             status === 'error' ? <AlertCircle className="h-4 w-4" /> :
                                                 <span className="text-xs font-bold">{idx + 1}</span>}
                                     </div>
                                     <div className={`text-xs font-medium transition-colors ${status === 'completed' ? 'text-emerald-400' :
-                                            status === 'active' ? 'text-white' :
-                                                status === 'error' ? 'text-red-400' :
-                                                    'text-gray-600'
+                                        status === 'active' ? 'text-white' :
+                                            status === 'error' ? 'text-red-400' :
+                                                'text-gray-600'
                                         }`}>
                                         {step.label}
                                     </div>
