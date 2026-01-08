@@ -1,8 +1,8 @@
 
 // Workflow Configuration
-// Toggle TESTING mode to enforce strict limits and save costs.
 
-const IS_TESTING = process.env.WORKFLOW_MODE === 'testing' || true; // Default to TRUE for safety during dev/test
+// Testing mode disabled - use production limits
+const IS_TESTING = false;
 
 export const WORKFLOW_CONFIG = {
     // Mode
