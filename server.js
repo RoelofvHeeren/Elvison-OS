@@ -989,7 +989,45 @@ app.get('/api/runs/:id', requireAuth, async (req, res) => {
             return res.status(404).json({ error: 'Run not found' });
         }
 
-        res.json(rows[0]);
+        const run = rows[0];
+
+        // STALE RUN DETECTION: If status is RUNNING, check for staleness
+        if (run.status === 'RUNNING') {
+            const startedAt = new Date(run.started_at);
+            const now = new Date();
+            const runningMinutes = (now - startedAt) / (1000 * 60);
+
+            // Check last log timestamp
+            const logRes = await query(`
+                SELECT MAX(created_at) as last_log_at 
+                FROM workflow_logs 
+                WHERE run_id = $1
+            `, [id]);
+
+            const lastLogAt = logRes.rows[0]?.last_log_at ? new Date(logRes.rows[0].last_log_at) : startedAt;
+            const logAgeMinutes = (now - lastLogAt) / (1000 * 60);
+
+            // Mark as STALE if: running > 10 min AND no logs in > 5 min
+            if (runningMinutes > 10 && logAgeMinutes > 5) {
+                console.log(`[Stale Detection] Run ${id} is stale (running ${runningMinutes.toFixed(1)} min, last log ${logAgeMinutes.toFixed(1)} min ago)`);
+
+                // Auto-mark as failed
+                await query(
+                    `UPDATE workflow_runs SET status = 'FAILED', completed_at = NOW(), error_log = $2 WHERE id = $1`,
+                    [id, 'Run terminated unexpectedly (stale detection)']
+                );
+
+                run.status = 'FAILED';
+                run.error_log = 'Run terminated unexpectedly (stale detection)';
+                run.was_stale = true;
+            } else {
+                // Return staleness info to frontend for UI feedback
+                run.running_minutes = runningMinutes;
+                run.log_age_minutes = logAgeMinutes;
+            }
+        }
+
+        res.json(run);
     } catch (err) {
         console.error('Failed to fetch run:', err);
         res.status(500).json({ error: 'Database error' });
@@ -1529,7 +1567,7 @@ app.post('/api/agents/run', requireAuth, async (req, res) => {
                     })
                     res.write(`event: log\ndata: ${eventData}\n\n`)
 
-                    // Capture for DB persistence
+                    // Capture for DB persistence (final save)
                     localExecutionLogs.push({
                         timestamp,
                         stage: logParams.step,
@@ -1537,6 +1575,16 @@ app.post('/api/agents/run', requireAuth, async (req, res) => {
                         status: 'INFO',
                         details: logParams
                     });
+
+                    // REAL-TIME: Also persist to workflow_step_logs table immediately
+                    try {
+                        await query(
+                            `INSERT INTO workflow_step_logs (run_id, step, message, created_at) VALUES ($1, $2, $3, $4)`,
+                            [runId, logParams.step, logParams.detail, timestamp]
+                        );
+                    } catch (logDbErr) {
+                        console.error('Step log persist failed:', logDbErr.message);
+                    }
                 }
             }
         })
@@ -1676,12 +1724,51 @@ app.post('/api/workflow/cancel', requireAuth, async (req, res) => {
     }
 })
 
+/**
+ * Force-Fail Endpoint
+ * Manually marks a stuck/stale run as FAILED when the user wants to clear it
+ */
+app.post('/api/runs/:id/force-fail', requireAuth, async (req, res) => {
+    const { id } = req.params;
+    const { reason } = req.body;
+
+    try {
+        // Verify ownership
+        const verifyRes = await query('SELECT id, status FROM workflow_runs WHERE id = $1 AND user_id = $2', [id, req.userId]);
+        if (verifyRes.rows.length === 0) {
+            return res.status(404).json({ error: 'Run not found' });
+        }
+
+        const run = verifyRes.rows[0];
+
+        // Only allow force-failing RUNNING or PENDING runs
+        if (!['RUNNING', 'PENDING'].includes(run.status)) {
+            return res.status(400).json({ error: `Cannot force-fail run with status: ${run.status}` });
+        }
+
+        const errorMessage = reason || 'Manually stopped by user (force-fail)';
+
+        await query(
+            `UPDATE workflow_runs SET status = 'FAILED', completed_at = NOW(), error_log = $2 WHERE id = $1`,
+            [id, errorMessage]
+        );
+
+        console.log(`[Force-Fail] Run ${id} manually marked as FAILED: ${errorMessage}`);
+
+        res.json({ status: 'success', message: 'Run marked as failed.' });
+    } catch (e) {
+        console.error('Force-fail error:', e);
+        res.status(500).json({ error: e.message });
+    }
+})
+
 // 6. Get Run Logs (New)
 app.get('/api/runs/:id/logs', requireAuth, async (req, res) => {
     const { id } = req.params;
     try {
+        // Query step logs (real-time execution logs), not workflow_logs (API metrics)
         const { rows } = await query(`
-            SELECT * FROM workflow_logs 
+            SELECT id, run_id, step, message, created_at FROM workflow_step_logs 
             WHERE run_id = $1 
             ORDER BY created_at ASC
         `, [id]);
@@ -1846,6 +1933,18 @@ const initDB = async () => {
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
             );
             CREATE INDEX IF NOT EXISTS idx_workflow_logs_run_id ON workflow_logs(run_id);
+        `);
+
+        // Migration 09: Real-time Step Logs (separate from API metrics)
+        await query(`
+            CREATE TABLE IF NOT EXISTS workflow_step_logs (
+                id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                run_id UUID REFERENCES workflow_runs(id) ON DELETE CASCADE,
+                step VARCHAR(100),
+                message TEXT,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+            );
+            CREATE INDEX IF NOT EXISTS idx_workflow_step_logs_run_id ON workflow_step_logs(run_id);
         `);
 
         // Migration 08: Search Term Rotation

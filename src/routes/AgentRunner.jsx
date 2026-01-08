@@ -24,8 +24,10 @@ const AgentRunner = () => {
     const [result, setResult] = useState(null)
     const [error, setError] = useState(null)
     const [activeRunId, setActiveRunId] = useState(null)
+    const [isStale, setIsStale] = useState(false) // Stale run detection
     const logsEndRef = useRef(null)
     const abortControllerRef = useRef(null)
+    const lastLogCountRef = useRef(0) // Track log updates for staleness detection
 
     const scrollToBottom = () => {
         logsEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -76,6 +78,9 @@ const AgentRunner = () => {
     const pollLogs = async (runId) => {
         setIsRunning(true);
         setActiveRunId(runId);
+        setIsStale(false);
+        lastLogCountRef.current = 0;
+        let stalePollCount = 0; // Track consecutive polls with no new logs
 
         let polling = true;
         const interval = setInterval(async () => {
@@ -91,6 +96,15 @@ const AgentRunner = () => {
                 }
                 const runData = await statusRes.json();
 
+                // Check if run was auto-marked as stale by backend
+                if (runData.was_stale) {
+                    clearInterval(interval);
+                    setIsRunning(false);
+                    setError(runData.error_log || 'Run terminated unexpectedly');
+                    localStorage.removeItem('elvison_active_run_id');
+                    return;
+                }
+
                 // 2. Get Logs
                 const logRes = await fetch(`/api/runs/${runId}/logs`);
                 if (logRes.ok) {
@@ -103,6 +117,18 @@ const AgentRunner = () => {
                     if (newLogs.length > 0) {
                         setCurrentStep(newLogs[newLogs.length - 1].step);
                     }
+
+                    // Staleness detection: no new logs for 6+ consecutive polls (~12+ seconds)
+                    if (newLogs.length === lastLogCountRef.current) {
+                        stalePollCount++;
+                        if (stalePollCount >= 30) { // ~60 seconds of no new logs
+                            setIsStale(true);
+                        }
+                    } else {
+                        stalePollCount = 0;
+                        setIsStale(false);
+                    }
+                    lastLogCountRef.current = newLogs.length;
                 }
 
                 // 3. Check Termination
@@ -290,22 +316,59 @@ const AgentRunner = () => {
     }
 
     const handleCancel = async () => {
+        // Abort client-side stream if available (for runs started in this session)
         if (abortControllerRef.current) {
             abortControllerRef.current.abort()
-            setLogs(prev => [...prev, { step: 'System', detail: '⛔ Cancelling run...', timestamp: new Date().toISOString() }])
+        }
+        setLogs(prev => [...prev, { step: 'System', detail: '⛔ Cancelling run...', timestamp: new Date().toISOString() }])
 
-            // Also notify the backend
-            if (activeRunId) {
-                try {
-                    await fetch('/api/workflow/cancel', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ runId: activeRunId })
-                    });
-                } catch (e) {
-                    console.error("Cancel API failed", e);
-                }
+        // Always notify the backend (this is the real cancel mechanism)
+        if (activeRunId) {
+            try {
+                await fetch('/api/workflow/cancel', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ runId: activeRunId })
+                });
+                // Optimistic UI update - mark as cancelled immediately
+                setIsRunning(false);
+                setError('Run cancelled by user');
+                localStorage.removeItem('elvison_active_run_id');
+                setLogs(prev => [...prev, { step: 'System', detail: '✓ Run cancelled successfully', timestamp: new Date().toISOString() }])
+            } catch (e) {
+                console.error("Cancel API failed", e);
+                setLogs(prev => [...prev, { step: 'System', detail: `⚠️ Cancel request failed: ${e.message}`, timestamp: new Date().toISOString() }])
             }
+        } else {
+            // No active run ID, just stop the UI
+            setIsRunning(false);
+        }
+    }
+
+    // Force-stop a stuck/stale run
+    const handleForceStop = async () => {
+        if (!activeRunId) return;
+
+        setLogs(prev => [...prev, { step: 'System', detail: '⚠️ Force stopping stuck run...', timestamp: new Date().toISOString() }]);
+
+        try {
+            const res = await fetch(`/api/runs/${activeRunId}/force-fail`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ reason: 'Manually stopped by user - run appeared stuck' })
+            });
+
+            if (res.ok) {
+                setIsRunning(false);
+                setIsStale(false);
+                setError('Run was force-stopped due to appearing stuck.');
+                localStorage.removeItem('elvison_active_run_id');
+            } else {
+                const data = await res.json();
+                console.error('Force-stop failed:', data.error);
+            }
+        } catch (e) {
+            console.error('Force-stop request failed:', e);
         }
     }
 
@@ -378,13 +441,25 @@ const AgentRunner = () => {
                                 )}
                             </button>
                             {isRunning && (
-                                <button
-                                    onClick={handleCancel}
-                                    className="flex items-center justify-center gap-2 rounded-lg bg-red-500/80 px-4 py-3 text-sm font-bold text-white transition-all hover:bg-red-500"
-                                >
-                                    <StopCircle className="h-4 w-4" />
-                                    Cancel
-                                </button>
+                                <>
+                                    <button
+                                        onClick={handleCancel}
+                                        className="flex items-center justify-center gap-2 rounded-lg bg-red-500/80 px-4 py-3 text-sm font-bold text-white transition-all hover:bg-red-500"
+                                    >
+                                        <StopCircle className="h-4 w-4" />
+                                        Cancel
+                                    </button>
+                                    {isStale && (
+                                        <button
+                                            onClick={handleForceStop}
+                                            title="Run appears stuck - force stop it"
+                                            className="flex items-center justify-center gap-2 rounded-lg bg-amber-500 px-4 py-3 text-sm font-bold text-black transition-all hover:bg-amber-400 animate-pulse"
+                                        >
+                                            <AlertCircle className="h-4 w-4" />
+                                            Force Stop
+                                        </button>
+                                    )}
+                                </>
                             )}
                         </div>
                     </div>
@@ -427,10 +502,10 @@ const AgentRunner = () => {
                         })}
                     </div>
                 </div>
-            </div>
+            </div >
 
             {/* Right Panel: Logs & Result */}
-            <div className="flex-1 flex flex-col gap-6 overflow-hidden">
+            < div className="flex-1 flex flex-col gap-6 overflow-hidden" >
                 <div className="flex-1 rounded-xl border border-white/10 bg-black/40 p-0 backdrop-blur-sm overflow-hidden flex flex-col font-mono text-sm shadow-2xl">
                     <div className="flex items-center justify-between border-b border-white/10 bg-white/5 p-3 px-4">
                         <div className="flex items-center gap-2 text-gray-400">
@@ -485,30 +560,32 @@ const AgentRunner = () => {
                     </div>
                 </div>
 
-                {result && (
-                    <div className="h-auto shrink-0 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 animate-in slide-in-from-bottom duration-500">
-                        <div className="flex items-start gap-4">
-                            <div className="rounded-full bg-emerald-500/20 p-2 text-emerald-400">
-                                <CheckCircle className="h-6 w-6" />
-                            </div>
-                            <div>
-                                <h3 className="text-lg font-bold text-white">Workflow Completed Successfully</h3>
-                                <p className="text-emerald-200/80 mt-1 text-sm">
-                                    {result.leads ? `Generated ${result.leads.length} leads and wrote to spreadsheet.` : 'Spreadsheet populated.'}
-                                </p>
-                                <button
-                                    onClick={() => navigate('/crm')}
-                                    className="mt-3 inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-bold text-black transition-all hover:bg-emerald-400"
-                                >
-                                    <Users className="h-4 w-4" />
-                                    Go to CRM
-                                </button>
+                {
+                    result && (
+                        <div className="h-auto shrink-0 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 animate-in slide-in-from-bottom duration-500">
+                            <div className="flex items-start gap-4">
+                                <div className="rounded-full bg-emerald-500/20 p-2 text-emerald-400">
+                                    <CheckCircle className="h-6 w-6" />
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-bold text-white">Workflow Completed Successfully</h3>
+                                    <p className="text-emerald-200/80 mt-1 text-sm">
+                                        {result.leads ? `Generated ${result.leads.length} leads and wrote to spreadsheet.` : 'Spreadsheet populated.'}
+                                    </p>
+                                    <button
+                                        onClick={() => navigate('/crm')}
+                                        className="mt-3 inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-bold text-black transition-all hover:bg-emerald-400"
+                                    >
+                                        <Users className="h-4 w-4" />
+                                        Go to CRM
+                                    </button>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                )}
-            </div>
-        </div>
+                    )
+                }
+            </div >
+        </div >
     )
 }
 
