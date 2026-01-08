@@ -860,7 +860,7 @@ const Onboarding = () => {
     if (!isLoaded) return null // Prevent flash of wrong state
 
     return (
-        <div className="min-h-screen bg-transparent text-white selection:bg-teal-500/30 font-sans overflow-hidden relative flex">
+        <div className="h-screen bg-transparent text-white selection:bg-teal-500/30 font-sans relative flex">
             {/* Video background provided by App.jsx - no duplicate needed here */}
 
             {step !== 'welcome' && (
