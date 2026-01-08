@@ -202,7 +202,7 @@ export class LeadScraperService {
                 if (checkCancellation && await checkCancellation()) {
                     const { abortApifyRun } = await import("./apify.js");
                     await abortApifyRun(this.apifyApiKey, runId);
-                    return [];
+                    return { valid: [], disqualified: [] };
                 }
 
                 await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
@@ -370,7 +370,7 @@ export class LeadScraperService {
 
         } catch (error) {
             console.error(`[ApolloDomain] Batch ${batchId} failed:`, error.message);
-            return []; // Return empty array so other batches can proceed
+            return { valid: [], disqualified: [] }; // Return empty object so other batches can proceed
         }
     }
 
