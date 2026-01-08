@@ -346,90 +346,14 @@ export const runAgentWorkflow = async (input, config) => {
         // NEW: If manualDomains are provided, we SKIP the search loop and just use those
         const isManualMode = manualDomains && manualDomains.length > 0;
 
-        if (isManualMode) {
-            const candidates = manualDomains.map(d => ({
-                companyName: d, // Fallback, will be refined by Profiler
-                company_name: d,
-                domain: d.toLowerCase().startsWith('http') ? d : `https://${d}`,
-                description: "Manual Entry"
-            }));
+        let manualProcessed = false;
 
-            // Add to allCandidates to be processed by Phase 3 (Profiler)
-            // Note: We inject them directly into the processing loop below? 
-            // Actually, the loop below iterates 'candidates' which is usually derived inside the while loop.
-            // We need to restructure slightly or mock the loop.
-
-            // BETTER APPROACH: Just push to masterQualifiedList? 
-            // No, strictly we want to PROFILE them first to get the 7/10 score.
-            // So we should treat them as "candidates" found in a single "batch".
-
-            logStep('Company Finder', `📋 MANUAL MODE: bypassing search. Processing ${candidates.length} manual domains...`);
-
-            // We'll mimic ONE iteration of the "discovered" logic
-            let totalProcessed = 0;
-
-            // 3. Profile each manual candidate
-            for (const candidate of candidates) {
-                if (await checkCancellation()) break;
-
-                // Existing Profiling Logic (Copied/Refactored from below)
-                // To avoid code duplication, it would be best to extract Profiling to a function,
-                // but given the constraints, I will duplicate the profiling block or wrap the main loop.
-
-                // Hack: We can just set searchTermQueue to ["MANUAL_OVERRIDE"] and force the logic to use manualDomains
-            }
-        }
-
-        while (masterQualifiedList.length < targetLeads && (isManualMode ? false : (searchTermIndex < searchTermQueue.length && searchTermIndex < MAX_SEARCH_TERMS))) {
+        while (masterQualifiedList.length < targetLeads) {
             if (await checkCancellation()) break;
 
-            let candidates = [];
-
-            if (isManualMode) {
-                // consume all manual domains in one go
-                candidates = manualDomains.map(d => ({
-                    companyName: d,
-                    company_name: d,
-                    domain: d.toLowerCase().startsWith('http') ? d : `https://${d}`,
-                    description: "Manual Entry"
-                }));
-                // Clear manual domains so we don't loop forever (though the while condition handles it)
-                // But wait, the while condition `isManualMode ? false` means this loop won't run at all.
-                // That's bad. We want the loop to run ONCE for manual mode.
-            } else {
-                const currentTerm = searchTermQueue[searchTermIndex];
-                searchTermIndex++;
-                termsUsedThisRun.push(currentTerm);
-
-                // ... existing Google Search ...
-            }
-
-            const currentTerm = searchTermQueue[searchTermIndex];
-            searchTermIndex++;
-            termsUsedThisRun.push(currentTerm);
-
-            logStep('Company Finder', `🔍 Search Term ${searchTermIndex}/${Math.min(searchTermQueue.length, MAX_SEARCH_TERMS)}: "${currentTerm}"`);
-
-            // 1. Run Apify Google Search (up to 100 results per term)
-            let searchResults = [];
-            try {
-                const { results, count } = await runGoogleSearch(currentTerm, {
-                    maxPagesPerQuery: 10, // 10 pages × 10 results = 100 max
-                    countryCode: 'ca', // Default to Canada
-                    checkCancellation
-                });
-                searchResults = results;
-
-                // Track for Logbook
-                searchStats.terms_used.push(currentTerm);
-                searchStats.results_per_term[currentTerm] = count;
-                searchStats.total_results += count;
-
-                logStep('Company Finder', `✅ Got ${count} results for "${currentTerm}"`);
-            } catch (e) {
-                logStep('Company Finder', `❌ Search failed for "${currentTerm}": ${e.message}`);
-                continue; // Try next term
-            }
+            // Stop conditions
+            if (isManualMode && manualProcessed) break;
+            if (!isManualMode && (searchTermIndex >= searchTermQueue.length || searchTermIndex >= MAX_SEARCH_TERMS)) break;
 
             let candidates = [];
 
