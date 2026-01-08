@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { CalendarDays, Building2, RefreshCw, Trash2, Upload, Filter, Target, Loader, Check, Search, ChevronLeft, ChevronRight, Download } from 'lucide-react'
+import { CalendarDays, Building2, RefreshCw, Trash2, Upload, Filter, Target, Loader, Check, Search, ChevronLeft, ChevronRight, Download, Users } from 'lucide-react'
 import SheetTable from '../components/SheetTable'
 import ImportModal from '../components/ImportModal'
 import { fetchLeads, deleteLead, approveLead } from '../utils/api'
@@ -250,196 +250,207 @@ function CRM() {
   }, [rows, filters])
 
   return (
-    <div className="space-y-6 p-6 lg:p-8 max-w-[1600px] mx-auto animate-fade-in">
-      <div className="glass-panel flex flex-wrap items-center justify-between gap-4 px-6 py-5">
-        <div>
-          <p className="text-xs uppercase tracking-[0.3em] font-bold text-primary">LeadFlow</p>
-          <h1 className="font-serif text-3xl font-bold tracking-tight text-accent">Operations Console</h1>
-          <p className="text-sm text-muted">Live sync from your AI Lead Sheet.</p>
-        </div>
-        <div className="flex items-center gap-2">
-          {/* Status Chips */}
-          <div className="flex items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs font-bold text-primary">
-            <span
-              className={`h-2.5 w-2.5 rounded-full ${health.sheet === 'ok' ? 'bg-black shadow-sm shadow-black/30' : 'bg-amber-400'
-                }`}
-            />
-            Sheet
+    <div className="min-h-screen p-6 lg:p-8">
+      <div className="max-w-[1600px] mx-auto space-y-6">
+        {/* Header */}
+        <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-6">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <p className="text-xs uppercase tracking-[0.3em] font-bold text-teal-400">LeadFlow</p>
+              <h1 className="font-serif text-3xl font-bold tracking-tight text-white flex items-center gap-3">
+                <Users className="w-8 h-8 text-teal-500" />
+                Operations Console
+              </h1>
+              <p className="text-sm text-gray-400 mt-1">Live sync from your AI Lead Sheet.</p>
+            </div>
+            <div className="flex items-center gap-2">
+              {/* Status Chips */}
+              <div className="flex items-center gap-2 rounded-lg border border-teal-500/20 bg-teal-500/10 px-3 py-2 text-xs font-bold text-teal-400">
+                <span
+                  className={`h-2.5 w-2.5 rounded-full ${health.sheet === 'ok' ? 'bg-teal-400 shadow-sm shadow-teal-400/30' : 'bg-amber-400'
+                    }`}
+                />
+                Sheet
+              </div>
+              <div className="flex items-center gap-2 rounded-lg border border-teal-500/20 bg-teal-500/10 px-3 py-2 text-xs font-bold text-teal-400">
+                <span
+                  className={`h-2.5 w-2.5 rounded-full ${health.agent === 'ok' ? 'bg-teal-400 shadow-sm shadow-teal-400/30' : 'bg-amber-400'
+                    }`}
+                />
+                Agent
+              </div>
+              <button
+                type="button"
+                onClick={handleClearSheet}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 border border-rose-500/20 rounded-xl transition-all"
+              >
+                <Trash2 className="h-4 w-4" />
+                Clear All
+              </button>
+              <button
+                type="button"
+                onClick={exportToCSV}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-teal-400 hover:text-teal-300 hover:bg-teal-500/10 border border-teal-500/20 rounded-xl transition-all"
+              >
+                <Download className="h-4 w-4" />
+                Export CSV
+              </button>
+              <button
+                type="button"
+                onClick={refreshAll}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-gray-300 hover:text-white hover:bg-white/5 border border-white/10 rounded-xl transition-all"
+              >
+                <RefreshCw className="h-4 w-4" />
+                Refresh
+              </button>
+              <Link
+                to="/runner"
+                className="inline-flex items-center gap-2 rounded-2xl bg-teal-500 px-5 py-2.5 text-sm font-semibold text-black shadow-lg shadow-teal-500/30 transition-all duration-200 hover:-translate-y-[1px] hover:bg-teal-400"
+              >
+                Start New Job
+              </Link>
+            </div>
           </div>
-          <div className="flex items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs font-bold text-primary">
-            <span
-              className={`h-2.5 w-2.5 rounded-full ${health.agent === 'ok' ? 'bg-black shadow-sm shadow-black/30' : 'bg-amber-400'
-                }`}
-            />
-            Agent
-          </div>
-          <button
-            type="button"
-            onClick={handleClearSheet}
-            className="chip text-sm font-semibold text-rose-500 hover:text-rose-600 hover:bg-rose-50 border-rose-200"
-          >
-            <Trash2 className="h-4 w-4" />
-            Clear All
-          </button>
-          <button
-            type="button"
-            onClick={exportToCSV}
-            className="chip text-sm font-semibold text-teal-600 hover:text-teal-700 hover:bg-teal-50 border-teal-200"
-          >
-            <Download className="h-4 w-4" />
-            Export CSV
-          </button>
-          <button
-            type="button"
-            onClick={refreshAll}
-            className="chip text-sm font-semibold text-primary"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Refresh
-          </button>
-          <Link
-            to="/runner"
-            className="inline-flex items-center gap-2 rounded-2xl bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-brand transition-all duration-200 hover:-translate-y-[1px] hover:bg-primaryDark"
-          >
-            Start New Job
-          </Link>
         </div>
-      </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1.2fr,1.2fr,1fr]">
-        <div className="glass-panel flex items-center gap-4 px-5 py-4">
-          <CalendarDays className="h-11 w-11 rounded-xl bg-primary/10 p-2.5 text-primary border border-primary/20" />
-          <div>
-            <p className="text-xs uppercase tracking-[0.25em] font-bold text-primary">Latest entry</p>
-            <p className="font-serif text-2xl font-bold text-accent">{rows[0]?.date || 'No data yet'}</p>
+        {/* Stats Grid */}
+        <div className="grid gap-4 lg:grid-cols-3">
+          <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-xl p-6 flex items-center gap-4">
+            <CalendarDays className="h-11 w-11 rounded-xl bg-teal-500/10 p-2.5 text-teal-400 border border-teal-500/20" />
+            <div>
+              <p className="text-xs uppercase tracking-wider font-semibold text-gray-400">Latest entry</p>
+              <p className="font-serif text-2xl font-bold text-white">{rows[0]?.date || 'No data yet'}</p>
+            </div>
+          </div>
+          <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-xl p-6 flex items-center gap-4">
+            <Building2 className="h-11 w-11 rounded-xl bg-teal-500/10 p-2.5 text-teal-400 border border-teal-500/20" />
+            <div>
+              <p className="text-xs uppercase tracking-wider font-semibold text-gray-400">Total companies</p>
+              <p className="font-serif text-2xl font-bold text-white">
+                {new Set((rows || []).map((r) => r.company).filter(Boolean)).size}
+              </p>
+            </div>
+          </div>
+          <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-xl p-6 flex items-center justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-wider font-semibold text-gray-400">Leads tracked</p>
+              <p className="font-serif text-2xl font-bold text-white">{pagination.total || rows.length}</p>
+            </div>
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-teal-500 text-black font-serif text-lg font-bold shadow-lg shadow-teal-500/30">
+              {pagination.total || rows.length}
+            </div>
           </div>
         </div>
-        <div className="glass-panel flex items-center gap-4 px-5 py-4">
-          <Building2 className="h-11 w-11 rounded-xl bg-primary/10 p-2.5 text-primary border border-primary/20" />
-          <div>
-            <p className="text-xs uppercase tracking-[0.25em] font-bold text-primary">Total companies</p>
-            <p className="font-serif text-2xl font-bold text-accent">
-              {new Set((rows || []).map((r) => r.company).filter(Boolean)).size}
-            </p>
-          </div>
-        </div>
-        <div className="glass-panel flex items-center justify-between px-5 py-4">
-          <div>
-            <p className="text-xs uppercase tracking-[0.25em] font-bold text-primary">Leads tracked</p>
-            <p className="font-serif text-2xl font-bold text-accent">{pagination.total || rows.length}</p>
-          </div>
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-white font-serif text-lg font-bold shadow-lg shadow-primary/30">
-            {pagination.total || rows.length}
-          </div>
-        </div>
-      </div>
 
-      <div className="glass-panel grid gap-3 px-5 py-5 md:grid-cols-3">
-        <div className="flex flex-1 flex-col gap-1">
-          <label
-            htmlFor="date"
-            className="text-[11px] font-semibold uppercase tracking-[0.25em] text-muted"
-          >
-            Filter by date
-          </label>
-          <input
-            id="date"
-            type="date"
-            value={filters.date}
-            onChange={(e) => setFilters((prev) => ({ ...prev, date: e.target.value }))}
-            className="w-full rounded-2xl border border-outline/80 bg-white/80 px-3 py-2.5 text-sm text-ink outline-none transition-all duration-200 focus:border-accent focus:ring-2 focus:ring-black/10"
-          />
-        </div>
-        <div className="flex flex-1 flex-col gap-1">
-          <label
-            htmlFor="company"
-            className="text-[11px] font-semibold uppercase tracking-[0.25em] text-muted"
-          >
-            Filter by company
-          </label>
-          <input
-            id="company"
-            type="text"
-            placeholder="Acme Corp"
-            value={filters.company}
-            onChange={(e) => setFilters((prev) => ({ ...prev, company: e.target.value }))}
-            className="w-full rounded-2xl border border-outline/80 bg-white/80 px-3 py-2.5 text-sm text-ink outline-none transition-all duration-200 focus:border-primary focus:ring-2 focus:ring-primary/10"
-          />
-        </div>
-        {/* NEW ICP FILTER */}
-        <div className="flex flex-1 flex-col gap-1">
-          <label
-            htmlFor="icp"
-            className="text-[11px] font-semibold uppercase tracking-[0.25em] text-muted flex items-center gap-2"
-          >
-            <Target className="w-3 h-3" /> Filter by Strategy
-          </label>
-          <select
-            id="icp"
-            value={filters.icpId}
-            onChange={(e) => setFilters((prev) => ({ ...prev, icpId: e.target.value }))}
-            className="w-full rounded-2xl border border-outline/80 bg-white/80 px-3 py-2.5 text-sm text-ink outline-none transition-all duration-200 focus:border-primary focus:ring-2 focus:ring-primary/10"
-          >
-            <option value="">All Strategies</option>
-            {icps.map(icp => (
-              <option key={icp.id} value={icp.id}>{icp.name}</option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      <SheetTable
-        rows={filteredRows}
-        loading={loading}
-        error={error}
-        onDeleteRow={handleDeleteRow}
-        onEnrichRow={handleEnrichRow}
-        selectedLeads={selectedLeads}
-        onToggleSelection={toggleLeadSelection}
-        onToggleSelectAll={toggleSelectAll}
-        selectAll={selectAll}
-      />
-
-      {/* Pagination Controls */}
-      {pagination.totalPages > 1 && (
-        <div className="glass-panel flex items-center justify-between px-6 py-4">
-          <div className="text-sm text-muted">
-            Showing page <span className="font-semibold text-accent">{currentPage}</span> of{' '}
-            <span className="font-semibold text-accent">{pagination.totalPages}</span>
-            {' '}({pagination.total} total leads)
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => fetchRows(currentPage - 1)}
-              disabled={!pagination.hasPrevious || loading}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-2xl border transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:bg-primary/5 border-primary/20 text-primary"
+        {/* Filters */}
+        <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-6 grid gap-4 md:grid-cols-3">
+          <div className="flex flex-col gap-2">
+            <label
+              htmlFor="date"
+              className="text-[11px] font-semibold uppercase tracking-wider text-gray-400"
             >
-              <ChevronLeft className="w-4 h-4" />
-              Previous
-            </button>
-            <span className="px-4 py-2 text-sm font-semibold text-accent">
-              Page {currentPage}
-            </span>
-            <button
-              onClick={() => fetchRows(currentPage + 1)}
-              disabled={!pagination.hasNext || loading}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-2xl border transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:bg-primary/5 border-primary/20 text-primary"
+              Filter by date
+            </label>
+            <input
+              id="date"
+              type="date"
+              value={filters.date}
+              onChange={(e) => setFilters((prev) => ({ ...prev, date: e.target.value }))}
+              className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition-all duration-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20"
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <label
+              htmlFor="company"
+              className="text-[11px] font-semibold uppercase tracking-wider text-gray-400"
             >
-              Next
-              <ChevronRight className="w-4 h-4" />
-            </button>
+              Filter by company
+            </label>
+            <input
+              id="company"
+              type="text"
+              placeholder="Acme Corp"
+              value={filters.company}
+              onChange={(e) => setFilters((prev) => ({ ...prev, company: e.target.value }))}
+              className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white placeholder-gray-500 outline-none transition-all duration-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20"
+            />
+          </div>
+          {/* ICP Filter */}
+          <div className="flex flex-col gap-2">
+            <label
+              htmlFor="icp"
+              className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 flex items-center gap-2"
+            >
+              <Target className="w-3 h-3" /> Filter by Strategy
+            </label>
+            <select
+              id="icp"
+              value={filters.icpId}
+              onChange={(e) => setFilters((prev) => ({ ...prev, icpId: e.target.value }))}
+              className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition-all duration-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20"
+            >
+              <option value="">All Strategies</option>
+              {icps.map(icp => (
+                <option key={icp.id} value={icp.id}>{icp.name}</option>
+              ))}
+            </select>
           </div>
         </div>
-      )}
 
-      <ImportModal
-        isOpen={isImportOpen}
-        onClose={() => setIsImportOpen(false)}
-        onImportSuccess={() => {
-          refreshAll()
-        }}
-      />
-    </div >
+        {/* Sheet Table */}
+        <SheetTable
+          rows={filteredRows}
+          loading={loading}
+          error={error}
+          onDeleteRow={handleDeleteRow}
+          onEnrichRow={handleEnrichRow}
+          selectedLeads={selectedLeads}
+          onToggleSelection={toggleLeadSelection}
+          onToggleSelectAll={toggleSelectAll}
+          selectAll={selectAll}
+        />
+
+        {/* Pagination Controls */}
+        {pagination.totalPages > 1 && (
+          <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl px-6 py-4 flex items-center justify-between">
+            <div className="text-sm text-gray-400">
+              Showing page <span className="font-semibold text-white">{currentPage}</span> of{' '}
+              <span className="font-semibold text-white">{pagination.totalPages}</span>
+              {' '}({pagination.total} total leads)
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => fetchRows(currentPage - 1)}
+                disabled={!pagination.hasPrevious || loading}
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-xl border transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:bg-white/5 border-white/10 text-gray-300 hover:text-white"
+              >
+                <ChevronLeft className="w-4 h-4" />
+                Previous
+              </button>
+              <span className="px-4 py-2 text-sm font-semibold text-white">
+                Page {currentPage}
+              </span>
+              <button
+                onClick={() => fetchRows(currentPage + 1)}
+                disabled={!pagination.hasNext || loading}
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-xl border transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:bg-white/5 border-white/10 text-gray-300 hover:text-white"
+              >
+                Next
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        <ImportModal
+          isOpen={isImportOpen}
+          onClose={() => setIsImportOpen(false)}
+          onImportSuccess={() => {
+            refreshAll()
+          }}
+        />
+      </div>
+    </div>
   )
 }
 
