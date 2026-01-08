@@ -767,7 +767,7 @@ app.post('/api/crm-columns', requireAuth, async (req, res) => {
 
 // Get Leads with Pagination
 app.get('/api/leads', requireAuth, async (req, res) => {
-    const { status, page = 1, pageSize = 100 } = req.query;
+    const { status, icpId, page = 1, pageSize = 100 } = req.query;
 
     try {
         // Parse and validate pagination params
@@ -781,12 +781,18 @@ app.get('/api/leads', requireAuth, async (req, res) => {
         let countParams = [req.userId];
 
         if (status) {
-            queryStr += ' AND status = $2';
+            queryStr += ' AND status = $' + (params.length + 1);
             params.push(status);
             countParams.push(status);
         } else {
             // Default: Hide disqualified
             queryStr += " AND status != 'DISQUALIFIED'";
+        }
+
+        if (icpId) {
+            queryStr += ' AND icp_id = $' + (params.length + 1);
+            params.push(icpId);
+            countParams.push(icpId);
         }
 
         // Get total count for pagination metadata

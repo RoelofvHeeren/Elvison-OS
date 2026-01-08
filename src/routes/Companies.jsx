@@ -268,14 +268,14 @@ function Companies() {
                 {icps.length > 0 && (
                     <div className="bg-gray-800/50 backdrop-blur-md border border-gray-700/50 rounded-2xl px-6 py-4">
                         <label className="text-xs uppercase tracking-wider font-semibold text-gray-400 mb-2 block">
-                            Filter by Strategy
+                            Filter by ICP
                         </label>
                         <select
                             value={filters.icpId}
                             onChange={(e) => setFilters({ icpId: e.target.value })}
                             className="w-full md:w-64 bg-black/20 border border-white/10 rounded-lg px-4 py-2 text-white text-sm focus:outline-none focus:border-[#139187] focus:ring-2 focus:ring-[#139187]/20 transition-all"
                         >
-                            <option value="">All Strategies</option>
+                            <option value="">All ICPs</option>
                             {icps.map(icp => (
                                 <option key={icp.id} value={icp.id}>{icp.name}</option>
                             ))}

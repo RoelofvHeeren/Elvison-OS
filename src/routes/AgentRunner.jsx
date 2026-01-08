@@ -383,10 +383,10 @@ const AgentRunner = () => {
                     </h2>
 
                     <div className="space-y-4">
-                        {/* Strategy Selector */}
+                        {/* ICP Selector */}
                         <div>
                             <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-gray-400">
-                                Strategy (ICP)
+                                ICP
                             </label>
                             <select
                                 value={selectedIcp?.id || ''}
@@ -396,7 +396,7 @@ const AgentRunner = () => {
                                 }}
                                 className="w-full rounded-lg border-2 border-white/10 bg-black/20 p-3 text-sm text-white focus:border-[#139187] focus:outline-none transition-all"
                             >
-                                <option value="" disabled>Select a Strategy</option>
+                                <option value="" disabled>Select an ICP</option>
                                 {icps.map(icp => (
                                     <option key={icp.id} value={icp.id}>{icp.name}</option>
                                 ))}
