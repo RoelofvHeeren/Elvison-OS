@@ -1015,13 +1015,13 @@ app.get('/api/runs/:id', requireAuth, async (req, res) => {
 
             // Mark as STALE if: running > 10 min AND no logs in > 5 min
             if (runningMinutes > 10 && logAgeMinutes > 5) {
-                console.log(`[Stale Detection] Run ${id} is stale (running ${runningMinutes.toFixed(1)} min, last log ${logAgeMinutes.toFixed(1)} min ago)`);
-
+                console.log(`[Stale Detection] Run ${id} is stale (running ${runningMinutes.toFixed(1)} min, log age ${logAgeMinutes.toFixed(1)} min). Updating DB to FAILED...`);
                 // Auto-mark as failed
                 await query(
                     `UPDATE workflow_runs SET status = 'FAILED', completed_at = NOW(), error_log = $2 WHERE id = $1`,
                     [id, 'Run terminated unexpectedly (stale detection)']
                 );
+                console.log(`[Stale Detection] DB Updated for Run ${id}`);
 
                 run.status = 'FAILED';
                 run.error_log = 'Run terminated unexpectedly (stale detection)';
@@ -1749,7 +1749,12 @@ app.post('/api/runs/:id/force-fail', requireAuth, async (req, res) => {
 
         const run = verifyRes.rows[0];
 
-        // Only allow force-failing RUNNING or PENDING runs
+        // Allow force-failing RUNNING, PENDING, or FAILED (idempotent)
+        // If it's already FAILED, we just return success to clear the UI state.
+        if (run.status === 'FAILED') {
+            return res.json({ status: 'success', message: 'Run is already marked as FAILED.' });
+        }
+
         if (!['RUNNING', 'PENDING'].includes(run.status)) {
             return res.status(400).json({ error: `Cannot force-fail run with status: ${run.status}` });
         }
@@ -1762,7 +1767,6 @@ app.post('/api/runs/:id/force-fail', requireAuth, async (req, res) => {
         );
 
         console.log(`[Force-Fail] Run ${id} manually marked as FAILED: ${errorMessage}`);
-
         res.json({ status: 'success', message: 'Run marked as failed.' });
     } catch (e) {
         console.error('Force-fail error:', e);

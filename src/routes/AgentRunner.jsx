@@ -304,14 +304,26 @@ const AgentRunner = () => {
     const handleForceStop = async () => {
         if (!selectedRunId) return;
         try {
-            await fetch(`/api/runs/${selectedRunId}/force-fail`, {
+            const res = await fetch(`/api/runs/${selectedRunId}/force-fail`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ reason: 'Manually stopped by user' })
             });
-            fetchRuns(); // Refresh List
+            const data = await res.json();
+
+            if (!res.ok) {
+                // If it's 400/500, alert user
+                alert(`Force stop failed: ${data.error || 'Unknown error'}`);
+            } else {
+                // Success
+                console.log("Force stop successful:", data.message);
+            }
         } catch (e) {
             console.error("Force stop failed", e);
+            alert("Force stop failed (Network/Client error)");
+        } finally {
+            // Always refresh runs to ensure UI is in sync
+            fetchRuns();
         }
     }
 
