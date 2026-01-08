@@ -671,7 +671,69 @@ app.post('/api/knowledge/create-internal', requireAuth, async (req, res) => {
     }
 })
 
+// --- ICP & CLEANUP ---
 
+import { CompanyScorer } from './src/backend/services/company-scorer.js';
+
+app.post('/api/strategies/:id/cleanup', requireAuth, async (req, res) => {
+    const { id } = req.params;
+    try {
+        const { rows } = await query('SELECT name FROM icps WHERE id = $1', [id]);
+        if (rows.length === 0) return res.status(404).json({ error: 'ICP not found' });
+
+        const icpName = rows[0].name;
+        const result = await CompanyScorer.cleanupICP(id, icpName);
+
+        res.json({ success: true, stats: result });
+    } catch (e) {
+        console.error('Cleanup Failed:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/admin/refactor-icps', async (req, res) => {
+    try {
+        console.log('🔄 Refactoring ICPs via API...');
+        const fundsRes = await query(`
+            SELECT id, name FROM icps 
+            WHERE name ILIKE '%Funds%' AND name ILIKE '%Family Offices%'
+        `);
+
+        let renamed = 0;
+        if (fundsRes.rows.length > 0) {
+            for (const icp of fundsRes.rows) {
+                await query(`
+                    UPDATE icps 
+                    SET name = 'Investment Firms', updated_at = NOW() 
+                    WHERE id = $1
+                `, [icp.id]);
+                renamed++;
+            }
+        }
+
+        const familyRes = await query(`
+            SELECT id, name FROM icps 
+            WHERE name = 'Family Offices' OR name = 'Family Office'
+        `);
+
+        let created = false;
+        if (familyRes.rows.length === 0) {
+            const userRes = await query('SELECT id FROM users LIMIT 1');
+            if (userRes.rows.length > 0) {
+                await query(`
+                    INSERT INTO icps (user_id, name, config, agent_config)
+                    VALUES ($1, 'Family Offices', '{}', '{}')
+                `, [userRes.rows[0].id]);
+                created = true;
+            }
+        }
+
+        res.json({ success: true, renamed, created });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: e.message });
+    }
+});
 
 // 5. List Knowledge Base Files
 app.get('/api/knowledge/files', requireAuth, async (req, res) => {

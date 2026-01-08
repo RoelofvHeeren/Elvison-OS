@@ -8,8 +8,35 @@ function Companies() {
     const [loading, setLoading] = useState(true)
     const [expandedCompany, setExpandedCompany] = useState(null)
     const [filters, setFilters] = useState({ icpId: '' })
+    const [cleaning, setCleaning] = useState(false)
 
     const { icps, fetchIcps } = useIcp()
+
+    const handleCleanup = async (icpId) => {
+        if (!window.confirm("WARNING: This will audit ALL companies in this strategy and DELETE any that score below 6/10. This cannot be undone.\n\nAre you sure?")) {
+            return;
+        }
+
+        setCleaning(true);
+        try {
+            const res = await fetch(`/api/strategies/${icpId}/cleanup`, {
+                method: 'POST'
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                alert(`Cleanup Complete!\n\nKept: ${data.stats.kept}\nRemoved: ${data.stats.disqualified}\nErrors: ${data.stats.errors}`);
+                loadCompanies(); // Reload
+            } else {
+                alert('Cleanup failed: ' + data.error);
+            }
+        } catch (e) {
+            console.error(e);
+            alert('Error running cleanup');
+        } finally {
+            setCleaning(false);
+        }
+    }
 
     useEffect(() => {
         loadCompanies()
@@ -264,24 +291,45 @@ function Companies() {
                     </div>
                 </div>
 
-                {/* ICP Filter */}
-                {icps.length > 0 && (
-                    <div className="bg-gray-800/50 backdrop-blur-md border border-gray-700/50 rounded-2xl px-6 py-4">
-                        <label className="text-xs uppercase tracking-wider font-semibold text-gray-400 mb-2 block">
-                            Filter by ICP
-                        </label>
-                        <select
-                            value={filters.icpId}
-                            onChange={(e) => setFilters({ icpId: e.target.value })}
-                            className="w-full md:w-64 bg-black/20 border border-white/10 rounded-lg px-4 py-2 text-white text-sm focus:outline-none focus:border-[#139187] focus:ring-2 focus:ring-[#139187]/20 transition-all"
-                        >
-                            <option value="">All ICPs</option>
-                            {icps.map(icp => (
-                                <option key={icp.id} value={icp.id}>{icp.name}</option>
-                            ))}
-                        </select>
-                    </div>
-                )}
+                {/* ICP Filter & Actions */}
+                <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                    {icps.length > 0 && (
+                        <div className="bg-gray-800/50 backdrop-blur-md border border-gray-700/50 rounded-2xl px-6 py-4 flex-1">
+                            <label className="text-xs uppercase tracking-wider font-semibold text-gray-400 mb-2 block">
+                                Filter by ICP
+                            </label>
+                            <div className="flex items-center gap-3">
+                                <select
+                                    value={filters.icpId}
+                                    onChange={(e) => setFilters({ icpId: e.target.value })}
+                                    className="w-full md:w-64 bg-black/20 border border-white/10 rounded-lg px-4 py-2 text-white text-sm focus:outline-none focus:border-[#139187] focus:ring-2 focus:ring-[#139187]/20 transition-all"
+                                >
+                                    <option value="">All ICPs</option>
+                                    {icps.map(icp => (
+                                        <option key={icp.id} value={icp.id}>{icp.name}</option>
+                                    ))}
+                                </select>
+
+                                {filters.icpId && (
+                                    <button
+                                        onClick={() => handleCleanup(filters.icpId)}
+                                        disabled={cleaning}
+                                        className={`
+                                            px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all
+                                            ${cleaning
+                                                ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
+                                                : 'bg-rose-500/10 text-rose-400 border border-rose-500/20 hover:bg-rose-500/20'
+                                            }
+                                        `}
+                                    >
+                                        <Trash2 className={`w-4 h-4 ${cleaning ? 'animate-spin' : ''}`} />
+                                        {cleaning ? 'Cleaning...' : 'Cleanup Strategy'}
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </div>
 
                 {/* Companies List */}
                 {loading ? (
