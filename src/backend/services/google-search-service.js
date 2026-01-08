@@ -173,8 +173,8 @@ export const runGoogleSearch = async (query, options = {}) => {
         // 1. Start the search
         const runId = await startGoogleSearch(token, query, { maxPagesPerQuery, countryCode });
 
-        // 2. Poll for completion (max 2 minutes)
-        const maxWaitMs = 120000;
+        // 2. Poll for completion (max 5 minutes)
+        const maxWaitMs = 300000;
         const pollInterval = 3000;
         let elapsed = 0;
         let status = 'RUNNING';
