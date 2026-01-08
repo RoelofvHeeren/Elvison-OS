@@ -1617,6 +1617,7 @@ app.post('/api/agents/run', requireAuth, async (req, res) => {
     const localExecutionLogs = []; // Capture logs for persistence
     try {
         const result = await runAgentWorkflow({ input_as_text: prompt }, {
+            runId: runId,
             vectorStoreId: vectorStoreId,
             userId: req.userId,
             icpId: icpId,

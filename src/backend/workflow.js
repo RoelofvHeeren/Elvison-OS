@@ -113,7 +113,8 @@ export const runAgentWorkflow = async (input, config) => {
         filters = {}, // Default empty
         idempotencyKey = null,
         icpId,
-        manualDomains = [] // NEW: Manual Input Support
+        manualDomains = [], // NEW: Manual Input Support
+        runId
     } = config;
 
     if (!userId) throw new Error('userId is required');
@@ -131,8 +132,9 @@ export const runAgentWorkflow = async (input, config) => {
     }
 
     const checkCancellation = async () => {
+        if (!runId) return false; // Cannot check cancellation without runId
         try {
-            const res = await query(`SELECT status FROM workflow_runs WHERE id = $1`, [idempotencyKey || runId]);
+            const res = await query(`SELECT status FROM workflow_runs WHERE id = $1`, [runId]);
             if (res.rows.length > 0 && res.rows[0].status === 'CANCELLED') {
                 logStep('System', '⛔ Run Cancellation Detected. Stopping workflow immediately.');
                 return true;
