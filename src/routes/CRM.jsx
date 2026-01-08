@@ -4,6 +4,7 @@ import { CalendarDays, Building2, RefreshCw, Trash2, Upload, Filter, Target, Loa
 import SheetTable from '../components/SheetTable'
 import ImportModal from '../components/ImportModal'
 import { fetchLeads, deleteLead, approveLead } from '../utils/api'
+import OutreachModal from '../components/OutreachModal'
 import { useIcp } from '../context/IcpContext'
 
 function CRM() {
@@ -15,6 +16,7 @@ function CRM() {
   const [filters, setFilters] = useState({ date: '', company: '', icpId: '' })
   const [health, setHealth] = useState({ sheet: 'pending', agent: 'pending' })
   const [isImportOpen, setIsImportOpen] = useState(false)
+  const [isOutreachOpen, setIsOutreachOpen] = useState(false)
 
   // Selection state
   const [selectedLeads, setSelectedLeads] = useState(new Set())
@@ -295,6 +297,16 @@ function CRM() {
                 <Download className="h-4 w-4" />
                 Export CSV
               </button>
+              {selectedLeads.size > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setIsOutreachOpen(true)}
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 border border-blue-500/20 rounded-xl transition-all"
+                >
+                  <Upload className="h-4 w-4" />
+                  Push to Outreach
+                </button>
+              )}
               <button
                 type="button"
                 onClick={refreshAll}
@@ -447,6 +459,19 @@ function CRM() {
           onClose={() => setIsImportOpen(false)}
           onImportSuccess={() => {
             refreshAll()
+          }}
+        />
+
+        <OutreachModal
+          isOpen={isOutreachOpen}
+          onClose={() => setIsOutreachOpen(false)}
+          selectedLeadsCount={selectedLeads.size}
+          selectedLeadIds={selectedLeads}
+          onComplete={() => {
+            // Optional: Refresh rows to show status update if we tracked it in UI
+            // fetchRows()
+            setSelectedLeads(new Set())
+            setSelectAll(false)
           }}
         />
       </div>

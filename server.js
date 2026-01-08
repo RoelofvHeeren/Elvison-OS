@@ -2059,6 +2059,91 @@ app.post('/api/leads/import', requireAuth, upload.single('file'), async (req, re
     }
 })
 
+
+// --- INTEGRATIONS (Aimfox / GoHighLevel) ---
+import { aimfoxService } from './src/backend/services/aimfox.js'
+import { ghlService } from './src/backend/services/gohighlevel.js'
+
+// List Aimfox Campaigns
+app.get('/api/integrations/aimfox/campaigns', requireAuth, async (req, res) => {
+    try {
+        const campaigns = await aimfoxService.listCampaigns()
+        res.json({ campaigns })
+    } catch (err) {
+        console.error('Aimfox campaigns error:', err)
+        res.status(500).json({ error: 'Failed to fetch Aimfox campaigns' })
+    }
+})
+
+// List GoHighLevel Workflows (Campaigns in V1)
+app.get('/api/integrations/ghl/workflows', requireAuth, async (req, res) => {
+    try {
+        const workflows = await ghlService.listWorkflows()
+        res.json({ workflows })
+    } catch (err) {
+        console.error('GHL workflows error:', err)
+        res.status(500).json({ error: 'Failed to fetch GoHighLevel workflows' })
+    }
+})
+
+// Push Leads to Outreach Tool
+app.post('/api/integrations/push', requireAuth, async (req, res) => {
+    const { tool, campaignId, leadIds } = req.body
+
+    if (!tool || !campaignId || !Array.isArray(leadIds) || leadIds.length === 0) {
+        return res.status(400).json({ error: 'Missing required fields' })
+    }
+
+    try {
+        // 1. Fetch Leads from DB
+        const { rows: leads } = await query('SELECT * FROM leads WHERE id = ANY($1)', [leadIds])
+
+        if (leads.length === 0) {
+            return res.status(404).json({ error: 'No matching leads found' })
+        }
+
+        // 2. Respond immediately to prevent timeouts
+        res.json({
+            success: true,
+            status: 'queued',
+            count: leads.length,
+            message: `Started pushing ${leads.length} leads to ${tool} in the background.`
+        })
+
+            // 3. Process in Background
+            ; (async () => {
+                console.log(`[Outreach] Background push started for ${leads.length} leads to ${tool}`);
+                const results = { success: [], failed: [] };
+
+                for (const lead of leads) {
+                    try {
+                        if (tool === 'aimfox') {
+                            await aimfoxService.addLeadToCampaign(campaignId, lead)
+                        } else if (tool === 'gohighlevel') {
+                            const contact = await ghlService.createContact(lead)
+                            await ghlService.addContactToCampaign(contact.id, campaignId)
+                        }
+
+                        // Update leads status locally
+                        await query("UPDATE leads SET outreach_status = 'pushed', updated_at = NOW() WHERE id = $1", [lead.id])
+                        results.success.push(lead.id)
+
+                    } catch (err) {
+                        console.error(`Failed to push lead ${lead.id} to ${tool}:`, err.message)
+                        results.failed.push({ id: lead.id, error: err.message })
+                        // Optional: Update status to 'failed_push'
+                        await query("UPDATE leads SET outreach_status = 'failed_push', updated_at = NOW() WHERE id = $1", [lead.id])
+                    }
+                }
+                console.log(`[Outreach] Background push complete. Success: ${results.success.length}, Failed: ${results.failed.length}`);
+            })().catch(err => console.error('[Outreach] Background processing fatal error:', err));
+
+    } catch (err) {
+        console.error('Push integration error:', err)
+        // Only redundant if response already sent, but safe here as we wait for SELECT
+        if (!res.headersSent) res.status(500).json({ error: 'Integration push failed' })
+    }
+})
 // Start Server
 initDB().then(() => {
     app.listen(port, () => {

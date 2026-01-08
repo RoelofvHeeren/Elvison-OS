@@ -197,7 +197,7 @@ export const runAgentWorkflow = async (input, config) => {
     // NOTE: getToolsForAgent removed - tools are now defined inline with runGeminiAgent() calls
 
     // --- Dynamic Context Injection ---
-    let companyContext = { name: "The User's Company", goal: "Expand client base.", baselineTitles: [] };
+    let companyContext = { name: null, goal: "Expand client base.", baselineTitles: [] };
     if (icpId) {
         try {
             const icpRes = await query(`SELECT config FROM icps WHERE id = $1`, [icpId]);
@@ -913,7 +913,7 @@ USER'S MESSAGE TEMPLATE:
 ${companyContext.outreachTemplate || "Hi {{first_name}}, we noticed {{research_fact}}. We frequently have similar opportunities come through our pipeline. Think connecting could be mutually beneficial."}
 
 FORBIDDEN (NEVER DO THESE):
-${companyContext.outreachForbidden || "- Do not be too general (e.g., 'your work in real estate is impressive')\n- Do not mention multiple facts - pick ONE strong reference\n- Do not sound robotic or use placeholder brackets like [X] or [Topic]\n- Do not use emojis or hashtags"}
+${companyContext.outreachForbidden || "- Do not be too general (e.g., 'your work in real estate is impressive')\n- Do not mention multiple facts - pick ONE strong reference\n- Do not sound robotic or use placeholder brackets like [X] or [Topic]\n- Do not use emojis or hashtags\n- NEVER use the phrase 'The User's Company' - use 'Fifth Avenue Properties' if company name is unknown"}
 
 CREDIBILITY SIGNALS TO INCLUDE:
 ${companyContext.outreachCredibility || "Reference a specific recent investment, fund, development project, or geographic expansion."}
@@ -947,13 +947,13 @@ Hi [First_name],
 
 I came across [Lead_Company_Name] and your [specific_researched_fact_from_company_profile].
 
-At ${companyContext.name || '[Your_Company_Name]'}, ${companyContext.companyDescription || 'we work on similar opportunities'}, which is why I thought it could make sense to connect.
+At ${companyContext.name || 'Fifth Avenue Properties'}, ${companyContext.companyDescription || 'we work on similar opportunities'}, which is why I thought it could make sense to connect.
 
 If it makes sense, I'm happy to share more information about our current projects.
 
 Best regards,
 ${companyContext.userName || '[Your_Name]'}
-${companyContext.name || '[Your_Company_Name]'}
+${companyContext.name || 'Fifth Avenue Properties'}
 ---
 
 REAL EXAMPLE:
@@ -1133,9 +1133,9 @@ const saveLeadsToDB = async (leads, userId, icpId, logStep, forceStatus = 'NEW')
             const exists = await query("SELECT id FROM leads WHERE email = $1 AND user_id = $2", [lead.email, userId]);
             if (exists.rows.length > 0) continue;
 
-            await query(`INSERT INTO leads(company_name, person_name, email, job_title, linkedin_url, status, source, user_id, custom_data)
-                        VALUES($1, $2, $3, $4, $5, $6, 'Outbound Agent', $7, $8)`,
-                [lead.company_name, `${lead.first_name} ${lead.last_name} `, lead.email, lead.title, lead.linkedin_url, forceStatus, userId, {
+            await query(`INSERT INTO leads(company_name, person_name, email, job_title, linkedin_url, status, source, user_id, icp_id, custom_data)
+                        VALUES($1, $2, $3, $4, $5, $6, 'Outbound Agent', $7, $8, $9)`,
+                [lead.company_name, `${lead.first_name} ${lead.last_name} `, lead.email, lead.title, lead.linkedin_url, forceStatus, userId, icpId, {
                     icp_id: icpId,
                     score: lead.match_score,
                     company_profile: lead.company_profile,

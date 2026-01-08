@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Book, Clock, CheckCircle, AlertCircle, Trash2, ChevronDown, ChevronUp, RefreshCw, ThumbsUp, Building, Users, Filter, Check, DollarSign, Zap, Activity } from 'lucide-react'
 import { fetchRuns, fetchLeads, approveLead, deleteLead, enrichLead } from '../utils/api'
+import OutreachModal from '../components/OutreachModal'
 
 const Logbook = () => {
     const [activeTab, setActiveTab] = useState('history') // 'history' | 'disqualified'
@@ -22,6 +23,7 @@ const Logbook = () => {
     const [approvalReason, setApprovalReason] = useState('')
     const [submittingApproval, setSubmittingApproval] = useState(false)
     const [enrichingId, setEnrichingId] = useState(null)
+    const [isOutreachOpen, setIsOutreachOpen] = useState(false)
 
     useEffect(() => {
         if (activeTab === 'history') {
@@ -743,6 +745,14 @@ const Logbook = () => {
                                         </button>
                                     </>
                                 )}
+                                {selectedLeads.size > 0 && (
+                                    <button
+                                        onClick={() => setIsOutreachOpen(true)}
+                                        className="px-4 py-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 rounded-lg transition-colors flex items-center gap-2 border border-blue-500/30"
+                                    >
+                                        Push to Outreach
+                                    </button>
+                                )}
                                 <button
                                     onClick={loadDroppedLeads}
                                     className="p-2 hover:bg-white/5 rounded-lg text-gray-400 transition-colors"
@@ -829,6 +839,18 @@ const Logbook = () => {
                     </div>
                 )}
             </div>
+
+            {/* Outreach Modal */}
+            <OutreachModal
+                isOpen={isOutreachOpen}
+                onClose={() => setIsOutreachOpen(false)}
+                selectedLeadsCount={selectedLeads.size}
+                selectedLeadIds={selectedLeads}
+                onComplete={() => {
+                    setSelectedLeads(new Set())
+                    setSelectAll(false)
+                }}
+            />
 
             {/* Approval Modal */}
             {approvalModalOpen && (

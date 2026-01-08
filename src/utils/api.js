@@ -128,3 +128,29 @@ export const fetchHealth = async () => {
   return data
 }
 
+
+// --- INTEGRATIONS (Aimfox / GoHighLevel) ---
+
+export const fetchAimfoxCampaigns = async () => {
+  const { data } = await client.get('/api/integrations/aimfox/campaigns')
+  return data.campaigns
+}
+
+export const fetchGhlWorkflows = async () => {
+  const { data } = await client.get('/api/integrations/ghl/workflows')
+  return data.workflows
+}
+
+const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+export const pushLeadsToOutreach = async (tool, campaignId, leadIds, retries = 3) => {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const { data } = await client.post('/api/integrations/push', { tool, campaignId, leadIds })
+      return data
+    } catch (err) {
+      if (i === retries - 1) throw err
+      await wait(1000 * Math.pow(2, i)) // Exponential backoff: 1s, 2s, 4s
+    }
+  }
+}
