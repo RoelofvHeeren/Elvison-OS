@@ -1620,8 +1620,15 @@ app.post('/api/agents/run', requireAuth, async (req, res) => {
             vectorStoreId: vectorStoreId,
             userId: req.userId,
             icpId: icpId,
-            targetLeads: req.body.targetLeads || 50,
-            maxLeadsPerCompany: req.body.maxLeadsPerCompany || 3,
+            // Dynamic Target Extraction from Prompt
+            targetLeads: req.body.targetLeads || (() => {
+                const match = prompt.match(/(?:find|get|scrape|target|need)\s*(\d+)\s*(?:leads|contacts|companies|prospects|records)/i);
+                return match ? parseInt(match[1]) : 50;
+            })(),
+            maxLeadsPerCompany: req.body.maxLeadsPerCompany || (() => {
+                const match = prompt.match(/(\d+)\s*(?:decision makers|leads|contacts|people)\s*per\s*(?:firm|company|office)/i);
+                return match ? parseInt(match[1]) : 3;
+            })(),
             agentConfigs: agentConfigs || {},
             mode: mode,
             filters: filters || {},

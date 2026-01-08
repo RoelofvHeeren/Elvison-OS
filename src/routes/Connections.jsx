@@ -6,14 +6,20 @@ const Connections = () => {
 
   // Define available integrations
   const softwareIntegrations = [
+    { id: 'aimfox', name: 'Aimfox', icon: MessageSquare, description: 'LinkedIn automation & outreach', color: 'bg-blue-600' },
+    { id: 'gohighlevel', name: 'GoHighLevel', icon: Zap, description: 'Marketing automation & CRM', color: 'bg-indigo-500' },
     { id: 'salesforce', name: 'Salesforce', icon: Database, description: 'Connect your CRM data', color: 'bg-blue-500' },
     { id: 'hubspot', name: 'HubSpot', icon: Mail, description: 'Marketing & CRM platform', color: 'bg-orange-500' },
     { id: 'slack', name: 'Slack', icon: MessageSquare, description: 'Team communication', color: 'bg-purple-500' },
     { id: 'analytics', name: 'Google Analytics', icon: BarChart3, description: 'Website analytics', color: 'bg-yellow-500' },
-    { id: 'webhook', name: 'Custom Webhook', icon: Webhook, description: 'Connect any service', color: 'bg-teal-500' },
   ]
 
   const handleConnectIntegration = (integration) => {
+    if (integration.id === 'aimfox' || integration.id === 'gohighlevel') {
+      alert(`${integration.name} is integrated! \n\nPlease ensure AIMFOX_API_KEY and GHL_API_KEY are set in your .env file.\n\nYou can push leads to these tools directly from the CRM and Logbook pages.`)
+      return
+    }
+
     console.log(`Connecting to ${integration.name}...`)
     setSelectedIntegration(integration.id)
     // TODO: Implement OAuth flow or integration setup
