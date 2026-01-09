@@ -130,12 +130,16 @@ function Companies() {
                 const dedupKey = rawDomain || companyName.toLowerCase().replace(/[^a-z0-9]/g, '')
 
                 if (!companyMap.has(dedupKey)) {
-                    // Extract fit score from multiple possible keys
-                    let fitScore = customData.score || customData.fit_score || customData.match_score || 'N/A'
+                    // Extract fit score
+                    let fitScore = 'N/A';
 
-                    // If it's a number like 0.85, multiply by 10 and round
-                    if (typeof fitScore === 'number' && fitScore <= 1) {
-                        fitScore = Math.round(fitScore * 10)
+                    if (customData.fit_score !== undefined) {
+                        fitScore = parseInt(customData.fit_score);
+                    } else if (customData.score !== undefined) {
+                        // Legacy handling
+                        fitScore = typeof customData.score === 'number' && customData.score <= 1
+                            ? Math.round(customData.score * 10)
+                            : parseInt(customData.score);
                     }
 
                     companyMap.set(dedupKey, {

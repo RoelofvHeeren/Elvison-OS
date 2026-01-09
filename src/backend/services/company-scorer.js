@@ -102,61 +102,64 @@ export class CompanyScorer {
 
         let prompt = '';
         if (type === 'FAMILY_OFFICE') {
-            prompt = `You are a strict data auditor evaluating if a company is a **Single or Multi-Family Office** that INVESTS in real estate.
-            
+            prompt = `You are an expert investment analyst evaluating if a company is a **Single or Multi-Family Office** that INVESTS in real estate or private equity.
+
 COMPANY: ${companyName}
 WEBSITE: ${website}
 PROFILE: ${profile.substring(0, 1500)}
 
-STRICT Criteria (Score 6-10):
-- Must be a dedicated Family Office (SFO or MFO) managing private wealth.
-- Must actively INVEST capital (Direct RE, PE, Venture).
-- "Wealth Management" firms are OKAY ONLY IF they are clearly MFOs with direct investment mandates.
+EVALUATION RULES:
+1. **Target**: Single Family Offices (SFO), Multi-Family Offices (MFO), Private Wealth Firms with *direct investment* mandates.
+2. **Key Signals**: Terms like "Direct Investment", "Private Capital", "Long-term capital", "Proprietary Capital", "Real Estate Portfolio".
+3. **Wealth Managers**: Standard wealth managers are usually disqualified, BUT if they mention specific "Alternative Investment" platforms, "Private Strategies", or "Direct Deals", **KEEP THEM** (Score 6-7).
 
-AUTOMATIC FAIL (Score 1-4):
-- Mass-market Wealth Advisors / Financial Planners.
-- Real Estate Brokers / Agents.
-- Tech companies (e.g. Salesforce, Google).
-- Service providers (Law, Tax, Consulting).
-- Tenants / Retailers.
+SCORING GUIDELINES:
+- **8-10 (Perfect Fit)**: Explicitly identifies as SFO/MFO with direct real estate/PE arm.
+- **6-7 (Likely Fit / Keep)**: "Private Wealth" or "Investment Management" firm that appears to have discretion or direct deals. **WHEN IN DOUBT, SCORE 6 TO KEEP.**
+- **1-5 (Disqualify)**: Retail financial planners, pure brokers, insurance agents, tenants.
 
 OUTPUT JSON:
 {
     "fit_score": number (1-10),
     "fit_reason": "string (concise reason)",
     "is_investor": boolean,
-    "investor_type": "string (SFO/MFO/Wealth Manager/Broker/Tech/Other)"
+    "investor_type": "string (SFO/MFO/Wealth Manager/Broker/Other)"
 }`;
         } else {
             // Investment Firm Prompt
-            prompt = `You are a strict data auditor evaluating if a company is a **Real Estate Investment Firm**.
+            prompt = `You are an expert investment analyst evaluating if a company is a **Real Estate Investment Firm** or **Institutional Investor**.
 
 COMPANY: ${companyName}
 WEBSITE: ${website}
 PROFILE: ${profile.substring(0, 1500)}
 
-STRICT Criteria (Score 6-10):
-- Private Equity Real Estate firms.
-- REITs (Real Estate Investment Trusts).
-- Pension Funds with RE allocations.
-- Asset Managers with DIRECT Real Estate investment vehicles.
-- Must be on the "Buy Side" (Allocators/Investors).
+EVALUATION RULES:
+1. **Target**: Private Equity Firms, REITs, Pension Funds, Asset Managers, **Private Investment Firms**, **Holdings Companies**.
+2. **Key Signals**: "Acquisitions", "Development", "Capital Deployment", "Assets Under Management (AUM)", "Equity Partner".
+3. **Multi-Strategy**: If a firm invests in Tech/Healthcare BUT also Real Estate/Infrastructure, **KEEP THEM** (Score 7-8).
+4. **Holdings**: "Group" or "Holdings" companies that invest are VALID.
 
-AUTOMATIC FAIL (Score 1-4):
-- **Family Offices** (Score LOW here, they belong in a separate list).
-- Real Estate **Brokers** / Agencies (They sell, don't invest).
-- Property Managers (Operations only).
-- Lenders / Banks (unless specifically an equity investment arm).
-- Service Providers.
-- Tech Companies (e.g. Salesforce).
+SCORING GUIDELINES:
+- **8-10 (Perfect Fit)**: Dedicated REPE, REIT, or large institutional investor.
+- **6-7 (Likely Fit / Keep)**: Generalist PE firm, Holdings company with RE assets. **WHEN IN DOUBT, SCORE 6 TO KEEP.**
+- **1-5 (Disqualify)**: Pure Service Providers (Law/Tax), Pure Brokers (Sales only), Lenders (Debt only), Tenants.
 
 OUTPUT JSON:
 {
     "fit_score": number (1-10),
     "fit_reason": "string (concise reason)",
     "is_investor": boolean,
-    "investor_type": "string (PE/REIT/Pension/Broker/Family Office/Other)"
+    "investor_type": "string (PE/REIT/Pension/Holdings/Broker/Other)"
 }`;
+        }
+
+OUTPUT JSON:
+        {
+            "fit_score": number(1 - 10),
+                "fit_reason": "string (concise reason)",
+                    "is_investor": boolean,
+                        "investor_type": "string (PE/REIT/Pension/Broker/Family Office/Other)"
+        } `;
         }
 
         try {
