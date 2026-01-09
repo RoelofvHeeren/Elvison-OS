@@ -105,27 +105,56 @@ export class ResearchService {
             const links = Array.from(allLinks.entries()).map(([linkUrl, text]) => ({ url: linkUrl, text }));
             console.log(`📊 Total unique links found: ${links.length}`);
 
-            // Ask AI to select relevant links
+            // Step 1: Auto-select URLs matching portfolio patterns (these are almost always relevant)
+            const portfolioPatterns = [
+                '/investment_portfolio/',
+                '/portfolio/',
+                '/projects/',
+                '/case-studies/',
+                '/case_studies/',
+                '/our-work/',
+                '/transactions/',
+                '/deals/'
+            ];
+
+            const autoSelected = links.filter(link => {
+                const urlLower = link.url.toLowerCase();
+                return portfolioPatterns.some(pattern => urlLower.includes(pattern));
+            }).map(link => ({
+                url: link.url,
+                title: link.text || link.url.split('/').filter(Boolean).pop()?.replace(/-/g, ' ') || 'Portfolio Page',
+                reason: 'Auto-selected: URL pattern indicates portfolio/project page',
+                score: 100
+            }));
+
+            console.log(`🎯 Auto-selected ${autoSelected.length} portfolio pages`);
+
+            // Step 2: Ask AI to select additional relevant links (excluding auto-selected ones)
+            const autoSelectedUrls = new Set(autoSelected.map(l => l.url));
+            const remainingLinks = links.filter(l => !autoSelectedUrls.has(l.url));
+
             const linkSelectionPrompt = `
                 I am researching "${topic}" for the company at ${rootUrl}.
-                Here are the links found on the website (including sitemap and sub-pages):
-                ${JSON.stringify(links.slice(0, 500))}
+                Here are the links found on the website (portfolio pages already selected):
+                ${JSON.stringify(remainingLinks.slice(0, 500))}
 
-                Select up to 20 URLs that are most likely to contain this information.
+                Select up to 30 additional URLs that are most likely to contain this information.
                 Rank them by relevance score (0-100).
                 
                 Prioritize pages like:
-                - Portfolio pages / Case Studies / Project pages
                 - "Team" / "Leadership" / "People"
-                - "Investments" / "Our Work"
-                - "Strategy" / "Approach" / "Family Office"
-                - "About Us" / "History"
+                - "Investments" / "Strategy" / "Approach"
+                - "About Us" / "History" / "News"
+                - Specific deal announcements or press releases
 
                 Return a strict JSON array of objects with keys: "url", "title" (cleaned up link text), "reason" (why you chose it), and "score" (number).
             `;
 
             const linkResult = await model.generateContent(linkSelectionPrompt);
-            const selectedLinks = this.parseJson(linkResult.response.text());
+            const aiSelectedLinks = this.parseJson(linkResult.response.text()) || [];
+
+            // Combine auto-selected + AI-selected
+            const selectedLinks = [...autoSelected, ...aiSelectedLinks];
 
             return {
                 recommended: selectedLinks || [],
