@@ -110,7 +110,6 @@ class GoHighLevelService {
                 headers: this._getHeaders()
             });
 
-            // GHL returns { tags: [{ name: 'tagName' }, ...] }
             return (response.data.tags || []).map(t => ({
                 id: t.name, // Use tag name as ID since that's what we pass to createContact
                 name: t.name
@@ -118,6 +117,27 @@ class GoHighLevelService {
         } catch (error) {
             console.error('Failed to list GHL tags:', error.response?.data || error.message);
             return [];
+        }
+    }
+
+    /**
+     * Creates a new tag in GoHighLevel.
+     */
+    async createTag(tagName) {
+        if (!this.apiKey) throw new Error('GHL_API_KEY is missing');
+
+        try {
+            const response = await axios.post(`${this.baseUrl}/tags`, {
+                name: tagName
+            }, {
+                headers: this._getHeaders()
+            });
+
+            console.log(`GHL Tag "${tagName}" created successfully`);
+            return response.data.tag || { name: tagName };
+        } catch (error) {
+            console.error(`Failed to create GHL tag "${tagName}":`, error.response?.data || error.message);
+            throw error;
         }
     }
 

@@ -2162,6 +2162,23 @@ app.get('/api/integrations/ghl/tags', requireAuth, async (req, res) => {
     }
 })
 
+// Create GoHighLevel Tag
+app.post('/api/integrations/ghl/tags', requireAuth, async (req, res) => {
+    const { name } = req.body
+
+    if (!name || !name.trim()) {
+        return res.status(400).json({ error: 'Tag name is required' })
+    }
+
+    try {
+        const tag = await ghlService.createTag(name.trim())
+        res.json({ success: true, tag })
+    } catch (err) {
+        console.error('GHL create tag error:', err)
+        res.status(500).json({ error: 'Failed to create GoHighLevel tag' })
+    }
+})
+
 // Push Leads to Outreach Tool
 app.post('/api/integrations/push', requireAuth, async (req, res) => {
     const { tool, campaignId, leadIds } = req.body
