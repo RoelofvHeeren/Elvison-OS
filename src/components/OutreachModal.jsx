@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { X, Send, Loader2, Plus, Tag, Linkedin, Mail } from 'lucide-react'
+import { X, Send, Loader2, Plus, Tag, Linkedin, Mail, ChevronDown, Check } from 'lucide-react'
 import { fetchAimfoxCampaigns, fetchGhlTags, pushLeadsToOutreach } from '../utils/api'
 
 export default function OutreachModal({ isOpen, onClose, selectedLeadsCount, selectedLeadIds, onComplete }) {
@@ -13,8 +13,9 @@ export default function OutreachModal({ isOpen, onClose, selectedLeadsCount, sel
 
     // GHL tags
     const [ghlTags, setGhlTags] = useState([])
-    const [selectedGhlTag, setSelectedGhlTag] = useState('')
+    const [selectedGhlTags, setSelectedGhlTags] = useState([]) // Array for multi-select
     const [loadingGhl, setLoadingGhl] = useState(false)
+    const [ghlDropdownOpen, setGhlDropdownOpen] = useState(false)
 
     // Create tag
     const [showCreateTag, setShowCreateTag] = useState(false)
@@ -31,11 +32,12 @@ export default function OutreachModal({ isOpen, onClose, selectedLeadsCount, sel
         if (isOpen) {
             setSelectedTools({ aimfox: false, gohighlevel: false })
             setSelectedAimfoxCampaign('')
-            setSelectedGhlTag('')
+            setSelectedGhlTags([])
             setResult(null)
             setError('')
             setShowCreateTag(false)
             setNewTagName('')
+            setGhlDropdownOpen(false)
         }
     }, [isOpen])
 
@@ -63,12 +65,14 @@ export default function OutreachModal({ isOpen, onClose, selectedLeadsCount, sel
 
         const load = async () => {
             setLoadingGhl(true)
+            setError('')
             try {
                 const data = await fetchGhlTags()
-                console.log('GHL tags response:', data)
+                console.log('GHL tags loaded:', data)
                 setGhlTags(data.tags || [])
             } catch (err) {
                 console.error('Failed to load GHL tags:', err)
+                setError('Failed to load GoHighLevel tags')
             } finally {
                 setLoadingGhl(false)
             }
@@ -80,27 +84,43 @@ export default function OutreachModal({ isOpen, onClose, selectedLeadsCount, sel
         setSelectedTools(prev => ({ ...prev, [tool]: !prev[tool] }))
     }
 
+    const toggleGhlTag = (tagName) => {
+        setSelectedGhlTags(prev => {
+            if (prev.includes(tagName)) {
+                return prev.filter(t => t !== tagName)
+            } else {
+                return [...prev, tagName]
+            }
+        })
+    }
+
+    const removeGhlTag = (tagName) => {
+        setSelectedGhlTags(prev => prev.filter(t => t !== tagName))
+    }
+
     const handleCreateTag = async () => {
         if (!newTagName.trim()) return
 
         setCreatingTag(true)
+        setError('')
         try {
             const response = await fetch('/api/integrations/ghl/tags', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
                 body: JSON.stringify({ name: newTagName.trim() })
             })
 
             if (response.ok) {
                 const data = await response.json()
-                // Add to local list and select it
-                const newTag = { id: data.tag?.name || newTagName.trim(), name: data.tag?.name || newTagName.trim() }
+                const newTag = { id: newTagName.trim(), name: newTagName.trim() }
                 setGhlTags(prev => [...prev, newTag])
-                setSelectedGhlTag(newTag.id)
+                setSelectedGhlTags(prev => [...prev, newTag.name])
                 setShowCreateTag(false)
                 setNewTagName('')
             } else {
-                setError('Failed to create tag')
+                const errData = await response.json()
+                setError(errData.error || 'Failed to create tag')
             }
         } catch (err) {
             console.error('Create tag error:', err)
@@ -124,14 +144,16 @@ export default function OutreachModal({ isOpen, onClose, selectedLeadsCount, sel
                 if (response.success) successCount++
             }
 
-            // Push to GHL if selected
-            if (selectedTools.gohighlevel && selectedGhlTag) {
-                const response = await pushLeadsToOutreach('gohighlevel', selectedGhlTag, leadIdsArray)
-                if (response.success) successCount++
+            // Push to GHL for each selected tag
+            if (selectedTools.gohighlevel && selectedGhlTags.length > 0) {
+                for (const tag of selectedGhlTags) {
+                    const response = await pushLeadsToOutreach('gohighlevel', tag, leadIdsArray)
+                    if (response.success) successCount++
+                }
             }
 
             setResult({
-                message: `Started pushing ${leadIdsArray.length} leads to ${successCount} tool(s) in the background.`
+                message: `Started pushing ${leadIdsArray.length} leads to ${successCount} destination(s) in the background.`
             })
 
             if (onComplete) onComplete()
@@ -146,7 +168,7 @@ export default function OutreachModal({ isOpen, onClose, selectedLeadsCount, sel
     const canPush = () => {
         if (selectedLeadsCount === 0) return false
         if (selectedTools.aimfox && !selectedAimfoxCampaign) return false
-        if (selectedTools.gohighlevel && !selectedGhlTag) return false
+        if (selectedTools.gohighlevel && selectedGhlTags.length === 0) return false
         if (!selectedTools.aimfox && !selectedTools.gohighlevel) return false
         return true
     }
@@ -174,8 +196,8 @@ export default function OutreachModal({ isOpen, onClose, selectedLeadsCount, sel
                 <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
                     {result ? (
                         <div className="text-center space-y-4">
-                            <div className="w-16 h-16 bg-blue-500/10 rounded-full flex items-center justify-center mx-auto ring-1 ring-blue-500/30">
-                                <Loader2 className="w-8 h-8 text-blue-400 animate-spin" />
+                            <div className="w-16 h-16 bg-teal-500/10 rounded-full flex items-center justify-center mx-auto ring-1 ring-teal-500/30">
+                                <Check className="w-8 h-8 text-teal-400" />
                             </div>
                             <div>
                                 <h4 className="text-xl font-bold text-white">Transfer Started</h4>
@@ -191,7 +213,7 @@ export default function OutreachModal({ isOpen, onClose, selectedLeadsCount, sel
                     ) : (
                         <div className="space-y-5">
                             <p className="text-sm text-gray-400">
-                                Push <strong className="text-white">{selectedLeadsCount}</strong> lead{selectedLeadsCount !== 1 ? 's' : ''} to outreach tools. Select one or both destinations.
+                                Push <strong className="text-white">{selectedLeadsCount}</strong> lead{selectedLeadsCount !== 1 ? 's' : ''} to outreach tools.
                             </p>
 
                             {/* Tool Selection - Multi-select */}
@@ -235,24 +257,16 @@ export default function OutreachModal({ isOpen, onClose, selectedLeadsCount, sel
                                             Loading campaigns...
                                         </div>
                                     ) : (
-                                        <div className="flex flex-wrap gap-2">
-                                            {aimfoxCampaigns.length === 0 ? (
-                                                <p className="text-xs text-gray-500">No campaigns found. Create one in Aimfox first.</p>
-                                            ) : (
-                                                aimfoxCampaigns.map(c => (
-                                                    <button
-                                                        key={c.id}
-                                                        onClick={() => setSelectedAimfoxCampaign(c.id)}
-                                                        className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${selectedAimfoxCampaign === c.id
-                                                            ? 'bg-blue-500/20 text-blue-400 border border-blue-500/50'
-                                                            : 'bg-white/5 text-gray-300 border border-white/10 hover:bg-white/10'
-                                                            }`}
-                                                    >
-                                                        {c.name}
-                                                    </button>
-                                                ))
-                                            )}
-                                        </div>
+                                        <select
+                                            value={selectedAimfoxCampaign}
+                                            onChange={(e) => setSelectedAimfoxCampaign(e.target.value)}
+                                            className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-teal-500/50"
+                                        >
+                                            <option value="">Select a campaign...</option>
+                                            {aimfoxCampaigns.map(c => (
+                                                <option key={c.id} value={c.id}>{c.name}</option>
+                                            ))}
+                                        </select>
                                     )}
                                 </div>
                             )}
@@ -262,60 +276,110 @@ export default function OutreachModal({ isOpen, onClose, selectedLeadsCount, sel
                                 <div className="space-y-3 animate-in fade-in slide-in-from-top-2">
                                     <label className="text-xs font-bold uppercase tracking-wider text-gray-500 flex items-center gap-2">
                                         <Tag className="w-3 h-3" />
-                                        GoHighLevel Tag
+                                        GoHighLevel Tags
                                     </label>
+
+                                    {/* Selected Tags as Pills */}
+                                    {selectedGhlTags.length > 0 && (
+                                        <div className="flex flex-wrap gap-2 mb-2">
+                                            {selectedGhlTags.map(tag => (
+                                                <span
+                                                    key={tag}
+                                                    className="inline-flex items-center gap-1 px-3 py-1.5 bg-indigo-500/20 text-indigo-400 text-sm font-medium rounded-full border border-indigo-500/30"
+                                                >
+                                                    {tag}
+                                                    <button
+                                                        onClick={() => removeGhlTag(tag)}
+                                                        className="ml-1 hover:text-white transition-colors"
+                                                    >
+                                                        <X className="w-3 h-3" />
+                                                    </button>
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
+
                                     {loadingGhl ? (
                                         <div className="flex items-center gap-2 text-sm text-gray-400 py-3">
                                             <Loader2 className="w-4 h-4 animate-spin" />
-                                            Loading tags...
+                                            Loading tags from GoHighLevel...
                                         </div>
                                     ) : (
-                                        <div className="flex flex-wrap gap-2">
-                                            {ghlTags.map(t => (
-                                                <button
-                                                    key={t.id}
-                                                    onClick={() => setSelectedGhlTag(t.id)}
-                                                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${selectedGhlTag === t.id
-                                                        ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/50'
-                                                        : 'bg-white/5 text-gray-300 border border-white/10 hover:bg-white/10'
-                                                        }`}
-                                                >
-                                                    {t.name}
-                                                </button>
-                                            ))}
+                                        <div className="relative">
+                                            {/* Dropdown Button */}
+                                            <button
+                                                onClick={() => setGhlDropdownOpen(!ghlDropdownOpen)}
+                                                className="w-full flex items-center justify-between bg-black/30 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white hover:border-white/20 transition-colors"
+                                            >
+                                                <span className="text-gray-400">
+                                                    {selectedGhlTags.length > 0
+                                                        ? `${selectedGhlTags.length} tag(s) selected`
+                                                        : 'Select tags...'}
+                                                </span>
+                                                <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${ghlDropdownOpen ? 'rotate-180' : ''}`} />
+                                            </button>
 
-                                            {/* Create New Tag Button */}
-                                            {!showCreateTag ? (
-                                                <button
-                                                    onClick={() => setShowCreateTag(true)}
-                                                    className="px-3 py-2 rounded-lg text-sm font-medium bg-teal-500/10 text-teal-400 border border-dashed border-teal-500/30 hover:bg-teal-500/20 transition-all flex items-center gap-1"
-                                                >
-                                                    <Plus className="w-3 h-3" />
-                                                    Create Tag
-                                                </button>
-                                            ) : (
-                                                <div className="flex items-center gap-2 w-full mt-2">
-                                                    <input
-                                                        type="text"
-                                                        value={newTagName}
-                                                        onChange={(e) => setNewTagName(e.target.value)}
-                                                        placeholder="Enter tag name..."
-                                                        className="flex-1 px-3 py-2 text-sm bg-black/30 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-teal-500/50"
-                                                        autoFocus
-                                                    />
-                                                    <button
-                                                        onClick={handleCreateTag}
-                                                        disabled={creatingTag || !newTagName.trim()}
-                                                        className="px-3 py-2 text-sm font-medium bg-teal-500 text-black rounded-lg hover:bg-teal-400 disabled:opacity-50 transition-all"
-                                                    >
-                                                        {creatingTag ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Add'}
-                                                    </button>
-                                                    <button
-                                                        onClick={() => { setShowCreateTag(false); setNewTagName('') }}
-                                                        className="px-2 py-2 text-gray-400 hover:text-white transition-colors"
-                                                    >
-                                                        <X className="w-4 h-4" />
-                                                    </button>
+                                            {/* Dropdown Menu */}
+                                            {ghlDropdownOpen && (
+                                                <div className="absolute z-10 w-full mt-2 bg-[#1a1d21] border border-white/10 rounded-xl shadow-xl max-h-60 overflow-y-auto">
+                                                    {ghlTags.length === 0 ? (
+                                                        <div className="px-4 py-3 text-sm text-gray-500">
+                                                            No tags found in GoHighLevel
+                                                        </div>
+                                                    ) : (
+                                                        ghlTags.map(tag => (
+                                                            <button
+                                                                key={tag.id}
+                                                                onClick={() => toggleGhlTag(tag.name)}
+                                                                className={`w-full flex items-center justify-between px-4 py-2.5 text-sm hover:bg-white/5 transition-colors ${selectedGhlTags.includes(tag.name) ? 'bg-indigo-500/10 text-indigo-400' : 'text-gray-300'
+                                                                    }`}
+                                                            >
+                                                                <span>{tag.name}</span>
+                                                                {selectedGhlTags.includes(tag.name) && (
+                                                                    <Check className="w-4 h-4 text-indigo-400" />
+                                                                )}
+                                                            </button>
+                                                        ))
+                                                    )}
+
+                                                    {/* Create New Tag Option */}
+                                                    <div className="border-t border-white/10">
+                                                        {!showCreateTag ? (
+                                                            <button
+                                                                onClick={() => setShowCreateTag(true)}
+                                                                className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-teal-400 hover:bg-teal-500/10 transition-colors"
+                                                            >
+                                                                <Plus className="w-4 h-4" />
+                                                                Create new tag
+                                                            </button>
+                                                        ) : (
+                                                            <div className="p-3 space-y-2">
+                                                                <input
+                                                                    type="text"
+                                                                    value={newTagName}
+                                                                    onChange={(e) => setNewTagName(e.target.value)}
+                                                                    placeholder="Enter tag name..."
+                                                                    className="w-full px-3 py-2 text-sm bg-black/30 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-teal-500/50"
+                                                                    autoFocus
+                                                                />
+                                                                <div className="flex gap-2">
+                                                                    <button
+                                                                        onClick={handleCreateTag}
+                                                                        disabled={creatingTag || !newTagName.trim()}
+                                                                        className="flex-1 px-3 py-1.5 text-sm font-medium bg-teal-500 text-black rounded-lg hover:bg-teal-400 disabled:opacity-50 transition-all"
+                                                                    >
+                                                                        {creatingTag ? 'Creating...' : 'Create'}
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => { setShowCreateTag(false); setNewTagName('') }}
+                                                                        className="px-3 py-1.5 text-sm text-gray-400 hover:text-white transition-colors"
+                                                                    >
+                                                                        Cancel
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             )}
                                         </div>
