@@ -2162,6 +2162,30 @@ app.get('/api/integrations/ghl/tags', requireAuth, async (req, res) => {
     }
 })
 
+// DEBUG: Test GHL Connection (Public)
+app.get('/api/test-ghl', async (req, res) => {
+    try {
+        const tags = await ghlService.listTags();
+        res.json({
+            success: true,
+            tags: tags.slice(0, 3),
+            count: tags.length,
+            debug: {
+                hasKey: !!process.env.GHL_API_KEY,
+                locationId: process.env.GHL_LOCATION_ID || 'fallback'
+            }
+        });
+    } catch (err) {
+        res.status(500).json({
+            error: err.message,
+            debug: {
+                hasKey: !!process.env.GHL_API_KEY,
+                locationId: process.env.GHL_LOCATION_ID || 'fallback'
+            }
+        });
+    }
+});
+
 // Create GoHighLevel Tag
 app.post('/api/integrations/ghl/tags', requireAuth, async (req, res) => {
     const { name } = req.body
