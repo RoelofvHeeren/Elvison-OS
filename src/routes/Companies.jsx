@@ -342,6 +342,14 @@ function Companies() {
 
                                 {filters.icpId && (
                                     <div className="flex items-center gap-4">
+                                        <button
+                                            onClick={() => setCleaning(!cleaning && true)} // Hack to trigger modal if need be, but better separate
+                                            className="px-4 py-2 bg-white/5 border border-white/10 hover:bg-white/10 text-gray-300 rounded-lg text-xs font-bold uppercase tracking-wider transition-all"
+                                            onClick={() => window.document.getElementById('rules_modal').showModal()}
+                                        >
+                                            View Scoring Rules
+                                        </button>
+
                                         {cleaning && cleaningProgress && (
                                             <div className="text-xs text-gray-400 font-mono">
                                                 <span className="text-white font-bold">{cleaningProgress.processed}</span>/{cleaningProgress.total}
@@ -547,6 +555,106 @@ function Companies() {
                     </div>
                 )}
             </div>
+
+            <dialog id="rules_modal" className="modal bg-[#0A0A0A] border border-white/10 rounded-2xl p-0 backdrop-blur-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden text-gray-200">
+                <div className="flex flex-col h-full bg-[#111]">
+                    <div className="flex items-center justify-between p-6 border-b border-white/5 bg-[#0f0f0f]">
+                        <h3 className="text-xl font-serif font-bold text-white">Scoring & Qualification Strategy</h3>
+                        <button
+                            onClick={() => window.document.getElementById('rules_modal').close()}
+                            className="p-2 hover:bg-white/5 rounded-lg transition-colors text-gray-400 hover:text-white"
+                        >
+                            ✕
+                        </button>
+                    </div>
+
+                    <div className="p-8 overflow-y-auto space-y-8">
+                        {/* Family Office */}
+                        <div className="space-y-4">
+                            <div className="flex items-center gap-3 mb-2">
+                                <div className="p-2 bg-teal-500/10 rounded-lg border border-teal-500/20">
+                                    <Building2 className="w-5 h-5 text-teal-400" />
+                                </div>
+                                <h4 className="text-lg font-bold text-white">Strategy 1: Family Offices</h4>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 bg-white/[0.02] border border-white/5 rounded-xl">
+                                <div>
+                                    <h5 className="text-xs uppercase tracking-widest text-gray-500 font-bold mb-3">Target Profile</h5>
+                                    <ul className="space-y-2 text-sm text-gray-300 list-disc list-inside marker:text-teal-500">
+                                        <li><strong className="text-white">Single Family Offices (SFO)</strong> managing private wealth.</li>
+                                        <li><strong className="text-white">Multi-Family Offices (MFO)</strong> with direct investment mandates.</li>
+                                        <li>Private Wealth firms that actively <strong className="text-teal-400">INVEST CAPITAL</strong>.</li>
+                                    </ul>
+                                </div>
+                                <div>
+                                    <h5 className="text-xs uppercase tracking-widest text-gray-500 font-bold mb-3">Scoring Logic</h5>
+                                    <div className="space-y-2 text-sm">
+                                        <div className="flex gap-3">
+                                            <span className="font-mono font-bold text-green-400">8-10</span>
+                                            <span>Explicit SFO/MFO with direct Real Estate/PE arm.</span>
+                                        </div>
+                                        <div className="flex gap-3">
+                                            <span className="font-mono font-bold text-blue-400">6-7</span>
+                                            <span>Private Wealth/Advisory firms that imply direct deals or discretion. (Kept for review)</span>
+                                        </div>
+                                        <div className="flex gap-3">
+                                            <span className="font-mono font-bold text-rose-400">1-5</span>
+                                            <span className="text-gray-400">Retail advisors, pure brokers, tenants (Disqualified).</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Investment Firms */}
+                        <div className="space-y-4">
+                            <div className="flex items-center gap-3 mb-2">
+                                <div className="p-2 bg-purple-500/10 rounded-lg border border-purple-500/20">
+                                    <Users className="w-5 h-5 text-purple-400" />
+                                </div>
+                                <h4 className="text-lg font-bold text-white">Strategy 2: Investment Firms</h4>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 bg-white/[0.02] border border-white/5 rounded-xl">
+                                <div>
+                                    <h5 className="text-xs uppercase tracking-widest text-gray-500 font-bold mb-3">Target Profile</h5>
+                                    <ul className="space-y-2 text-sm text-gray-300 list-disc list-inside marker:text-purple-500">
+                                        <li><strong className="text-white">Private Equity Real Estate</strong> firms.</li>
+                                        <li><strong className="text-white">REITs</strong> & Pension Funds.</li>
+                                        <li>Asset Managers with <strong className="text-purple-400">DIRECT</strong> investment vehicles.</li>
+                                        <li>Holdings/Group companies with RE assets.</li>
+                                    </ul>
+                                </div>
+                                <div>
+                                    <h5 className="text-xs uppercase tracking-widest text-gray-500 font-bold mb-3">Scoring Logic</h5>
+                                    <div className="space-y-2 text-sm">
+                                        <div className="flex gap-3">
+                                            <span className="font-mono font-bold text-green-400">8-10</span>
+                                            <span>Dedicated REPE, REIT, or Institutional Investor.</span>
+                                        </div>
+                                        <div className="flex gap-3">
+                                            <span className="font-mono font-bold text-blue-400">6-7</span>
+                                            <span>Generalist PE, Holdings Co, multi-strategy firms. (Kept for review)</span>
+                                        </div>
+                                        <div className="flex gap-3">
+                                            <span className="font-mono font-bold text-rose-400">1-5</span>
+                                            <span className="text-gray-400">Pure Service Providers (Law/Tax), Brokers, Debt-only Lenders.</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="p-6 border-t border-white/5 bg-[#0f0f0f] text-right">
+                        <button
+                            onClick={() => window.document.getElementById('rules_modal').close()}
+                            className="px-6 py-2 bg-white text-black font-bold uppercase tracking-wider text-xs rounded-lg hover:bg-gray-200 transition-colors"
+                        >
+                            Close
+                        </button>
+                    </div>
+                </div>
+            </dialog>
         </div>
     )
 }
