@@ -1866,6 +1866,136 @@ function formatAgentName(id) {
     return id.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
 }
 
+// List GoHighLevel Tags
+app.get('/api/integrations/ghl/tags', requireAuth, async (req, res) => {
+    try {
+        const tags = await ghlService.listTags()
+        res.json({ tags })
+    } catch (err) {
+        console.error('GHL tags error:', err)
+        res.status(500).json({ error: 'Failed to fetch GoHighLevel tags' })
+    }
+})
+
+// DEBUG: Test GHL Connection (Public)
+app.get('/api/test-ghl', async (req, res) => {
+    try {
+        // Direct call to see headers and response
+        const axios = (await import('axios')).default;
+        const key = process.env.GHL_API_KEY;
+        const locationId = process.env.GHL_LOCATION_ID || '5tJd1yCE13B3wwdy9qvl';
+
+        console.log('Testing GHL with key length:', key?.length);
+
+        const response = await axios.get(
+            `https://services.leadconnectorhq.com/locations/${locationId}/tags`,
+            {
+                headers: {
+                    'Authorization': `Bearer ${key?.trim()}`,
+                    'Content-Type': 'application/json',
+                    'Version': '2021-07-28'
+                }
+            }
+        );
+
+        res.json({
+            success: true,
+            tags: response.data.tags?.slice(0, 3),
+            total: response.data.tags?.length,
+            debug: {
+                headers: response.config.headers['Authorization'] ? 'Bearer [HIDDEN]' : 'Missing',
+                url: response.config.url
+            }
+        });
+    } catch (err) {
+        res.status(500).json({
+            error: err.message,
+            status: err.response?.status,
+            data: err.response?.data,
+            debug: {
+                hasKey: !!process.env.GHL_API_KEY,
+                locationId: process.env.GHL_LOCATION_ID
+            }
+        });
+    }
+});
+
+// Create GoHighLevel Tag
+app.post('/api/integrations/ghl/tags', requireAuth, async (req, res) => {
+    const { name } = req.body
+
+    if (!name || !name.trim()) {
+        return res.status(400).json({ error: 'Tag name is required' })
+    }
+
+    try {
+        const tag = await ghlService.createTag(name.trim())
+        res.json({ success: true, tag })
+    } catch (err) {
+        console.error('GHL create tag error:', err)
+        res.status(500).json({ error: 'Failed to create GoHighLevel tag' })
+    }
+})
+
+// Push Leads to Outreach Tool
+app.post('/api/integrations/push', requireAuth, async (req, res) => {
+    const { tool, campaignId, leadIds } = req.body
+
+    if (!tool || !campaignId || !Array.isArray(leadIds) || leadIds.length === 0) {
+        return res.status(400).json({ error: 'Missing required fields' })
+    }
+
+    try {
+        // 1. Fetch Leads from DB
+        const { rows: leads } = await query('SELECT * FROM leads WHERE id = ANY($1)', [leadIds])
+
+        if (leads.length === 0) {
+            return res.status(404).json({ error: 'No matching leads found' })
+        }
+
+        // 2. Respond immediately to prevent timeouts
+        res.json({
+            success: true,
+            status: 'queued',
+            count: leads.length,
+            message: `Started pushing ${leads.length} leads to ${tool} in the background.`
+        })
+
+            // 3. Process in Background
+            ; (async () => {
+                console.log(`[Outreach] Background push started for ${leads.length} leads to ${tool}`);
+                const results = { success: [], failed: [] };
+
+                for (const lead of leads) {
+                    try {
+                        if (tool === 'aimfox') {
+                            await aimfoxService.addLeadToCampaign(campaignId, lead)
+                        } else if (tool === 'gohighlevel') {
+                            // campaignId is actually the tag name for GHL
+                            await ghlService.createContact(lead, null, campaignId)
+                        }
+
+                        // Update leads status locally
+                        await query("UPDATE leads SET outreach_status = 'pushed', updated_at = NOW() WHERE id = $1", [lead.id])
+                        results.success.push(lead.id)
+
+                    } catch (err) {
+                        console.error(`Failed to push lead ${lead.id} to ${tool}:`, err.message)
+                        results.failed.push({ id: lead.id, error: err.message })
+                        // Optional: Update status to 'failed_push'
+                        await query("UPDATE leads SET outreach_status = 'failed_push', updated_at = NOW() WHERE id = $1", [lead.id])
+                    }
+                }
+                console.log(`[Outreach] Background push complete. Success: ${results.success.length}, Failed: ${results.failed.length}`);
+            })().catch(err => console.error('[Outreach] Background processing fatal error:', err));
+
+    } catch (err) {
+        console.error('Push integration error:', err)
+        // Only redundant if response already sent, but safe here as we wait for SELECT
+        if (!res.headersSent) res.status(500).json({ error: 'Integration push failed' })
+    }
+})
+
 // --- Catch-All for Frontend ---
 // Express 5 requires regex for global wildcard since '*' string is reserved
 app.get(/.*/, (req, res) => {
