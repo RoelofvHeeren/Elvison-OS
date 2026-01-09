@@ -99,7 +99,7 @@ function Companies() {
             setResearchStep('result');
 
             // Refresh company data to show updated profile
-            await fetchCompanies();
+            await loadCompanies();
         } catch (e) {
             console.error(e);
             setResearchResult("Error during analysis: " + e.message);
@@ -120,7 +120,7 @@ function Companies() {
             const data = await response.json();
             console.log('✅ Outreach regenerated:', data);
             alert('Outreach messages regenerated successfully!');
-            await fetchCompanies(); // Refresh to show updated messages
+            await loadCompanies(); // Refresh to show updated messages
         } catch (e) {
             console.error('Outreach regeneration failed:', e);
             alert('Failed to regenerate outreach: ' + e.message);
