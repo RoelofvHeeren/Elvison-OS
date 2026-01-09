@@ -205,7 +205,7 @@ class GoHighLevelService {
             console.log('[GHL] Creating contact payload:', JSON.stringify(payload, null, 2));
 
             const response = await axios.post(
-                `${this.baseUrl}/locations/${this.locationId}/contacts`,
+                `${this.baseUrl}/contacts`,
                 payload,
                 { headers: this._getHeaders() }
             );

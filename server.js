@@ -2412,7 +2412,15 @@ app.post('/api/integrations/push', requireAuth, async (req, res) => {
     }
 })
 // Start Server
-initDB().then(() => {
+initDB().then(async () => {
+    // Schema Migrations
+    try {
+        await query("ALTER TABLE leads ADD COLUMN IF NOT EXISTS outreach_status VARCHAR(50) DEFAULT 'pending';");
+        console.log("✅ Schema migration: outreach_status column verified.");
+    } catch (err) {
+        console.error("Values migration warning:", err.message);
+    }
+
     app.listen(port, () => {
         console.log(`Server running on port ${port}`)
         console.log("✅ SERVER.JS - LOG PERSISTENCE V2 & CLAUDE FIX ACTIVE");
