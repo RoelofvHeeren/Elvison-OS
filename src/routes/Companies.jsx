@@ -10,6 +10,7 @@ function Companies() {
     const [filters, setFilters] = useState({ icpId: '' })
     const [cleaning, setCleaning] = useState(false)
     const [cleaningProgress, setCleaningProgress] = useState(null)
+    const [searchQuery, setSearchQuery] = useState('')
 
     // Research State
     const [researchModalOpen, setResearchModalOpen] = useState(false);
@@ -18,23 +19,57 @@ function Companies() {
     const [researchResult, setResearchResult] = useState(null);
     const [isResearching, setIsResearching] = useState(false);
 
+    // New Multi-Step State
+    const [researchStep, setResearchStep] = useState('input'); // 'input', 'scanning', 'selecting', 'analyzing', 'result'
+    const [foundLinks, setFoundLinks] = useState([]);
+    const [selectedLinks, setSelectedLinks] = useState([]);
+
     const { icps, fetchIcps } = useIcp()
 
     const openResearchModal = (company) => {
         setResearchTarget(company);
         setResearchResult(null);
+        setResearchStep('input');
+        setFoundLinks([]);
+        setSelectedLinks([]);
         setResearchModalOpen(true);
     };
 
-    const handleResearch = async () => {
+    const handleScan = async () => {
         if (!researchTarget?.website) return;
-        setIsResearching(true);
+        setResearchStep('scanning');
+        try {
+            const response = await fetch('/api/companies/research/scan', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    url: researchTarget.website,
+                    topic: researchTopic
+                })
+            });
+
+            if (!response.ok) throw new Error(await response.text());
+
+            const data = await response.json();
+            setFoundLinks(data.links || []);
+            setSelectedLinks(data.links?.map(l => l.url) || []); // Select all by default
+            setResearchStep('selecting');
+        } catch (e) {
+            console.error(e);
+            setResearchResult("Error during scan: " + e.message);
+            setResearchStep('result'); // Fallback to showing error
+        }
+    };
+
+    const handleAnalyze = async () => {
+        if (selectedLinks.length === 0) return;
+        setResearchStep('analyzing');
         try {
             const response = await fetch('/api/companies/research', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    url: researchTarget.website,
+                    urls: selectedLinks,
                     topic: researchTopic
                 })
             });
@@ -45,16 +80,12 @@ function Companies() {
             }
 
             const data = await response.json();
-            if (data.result) {
-                setResearchResult(data.result);
-            } else {
-                setResearchResult("No findings returned or error occurred.");
-            }
+            setResearchResult(data.result || "No findings returned.");
+            setResearchStep('result');
         } catch (e) {
             console.error(e);
-            setResearchResult("Error during research: " + e.message);
-        } finally {
-            setIsResearching(false);
+            setResearchResult("Error during analysis: " + e.message);
+            setResearchStep('result');
         }
     };
 
@@ -396,440 +427,516 @@ function Companies() {
                                 Filter by ICP
                             </label>
                             <div className="flex items-center gap-3">
-                                <select
-                                    value={filters.icpId}
-                                    onChange={(e) => setFilters({ icpId: e.target.value })}
-                                    className="w-full md:w-64 bg-black/20 border border-white/10 rounded-lg px-4 py-2 text-white text-sm focus:outline-none focus:border-[#139187] focus:ring-2 focus:ring-[#139187]/20 transition-all"
-                                >
-                                    <option value="">All ICPs</option>
-                                    {icps.map(icp => (
-                                        <option key={icp.id} value={icp.id}>{icp.name}</option>
-                                    ))}
-                                </select>
+                                <div className="flex flex-col md:flex-row gap-4 mb-6">
+                                    {/* Search Input */}
+                                    <div className="relative flex-1 group min-w-[300px]">
+                                        <div className="absolute inset-0 bg-gradient-to-r from-teal-500/10 to-blue-500/10 rounded-xl blur opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                                        <div className="relative bg-white/5 backdrop-blur-xl border border-white/10 rounded-xl flex items-center p-3 transition-colors hover:bg-white/[0.07] focus-within:bg-white/[0.09] focus-within:border-teal-500/30">
+                                            <Search className="w-4 h-4 text-gray-400 mr-3" />
+                                            <input
+                                                type="text"
+                                                placeholder="Search companies..."
+                                                value={searchQuery}
+                                                onChange={(e) => setSearchQuery(e.target.value)}
+                                                className="bg-transparent border-none outline-none text-white text-sm w-full placeholder-gray-500"
+                                            />
+                                        </div>
+                                    </div>
 
-                                {filters.icpId && (
-                                    <div className="flex items-center gap-4">
-                                        <button
-                                            className="px-4 py-2 bg-white/5 border border-white/10 hover:bg-white/10 text-gray-300 rounded-lg text-xs font-bold uppercase tracking-wider transition-all"
-                                            onClick={() => window.document.getElementById('rules_modal').showModal()}
-                                        >
-                                            View Scoring Rules
-                                        </button>
+                                    <select
+                                        value={filters.icpId}
+                                        onChange={(e) => setFilters({ icpId: e.target.value })}
+                                        className="w-full md:w-64 bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition-all appearance-none"
+                                    >
+                                        <option value="">All ICPs</option>
+                                        {icps.map(icp => (
+                                            <option key={icp.id} value={icp.id}>{icp.name}</option>
+                                        ))}
+                                    </select>
 
-                                        {cleaning && cleaningProgress && (
-                                            <div className="text-xs text-gray-400 font-mono">
-                                                <span className="text-white font-bold">{cleaningProgress.processed}</span>/{cleaningProgress.total}
-                                                <span className="ml-2 text-green-400">Kept: {cleaningProgress.kept}</span>
-                                                <span className="ml-2 text-rose-400">Drop: {cleaningProgress.disqualified}</span>
-                                            </div>
-                                        )}
-                                        <button
-                                            onClick={() => handleCleanup(filters.icpId)}
-                                            disabled={cleaning}
-                                            className={`
+                                    {filters.icpId && (
+                                        <div className="flex items-center gap-4">
+                                            <button
+                                                className="px-4 py-2 bg-white/5 border border-white/10 hover:bg-white/10 text-gray-300 rounded-lg text-xs font-bold uppercase tracking-wider transition-all"
+                                                onClick={() => window.document.getElementById('rules_modal').showModal()}
+                                            >
+                                                View Scoring Rules
+                                            </button>
+
+                                            {cleaning && cleaningProgress && (
+                                                <div className="text-xs text-gray-400 font-mono">
+                                                    <span className="text-white font-bold">{cleaningProgress.processed}</span>/{cleaningProgress.total}
+                                                    <span className="ml-2 text-green-400">Kept: {cleaningProgress.kept}</span>
+                                                    <span className="ml-2 text-rose-400">Drop: {cleaningProgress.disqualified}</span>
+                                                </div>
+                                            )}
+                                            <button
+                                                onClick={() => handleCleanup(filters.icpId)}
+                                                disabled={cleaning}
+                                                className={`
                                                 px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all
                                                 ${cleaning
-                                                    ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
-                                                    : 'bg-rose-500/10 text-rose-400 border border-rose-500/20 hover:bg-rose-500/20'
-                                                }
+                                                        ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
+                                                        : 'bg-rose-500/10 text-rose-400 border border-rose-500/20 hover:bg-rose-500/20'
+                                                    }
                                             `}
-                                        >
-                                            <Trash2 className={`w-4 h-4 ${cleaning ? 'animate-spin' : ''}`} />
-                                            {cleaning ? 'Cleaning...' : 'Cleanup Strategy'}
-                                        </button>
-                                    </div>
-                                )}
+                                            >
+                                                <Trash2 className={`w-4 h-4 ${cleaning ? 'animate-spin' : ''}`} />
+                                                {cleaning ? 'Cleaning...' : 'Cleanup Strategy'}
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
+                    )}
+                        </div>
+
+                {/* Companies List */}
+                    {loading ? (
+                        <div className="text-center py-20">
+                            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-teal-500 mx-auto mb-4"></div>
+                            <p className="text-gray-400">Loading companies...</p>
+                        </div>
+                    ) : (
+                        <div className="space-y-4">
+                            {companies
+                                .filter(company =>
+                                    !searchQuery ||
+                                    company.company_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                                    company.website?.toLowerCase().includes(searchQuery.toLowerCase())
+                                )
+                                .map((company) => (
+                                    <div key={company.name} className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl overflow-hidden">
+                                        {/* Company Header */}
+                                        <div
+                                            className="p-6 cursor-pointer hover:bg-white/5 transition-colors flex items-center justify-between"
+                                            onClick={() => toggleCompanyExpand(company.name)}
+                                        >
+                                            <div className="flex items-center gap-4 flex-1">
+                                                <div className="flex-shrink-0">
+                                                    <div className="w-14 h-14 rounded-full bg-[#139187]/10 border border-[#139187]/20 flex items-center justify-center">
+                                                        <Building2 className="w-7 h-7 text-[#139187]" />
+                                                    </div>
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <h3 className="font-semibold text-white text-lg">{company.name}</h3>
+                                                    {company.website && (
+                                                        <a
+                                                            href={company.website.startsWith('http') ? company.website : `https://${company.website}`}
+                                                            target="_blank"
+                                                            rel="noreferrer"
+                                                            onClick={(e) => e.stopPropagation()}
+                                                            className="text-sm text-teal-400 hover:underline"
+                                                        >
+                                                            {company.website}
+                                                        </a>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            <div className="flex items-center gap-4">
+                                                {company.fitScore !== 'N/A' && (
+                                                    <div className="flex flex-col items-end gap-1">
+                                                        <span className="text-[10px] uppercase tracking-widest font-black text-gray-500">Fit Score</span>
+                                                        <span className={`px-4 py-1.5 rounded-full text-xs font-black border-2 shadow-lg ${parseInt(company.fitScore) >= 8
+                                                            ? 'bg-green-500/20 text-green-400 border-green-500/30'
+                                                            : parseInt(company.fitScore) >= 6
+                                                                ? 'bg-blue-500/20 text-blue-400 border-blue-500/30'
+                                                                : 'bg-white/10 text-gray-400 border-white/10'
+                                                            }`}>
+                                                            {company.fitScore} / 10
+                                                        </span>
+                                                    </div>
+                                                )}
+                                                <div className="h-10 w-[1px] bg-white/10 mx-2"></div>
+                                                <div className="text-right">
+                                                    <p className="text-xl font-black text-white">{company.leadCount}</p>
+                                                    <p className="text-[10px] uppercase tracking-wider font-bold text-gray-500">Decision Makers</p>
+                                                </div>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation()
+                                                        handleDeleteCompany(company.name)
+                                                    }}
+                                                    className="ml-4 p-3 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-xl transition-all border border-rose-500/20 group/del"
+                                                    title="Delete company"
+                                                >
+                                                    <Trash2 className="h-5 w-5 group-hover/del:scale-110 transition-transform" />
+                                                </button>
+                                                <div className="ml-2">
+                                                    {expandedCompany === company.name ? (
+                                                        <ChevronUp className="h-6 w-6 text-teal-400" />
+                                                    ) : (
+                                                        <ChevronDown className="h-6 w-6 text-gray-600" />
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Expanded Content */}
+                                        {expandedCompany === company.name && (
+                                            <div className="border-t border-white/[0.05] p-10 bg-gradient-to-b from-black/60 to-black/40">
+                                                {/* Company Report Section */}
+                                                <div className="mb-14">
+                                                    <div className="flex items-center gap-4 mb-10">
+                                                        <div className="h-[1px] flex-1 bg-gradient-to-r from-transparent via-teal-500/20 to-teal-500/20"></div>
+                                                        <span className="text-[11px] uppercase tracking-[0.4em] font-black text-teal-500/50">Market Intelligence Report</span>
+                                                        <div className="h-[1px] flex-1 bg-gradient-to-r from-teal-500/20 via-teal-500/20 to-transparent"></div>
+
+                                                        <button
+                                                            onClick={() => openResearchModal(company)}
+                                                            className="flex items-center gap-2 px-3 py-1.5 bg-teal-500/10 hover:bg-teal-500/20 text-teal-400 rounded-lg text-xs font-bold uppercase tracking-wider transition-all border border-teal-500/20"
+                                                        >
+                                                            <Search className="w-3 h-3" />
+                                                            Deep Research
+                                                        </button>
+                                                    </div>
+
+                                                    {company.profile ? (
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                                            {(() => {
+                                                                const sections = parseProfileIntoSections(company.profile);
+                                                                const DISPLAY_ORDER = [
+                                                                    'Summary',
+                                                                    'Investment Strategy',
+                                                                    'Scale & Geographic Focus',
+                                                                    'Portfolio Observations',
+                                                                    'Key Highlights',
+                                                                    'Fit Analysis'
+                                                                ];
+
+                                                                const defaultIcons = {
+                                                                    'Summary': <Building2 className="w-4 h-4 text-teal-400" />,
+                                                                    'Investment Strategy': <Users className="w-4 h-4 text-purple-400" />,
+                                                                    'Scale & Geographic Focus': <Users className="w-4 h-4 text-orange-400" />,
+                                                                    'Portfolio Observations': <Building2 className="w-4 h-4 text-blue-400" />,
+                                                                    'Key Highlights': <ChevronDown className="w-4 h-4 text-yellow-400" />,
+                                                                    'Fit Analysis': <div className="w-4 h-4 rounded-full border-2 border-green-500/50 flex items-center justify-center text-[10px] font-bold text-green-400">✓</div>
+                                                                };
+
+                                                                return DISPLAY_ORDER.map(title => {
+                                                                    if (!sections[title]) return null;
+                                                                    return (
+                                                                        <div key={title} className={title === 'Summary' || title === 'Key Highlights' || title === 'Fit Analysis' ? 'col-span-1 md:col-span-2' : ''}>
+                                                                            {renderReportSection(title, sections[title], defaultIcons[title] || <Building2 className="w-4 h-4 text-teal-400" />)}
+                                                                        </div>
+                                                                    );
+                                                                });
+                                                            })()}
+                                                        </div>
+                                                    ) : (
+                                                        <div className="p-20 text-center bg-white/[0.02] rounded-[2rem] border border-dashed border-white/10 backdrop-blur-sm">
+                                                            <Building2 className="w-12 h-12 text-gray-700 mx-auto mb-4 opacity-20" />
+                                                            <p className="text-gray-500 font-medium tracking-wide">Detailed intelligence report in progress...</p>
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                {/* Contact Decision Makers Section */}
+                                                <div className="space-y-6">
+                                                    <div className="flex items-center gap-4 mb-8">
+                                                        <div className="h-[1px] flex-1 bg-gradient-to-r from-transparent via-purple-500/20 to-purple-500/20"></div>
+                                                        <span className="text-[11px] uppercase tracking-[0.4em] font-black text-purple-500/50">Identified Decision Makers</span>
+                                                        <div className="h-[1px] flex-1 bg-gradient-to-r from-purple-500/20 via-purple-500/20 to-transparent"></div>
+                                                    </div>
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                                        {company.leads.map((lead) => {
+                                                            const initials = lead.personName?.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || '?'
+                                                            return (
+                                                                <div key={lead.id} className="group/lead relative flex flex-col p-6 bg-white/[0.03] backdrop-blur-md border border-white/[0.08] rounded-3xl hover:bg-white/[0.07] hover:border-purple-500/30 transition-all duration-500 shadow-2xl shadow-black/40">
+                                                                    <div className="absolute top-0 right-0 p-6 opacity-10 group-hover/lead:opacity-30 transition-opacity">
+                                                                        <Users className="w-12 h-12 text-purple-400" />
+                                                                    </div>
+
+                                                                    <div className="flex items-start justify-between mb-6">
+                                                                        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-purple-500/20 to-teal-500/20 border border-white/10 flex items-center justify-center group-hover/lead:scale-110 transition-transform duration-500 shadow-lg">
+                                                                            <span className="text-white font-black text-sm tracking-tighter">{initials}</span>
+                                                                        </div>
+                                                                        <div className="flex items-center gap-2">
+                                                                            {lead.linkedinUrl && (
+                                                                                <a
+                                                                                    href={lead.linkedinUrl}
+                                                                                    target="_blank"
+                                                                                    rel="noreferrer"
+                                                                                    className="p-2.5 bg-white/5 rounded-xl text-gray-400 hover:text-white hover:bg-purple-500/30 transition-all border border-white/5 shadow-inner"
+                                                                                >
+                                                                                    <Users className="w-4 h-4" />
+                                                                                </a>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="min-w-0 relative z-10">
+                                                                        <h4 className="font-bold text-white text-lg tracking-tight truncate mb-1">{lead.personName}</h4>
+                                                                        <p className="text-[10px] font-black text-purple-400 uppercase tracking-[0.2em] truncate mb-6">{lead.jobTitle || 'Business Leader'}</p>
+                                                                    </div>
+                                                                    {lead.email && (
+                                                                        <a
+                                                                            href={`mailto:${lead.email}`}
+                                                                            className="w-full py-3.5 bg-white text-black hover:bg-teal-400 hover:text-white rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all duration-300 text-center shadow-xl shadow-black/20"
+                                                                        >
+                                                                            Request Intro
+                                                                        </a>
+                                                                    )}
+                                                                </div>
+                                                            )
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
                         </div>
                     )}
                 </div>
 
-                {/* Companies List */}
-                {loading ? (
-                    <div className="bg-gray-800/50 backdrop-blur-md border border-gray-700/50 rounded-2xl px-6 py-12 text-center">
-                        <p className="text-gray-400">Loading companies...</p>
-                    </div>
-                ) : companies.length === 0 ? (
-                    <div className="bg-gray-800/50 backdrop-blur-md border border-gray-700/50 rounded-2xl px-6 py-12 text-center">
-                        <Building2 className="h-12 w-12 text-gray-600 mx-auto mb-3" />
-                        <p className="text-white font-medium">No companies found</p>
-                        <p className="text-sm text-gray-400 mt-1">Start generating leads to see companies here.</p>
-                    </div>
-                ) : (
-                    <div className="space-y-4">
-                        {companies.map((company) => (
-                            <div key={company.name} className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl overflow-hidden">
-                                {/* Company Header */}
-                                <div
-                                    className="p-6 cursor-pointer hover:bg-white/5 transition-colors flex items-center justify-between"
-                                    onClick={() => toggleCompanyExpand(company.name)}
-                                >
-                                    <div className="flex items-center gap-4 flex-1">
-                                        <div className="flex-shrink-0">
-                                            <div className="w-14 h-14 rounded-full bg-[#139187]/10 border border-[#139187]/20 flex items-center justify-center">
-                                                <Building2 className="w-7 h-7 text-[#139187]" />
-                                            </div>
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            <h3 className="font-semibold text-white text-lg">{company.name}</h3>
-                                            {company.website && (
-                                                <a
-                                                    href={company.website.startsWith('http') ? company.website : `https://${company.website}`}
-                                                    target="_blank"
-                                                    rel="noreferrer"
-                                                    onClick={(e) => e.stopPropagation()}
-                                                    className="text-sm text-teal-400 hover:underline"
-                                                >
-                                                    {company.website}
-                                                </a>
-                                            )}
-                                        </div>
-                                    </div>
+                <dialog id="rules_modal" className="modal bg-[#0A0A0A] border border-white/10 rounded-2xl p-0 backdrop-blur-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden text-gray-200">
+                    <div className="flex flex-col h-full bg-[#111]">
+                        <div className="flex items-center justify-between p-6 border-b border-white/5 bg-[#0f0f0f]">
+                            <h3 className="text-xl font-serif font-bold text-white">Scoring & Qualification Strategy</h3>
+                            <button
+                                onClick={() => window.document.getElementById('rules_modal').close()}
+                                className="p-2 hover:bg-white/5 rounded-lg transition-colors text-gray-400 hover:text-white"
+                            >
+                                ✕
+                            </button>
+                        </div>
 
-                                    <div className="flex items-center gap-4">
-                                        {company.fitScore !== 'N/A' && (
-                                            <div className="flex flex-col items-end gap-1">
-                                                <span className="text-[10px] uppercase tracking-widest font-black text-gray-500">Fit Score</span>
-                                                <span className={`px-4 py-1.5 rounded-full text-xs font-black border-2 shadow-lg ${parseInt(company.fitScore) >= 8
-                                                    ? 'bg-green-500/20 text-green-400 border-green-500/30'
-                                                    : parseInt(company.fitScore) >= 6
-                                                        ? 'bg-blue-500/20 text-blue-400 border-blue-500/30'
-                                                        : 'bg-white/10 text-gray-400 border-white/10'
-                                                    }`}>
-                                                    {company.fitScore} / 10
-                                                </span>
+                        <div className="p-8 overflow-y-auto space-y-8">
+                            {/* Family Office */}
+                            <div className="space-y-4">
+                                <div className="flex items-center gap-3 mb-2">
+                                    <div className="p-2 bg-teal-500/10 rounded-lg border border-teal-500/20">
+                                        <Building2 className="w-5 h-5 text-teal-400" />
+                                    </div>
+                                    <h4 className="text-lg font-bold text-white">Strategy 1: Family Offices</h4>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 bg-white/[0.02] border border-white/5 rounded-xl">
+                                    <div>
+                                        <h5 className="text-xs uppercase tracking-widest text-gray-500 font-bold mb-3">Target Profile</h5>
+                                        <ul className="space-y-2 text-sm text-gray-300 list-disc list-inside marker:text-teal-500">
+                                            <li><strong className="text-white">Single Family Offices (SFO)</strong> managing private wealth.</li>
+                                            <li><strong className="text-white">Multi-Family Offices (MFO)</strong> with direct investment mandates.</li>
+                                            <li>Private Wealth firms that actively <strong className="text-teal-400">INVEST CAPITAL</strong>.</li>
+                                        </ul>
+                                    </div>
+                                    <div>
+                                        <h5 className="text-xs uppercase tracking-widest text-gray-500 font-bold mb-3">Scoring Logic</h5>
+                                        <div className="space-y-2 text-sm">
+                                            <div className="flex gap-3">
+                                                <span className="font-mono font-bold text-green-400">8-10</span>
+                                                <span>Explicit SFO/MFO with direct Real Estate/PE arm.</span>
                                             </div>
-                                        )}
-                                        <div className="h-10 w-[1px] bg-white/10 mx-2"></div>
-                                        <div className="text-right">
-                                            <p className="text-xl font-black text-white">{company.leadCount}</p>
-                                            <p className="text-[10px] uppercase tracking-wider font-bold text-gray-500">Decision Makers</p>
-                                        </div>
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation()
-                                                handleDeleteCompany(company.name)
-                                            }}
-                                            className="ml-4 p-3 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-xl transition-all border border-rose-500/20 group/del"
-                                            title="Delete company"
-                                        >
-                                            <Trash2 className="h-5 w-5 group-hover/del:scale-110 transition-transform" />
-                                        </button>
-                                        <div className="ml-2">
-                                            {expandedCompany === company.name ? (
-                                                <ChevronUp className="h-6 w-6 text-teal-400" />
-                                            ) : (
-                                                <ChevronDown className="h-6 w-6 text-gray-600" />
-                                            )}
+                                            <div className="flex gap-3">
+                                                <span className="font-mono font-bold text-blue-400">6-7</span>
+                                                <span>Private Wealth/Advisory firms that imply direct deals or discretion. (Kept for review)</span>
+                                            </div>
+                                            <div className="flex gap-3">
+                                                <span className="font-mono font-bold text-rose-400">1-5</span>
+                                                <span className="text-gray-400">Retail advisors, pure brokers, tenants (Disqualified).</span>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
-
-                                {/* Expanded Content */}
-                                {expandedCompany === company.name && (
-                                    <div className="border-t border-white/[0.05] p-10 bg-gradient-to-b from-black/60 to-black/40">
-                                        {/* Company Report Section */}
-                                        <div className="mb-14">
-                                            <div className="flex items-center gap-4 mb-10">
-                                                <div className="h-[1px] flex-1 bg-gradient-to-r from-transparent via-teal-500/20 to-teal-500/20"></div>
-                                                <span className="text-[11px] uppercase tracking-[0.4em] font-black text-teal-500/50">Market Intelligence Report</span>
-                                                <div className="h-[1px] flex-1 bg-gradient-to-r from-teal-500/20 via-teal-500/20 to-transparent"></div>
-
-                                                <button
-                                                    onClick={() => openResearchModal(company)}
-                                                    className="flex items-center gap-2 px-3 py-1.5 bg-teal-500/10 hover:bg-teal-500/20 text-teal-400 rounded-lg text-xs font-bold uppercase tracking-wider transition-all border border-teal-500/20"
-                                                >
-                                                    <Search className="w-3 h-3" />
-                                                    Deep Research
-                                                </button>
-                                            </div>
-
-                                            {company.profile ? (
-                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                                                    {(() => {
-                                                        const sections = parseProfileIntoSections(company.profile);
-                                                        const DISPLAY_ORDER = [
-                                                            'Summary',
-                                                            'Investment Strategy',
-                                                            'Scale & Geographic Focus',
-                                                            'Portfolio Observations',
-                                                            'Key Highlights',
-                                                            'Fit Analysis'
-                                                        ];
-
-                                                        const defaultIcons = {
-                                                            'Summary': <Building2 className="w-4 h-4 text-teal-400" />,
-                                                            'Investment Strategy': <Users className="w-4 h-4 text-purple-400" />,
-                                                            'Scale & Geographic Focus': <Users className="w-4 h-4 text-orange-400" />,
-                                                            'Portfolio Observations': <Building2 className="w-4 h-4 text-blue-400" />,
-                                                            'Key Highlights': <ChevronDown className="w-4 h-4 text-yellow-400" />,
-                                                            'Fit Analysis': <div className="w-4 h-4 rounded-full border-2 border-green-500/50 flex items-center justify-center text-[10px] font-bold text-green-400">✓</div>
-                                                        };
-
-                                                        return DISPLAY_ORDER.map(title => {
-                                                            if (!sections[title]) return null;
-                                                            return (
-                                                                <div key={title} className={title === 'Summary' || title === 'Key Highlights' || title === 'Fit Analysis' ? 'col-span-1 md:col-span-2' : ''}>
-                                                                    {renderReportSection(title, sections[title], defaultIcons[title] || <Building2 className="w-4 h-4 text-teal-400" />)}
-                                                                </div>
-                                                            );
-                                                        });
-                                                    })()}
-                                                </div>
-                                            ) : (
-                                                <div className="p-20 text-center bg-white/[0.02] rounded-[2rem] border border-dashed border-white/10 backdrop-blur-sm">
-                                                    <Building2 className="w-12 h-12 text-gray-700 mx-auto mb-4 opacity-20" />
-                                                    <p className="text-gray-500 font-medium tracking-wide">Detailed intelligence report in progress...</p>
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        {/* Contact Decision Makers Section */}
-                                        <div className="space-y-6">
-                                            <div className="flex items-center gap-4 mb-8">
-                                                <div className="h-[1px] flex-1 bg-gradient-to-r from-transparent via-purple-500/20 to-purple-500/20"></div>
-                                                <span className="text-[11px] uppercase tracking-[0.4em] font-black text-purple-500/50">Identified Decision Makers</span>
-                                                <div className="h-[1px] flex-1 bg-gradient-to-r from-purple-500/20 via-purple-500/20 to-transparent"></div>
-                                            </div>
-                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                                {company.leads.map((lead) => {
-                                                    const initials = lead.personName?.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || '?'
-                                                    return (
-                                                        <div key={lead.id} className="group/lead relative flex flex-col p-6 bg-white/[0.03] backdrop-blur-md border border-white/[0.08] rounded-3xl hover:bg-white/[0.07] hover:border-purple-500/30 transition-all duration-500 shadow-2xl shadow-black/40">
-                                                            <div className="absolute top-0 right-0 p-6 opacity-10 group-hover/lead:opacity-30 transition-opacity">
-                                                                <Users className="w-12 h-12 text-purple-400" />
-                                                            </div>
-
-                                                            <div className="flex items-start justify-between mb-6">
-                                                                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-purple-500/20 to-teal-500/20 border border-white/10 flex items-center justify-center group-hover/lead:scale-110 transition-transform duration-500 shadow-lg">
-                                                                    <span className="text-white font-black text-sm tracking-tighter">{initials}</span>
-                                                                </div>
-                                                                <div className="flex items-center gap-2">
-                                                                    {lead.linkedinUrl && (
-                                                                        <a
-                                                                            href={lead.linkedinUrl}
-                                                                            target="_blank"
-                                                                            rel="noreferrer"
-                                                                            className="p-2.5 bg-white/5 rounded-xl text-gray-400 hover:text-white hover:bg-purple-500/30 transition-all border border-white/5 shadow-inner"
-                                                                        >
-                                                                            <Users className="w-4 h-4" />
-                                                                        </a>
-                                                                    )}
-                                                                </div>
-                                                            </div>
-                                                            <div className="min-w-0 relative z-10">
-                                                                <h4 className="font-bold text-white text-lg tracking-tight truncate mb-1">{lead.personName}</h4>
-                                                                <p className="text-[10px] font-black text-purple-400 uppercase tracking-[0.2em] truncate mb-6">{lead.jobTitle || 'Business Leader'}</p>
-                                                            </div>
-                                                            {lead.email && (
-                                                                <a
-                                                                    href={`mailto:${lead.email}`}
-                                                                    className="w-full py-3.5 bg-white text-black hover:bg-teal-400 hover:text-white rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all duration-300 text-center shadow-xl shadow-black/20"
-                                                                >
-                                                                    Request Intro
-                                                                </a>
-                                                            )}
-                                                        </div>
-                                                    )
-                                                })}
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
                             </div>
-                        ))}
-                    </div>
-                )}
-            </div>
 
-            <dialog id="rules_modal" className="modal bg-[#0A0A0A] border border-white/10 rounded-2xl p-0 backdrop-blur-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden text-gray-200">
-                <div className="flex flex-col h-full bg-[#111]">
-                    <div className="flex items-center justify-between p-6 border-b border-white/5 bg-[#0f0f0f]">
-                        <h3 className="text-xl font-serif font-bold text-white">Scoring & Qualification Strategy</h3>
-                        <button
-                            onClick={() => window.document.getElementById('rules_modal').close()}
-                            className="p-2 hover:bg-white/5 rounded-lg transition-colors text-gray-400 hover:text-white"
-                        >
-                            ✕
-                        </button>
-                    </div>
-
-                    <div className="p-8 overflow-y-auto space-y-8">
-                        {/* Family Office */}
-                        <div className="space-y-4">
-                            <div className="flex items-center gap-3 mb-2">
-                                <div className="p-2 bg-teal-500/10 rounded-lg border border-teal-500/20">
-                                    <Building2 className="w-5 h-5 text-teal-400" />
+                            {/* Investment Firms */}
+                            <div className="space-y-4">
+                                <div className="flex items-center gap-3 mb-2">
+                                    <div className="p-2 bg-purple-500/10 rounded-lg border border-purple-500/20">
+                                        <Users className="w-5 h-5 text-purple-400" />
+                                    </div>
+                                    <h4 className="text-lg font-bold text-white">Strategy 2: Investment Firms</h4>
                                 </div>
-                                <h4 className="text-lg font-bold text-white">Strategy 1: Family Offices</h4>
-                            </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 bg-white/[0.02] border border-white/5 rounded-xl">
-                                <div>
-                                    <h5 className="text-xs uppercase tracking-widest text-gray-500 font-bold mb-3">Target Profile</h5>
-                                    <ul className="space-y-2 text-sm text-gray-300 list-disc list-inside marker:text-teal-500">
-                                        <li><strong className="text-white">Single Family Offices (SFO)</strong> managing private wealth.</li>
-                                        <li><strong className="text-white">Multi-Family Offices (MFO)</strong> with direct investment mandates.</li>
-                                        <li>Private Wealth firms that actively <strong className="text-teal-400">INVEST CAPITAL</strong>.</li>
-                                    </ul>
-                                </div>
-                                <div>
-                                    <h5 className="text-xs uppercase tracking-widest text-gray-500 font-bold mb-3">Scoring Logic</h5>
-                                    <div className="space-y-2 text-sm">
-                                        <div className="flex gap-3">
-                                            <span className="font-mono font-bold text-green-400">8-10</span>
-                                            <span>Explicit SFO/MFO with direct Real Estate/PE arm.</span>
-                                        </div>
-                                        <div className="flex gap-3">
-                                            <span className="font-mono font-bold text-blue-400">6-7</span>
-                                            <span>Private Wealth/Advisory firms that imply direct deals or discretion. (Kept for review)</span>
-                                        </div>
-                                        <div className="flex gap-3">
-                                            <span className="font-mono font-bold text-rose-400">1-5</span>
-                                            <span className="text-gray-400">Retail advisors, pure brokers, tenants (Disqualified).</span>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 bg-white/[0.02] border border-white/5 rounded-xl">
+                                    <div>
+                                        <h5 className="text-xs uppercase tracking-widest text-gray-500 font-bold mb-3">Target Profile</h5>
+                                        <ul className="space-y-2 text-sm text-gray-300 list-disc list-inside marker:text-purple-500">
+                                            <li><strong className="text-white">Private Equity Real Estate</strong> firms.</li>
+                                            <li><strong className="text-white">REITs</strong> & Pension Funds.</li>
+                                            <li>Asset Managers with <strong className="text-purple-400">DIRECT</strong> investment vehicles.</li>
+                                            <li>Holdings/Group companies with RE assets.</li>
+                                        </ul>
+                                    </div>
+                                    <div>
+                                        <h5 className="text-xs uppercase tracking-widest text-gray-500 font-bold mb-3">Scoring Logic</h5>
+                                        <div className="space-y-2 text-sm">
+                                            <div className="flex gap-3">
+                                                <span className="font-mono font-bold text-green-400">8-10</span>
+                                                <span>Dedicated REPE, REIT, or Institutional Investor.</span>
+                                            </div>
+                                            <div className="flex gap-3">
+                                                <span className="font-mono font-bold text-blue-400">6-7</span>
+                                                <span>Generalist PE, Holdings Co, multi-strategy firms. (Kept for review)</span>
+                                            </div>
+                                            <div className="flex gap-3">
+                                                <span className="font-mono font-bold text-rose-400">1-5</span>
+                                                <span className="text-gray-400">Pure Service Providers (Law/Tax), Brokers, Debt-only Lenders.</span>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
 
-                        {/* Investment Firms */}
-                        <div className="space-y-4">
-                            <div className="flex items-center gap-3 mb-2">
-                                <div className="p-2 bg-purple-500/10 rounded-lg border border-purple-500/20">
-                                    <Users className="w-5 h-5 text-purple-400" />
-                                </div>
-                                <h4 className="text-lg font-bold text-white">Strategy 2: Investment Firms</h4>
-                            </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 bg-white/[0.02] border border-white/5 rounded-xl">
-                                <div>
-                                    <h5 className="text-xs uppercase tracking-widest text-gray-500 font-bold mb-3">Target Profile</h5>
-                                    <ul className="space-y-2 text-sm text-gray-300 list-disc list-inside marker:text-purple-500">
-                                        <li><strong className="text-white">Private Equity Real Estate</strong> firms.</li>
-                                        <li><strong className="text-white">REITs</strong> & Pension Funds.</li>
-                                        <li>Asset Managers with <strong className="text-purple-400">DIRECT</strong> investment vehicles.</li>
-                                        <li>Holdings/Group companies with RE assets.</li>
-                                    </ul>
-                                </div>
-                                <div>
-                                    <h5 className="text-xs uppercase tracking-widest text-gray-500 font-bold mb-3">Scoring Logic</h5>
-                                    <div className="space-y-2 text-sm">
-                                        <div className="flex gap-3">
-                                            <span className="font-mono font-bold text-green-400">8-10</span>
-                                            <span>Dedicated REPE, REIT, or Institutional Investor.</span>
-                                        </div>
-                                        <div className="flex gap-3">
-                                            <span className="font-mono font-bold text-blue-400">6-7</span>
-                                            <span>Generalist PE, Holdings Co, multi-strategy firms. (Kept for review)</span>
-                                        </div>
-                                        <div className="flex gap-3">
-                                            <span className="font-mono font-bold text-rose-400">1-5</span>
-                                            <span className="text-gray-400">Pure Service Providers (Law/Tax), Brokers, Debt-only Lenders.</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
+                        <div className="p-6 border-t border-white/5 bg-[#0f0f0f] text-right">
+                            <button
+                                onClick={() => window.document.getElementById('rules_modal').close()}
+                                className="px-6 py-2 bg-white text-black font-bold uppercase tracking-wider text-xs rounded-lg hover:bg-gray-200 transition-colors"
+                            >
+                                Close
+                            </button>
                         </div>
                     </div>
+                </dialog>
 
-                    <div className="p-6 border-t border-white/5 bg-[#0f0f0f] text-right">
-                        <button
-                            onClick={() => window.document.getElementById('rules_modal').close()}
-                            className="px-6 py-2 bg-white text-black font-bold uppercase tracking-wider text-xs rounded-lg hover:bg-gray-200 transition-colors"
-                        >
-                            Close
-                        </button>
-                    </div>
-                </div>
-            </dialog>
-
-            {/* Research Modal */}
-            {
-                researchModalOpen && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-                        <div className="bg-[#111] border border-white/10 rounded-2xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl">
-                            <div className="flex items-center justify-between p-6 border-b border-white/5">
-                                <h3 className="text-xl font-serif font-bold text-white flex items-center gap-2">
-                                    <Search className="w-5 h-5 text-teal-400" />
-                                    Deep Research: <span className="text-teal-400">{researchTarget?.name}</span>
-                                </h3>
-                                <button
-                                    onClick={() => setResearchModalOpen(false)}
-                                    className="text-gray-400 hover:text-white transition-colors"
-                                >
-                                    ✕
-                                </button>
-                            </div>
-
-                            <div className="p-6 flex-1 overflow-y-auto space-y-6">
-                                {!researchResult ? (
-                                    <div className="space-y-4">
-                                        <div>
-                                            <label className="block text-xs uppercase tracking-wider font-bold text-gray-500 mb-2">Research Goal</label>
-                                            <textarea
-                                                value={researchTopic}
-                                                onChange={(e) => setResearchTopic(e.target.value)}
-                                                className="w-full bg-black/20 border border-white/10 rounded-xl p-4 text-white focus:outline-none focus:border-teal-500/50 min-h-[100px]"
-                                                placeholder="What specifically do you want to find?"
-                                            />
-                                        </div>
-
-                                        <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 flex items-start gap-3">
-                                            <div className="p-1 bg-blue-500/20 rounded-full mt-0.5">
-                                                <Search className="w-3 h-3 text-blue-400" />
-                                            </div>
-                                            <div className="text-sm text-blue-200">
-                                                <p className="font-bold mb-1">How this works</p>
-                                                <p className="opacity-80">Our AI agent will visit the website ({researchTarget?.website}), scan the homepage for relevant links (e.g. "Portfolio", "Case Studies"), crawl those pages, and synthesize the specific answers you need.</p>
-                                            </div>
-                                        </div>
-
-                                        {isResearching && (
-                                            <div className="text-center py-8">
-                                                <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-teal-500 mb-4"></div>
-                                                <p className="text-teal-400 font-mono text-sm animate-pulse">Scanning site structure & Extracting data...</p>
-                                            </div>
-                                        )}
-                                    </div>
-                                ) : (
-                                    <div className="space-y-4">
-                                        <div className="prose prose-invert prose-sm max-w-none">
-                                            <h4 className="text-teal-400 font-bold uppercase tracking-widest text-xs mb-4">Research Findings</h4>
-                                            <div className="bg-white/5 rounded-xl p-6 border border-white/10 whitespace-pre-wrap">
-                                                {researchResult}
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-
-                            <div className="p-6 border-t border-white/5 flex gap-3 justify-end bg-[#0f0f0f] rounded-b-2xl">
-                                {!researchResult && (
-                                    <button
-                                        onClick={handleResearch}
-                                        disabled={isResearching || !researchTarget?.website}
-                                        className={`px-6 py-2 rounded-lg font-bold text-sm transition-all ${isResearching
-                                            ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
-                                            : 'bg-teal-500 hover:bg-teal-400 text-black'
-                                            }`}
-                                    >
-                                        {isResearching ? 'Researching...' : 'Start Research Run'}
-                                    </button>
-                                )}
-                                {researchResult && (
+                {/* Research Modal */}
+                {
+                    researchModalOpen && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+                            <div className="bg-[#111] border border-white/10 rounded-2xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl">
+                                <div className="flex items-center justify-between p-6 border-b border-white/5">
+                                    <h3 className="text-xl font-serif font-bold text-white flex items-center gap-2">
+                                        <Search className="w-5 h-5 text-teal-400" />
+                                        Deep Research: <span className="text-teal-400">{researchTarget?.name}</span>
+                                    </h3>
                                     <button
                                         onClick={() => setResearchModalOpen(false)}
-                                        className="px-6 py-2 bg-white text-black font-bold text-sm rounded-lg hover:bg-gray-200 transition-colors"
+                                        className="text-gray-400 hover:text-white transition-colors"
                                     >
-                                        Done
+                                        ✕
                                     </button>
-                                )}
+                                </div>
+
+                                <div className="p-6 flex-1 overflow-y-auto space-y-6">
+                                    {researchStep === 'result' ? (
+                                        <div className="space-y-4">
+                                            <div className="prose prose-invert prose-sm max-w-none">
+                                                <h4 className="text-teal-400 font-bold uppercase tracking-widest text-xs mb-4">Research Findings</h4>
+                                                <div className="bg-white/5 rounded-xl p-6 border border-white/10 whitespace-pre-wrap">
+                                                    {researchResult}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-4">
+                                            {/* Step 1: Input */}
+                                            {researchStep === 'input' && (
+                                                <>
+                                                    <div>
+                                                        <label className="block text-xs uppercase tracking-wider font-bold text-gray-500 mb-2">Research Goal</label>
+                                                        <textarea
+                                                            value={researchTopic}
+                                                            onChange={(e) => setResearchTopic(e.target.value)}
+                                                            className="w-full bg-black/20 border border-white/10 rounded-xl p-4 text-white focus:outline-none focus:border-teal-500/50 min-h-[100px]"
+                                                            placeholder="What specifically do you want to find?"
+                                                        />
+                                                    </div>
+                                                    <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 flex items-start gap-3">
+                                                        <div className="p-1 bg-blue-500/20 rounded-full mt-0.5">
+                                                            <Search className="w-3 h-3 text-blue-400" />
+                                                        </div>
+                                                        <div className="text-sm text-blue-200">
+                                                            <p className="font-bold mb-1">How this works</p>
+                                                            <p className="opacity-80">Our AI agent will verify the sitemap and suggest pages to crawl based on your topic. You can then select specific pages for deep analysis.</p>
+                                                        </div>
+                                                    </div>
+                                                </>
+                                            )}
+
+                                            {/* Step 2: Scanning Loading */}
+                                            {researchStep === 'scanning' && (
+                                                <div className="text-center py-12">
+                                                    <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-teal-500 mb-4"></div>
+                                                    <p className="text-teal-400 font-mono text-sm animate-pulse">Scanning site structure...</p>
+                                                </div>
+                                            )}
+
+                                            {/* Step 3: Select Links */}
+                                            {researchStep === 'selecting' && (
+                                                <>
+                                                    <div className="flex items-center justify-between mb-2">
+                                                        <h4 className="text-sm font-bold text-white uppercase tracking-wider">Select Pages to Analyze</h4>
+                                                        <span className="text-xs text-teal-400">{selectedLinks.length} selected</span>
+                                                    </div>
+                                                    <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2">
+                                                        {foundLinks.map((link, idx) => (
+                                                            <div key={idx}
+                                                                onClick={() => {
+                                                                    if (selectedLinks.includes(link.url)) {
+                                                                        setSelectedLinks(selectedLinks.filter(l => l !== link.url));
+                                                                    } else {
+                                                                        setSelectedLinks([...selectedLinks, link.url]);
+                                                                    }
+                                                                }}
+                                                                className={`p-3 rounded-lg border cursor-pointer transition-all flex items-start gap-3 ${selectedLinks.includes(link.url)
+                                                                        ? 'bg-teal-500/10 border-teal-500/50'
+                                                                        : 'bg-white/5 border-white/5 hover:bg-white/10'
+                                                                    }`}
+                                                            >
+                                                                <div className={`mt-1 w-4 h-4 rounded border flex items-center justify-center ${selectedLinks.includes(link.url) ? 'bg-teal-500 border-teal-500' : 'border-gray-500'
+                                                                    }`}>
+                                                                    {selectedLinks.includes(link.url) && <div className="w-2 h-2 bg-black rounded-sm" />}
+                                                                </div>
+                                                                <div>
+                                                                    <div className="text-sm font-bold text-gray-200">{link.title || link.url}</div>
+                                                                    <div className="text-xs text-gray-500 break-all">{link.url}</div>
+                                                                    {link.reason && <div className="text-xs text-teal-400/80 mt-1 italic">"{link.reason}"</div>}
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </>
+                                            )}
+
+                                            {/* Step 4: Analyzing Loading */}
+                                            {researchStep === 'analyzing' && (
+                                                <div className="text-center py-12">
+                                                    <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-teal-500 mb-4"></div>
+                                                    <p className="text-teal-400 font-mono text-sm animate-pulse">Deeply analyzing {selectedLinks.length} pages...</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="p-6 border-t border-white/5 flex gap-3 justify-end bg-[#0f0f0f] rounded-b-2xl">
+                                    {(researchStep === 'input') && (
+                                        <button
+                                            onClick={handleScan}
+                                            disabled={!researchTarget?.website}
+                                            className="px-6 py-2 bg-teal-500 text-black font-bold rounded-lg hover:bg-teal-400 transition-colors"
+                                        >
+                                            Scan Website
+                                        </button>
+                                    )}
+
+                                    {(researchStep === 'selecting') && (
+                                        <button
+                                            onClick={handleAnalyze}
+                                            disabled={selectedLinks.length === 0}
+                                            className={`px-6 py-2 rounded-lg font-bold text-sm transition-all ${selectedLinks.length === 0 ? 'bg-gray-700 text-gray-400 cursor-not-allowed' : 'bg-teal-500 text-black hover:bg-teal-400'
+                                                }`}
+                                        >
+                                            Analyze Selected Pages
+                                        </button>
+                                    )}
+
+                                    {researchStep === 'result' && (
+                                        <button
+                                            onClick={() => setResearchModalOpen(false)}
+                                            className="px-6 py-2 bg-white/10 text-white font-bold rounded-lg hover:bg-white/20 transition-colors"
+                                        >
+                                            Done
+                                        </button>
+                                    )}
+                                </div>
                             </div>
                         </div>
-                    </div>
-                )
-            }
-        </div >
-    )
+                    )
+                }
+            </div >
+            )
 }
 
-export default Companies;
+            export default Companies;

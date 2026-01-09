@@ -8,14 +8,14 @@ const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 export class ResearchService {
 
     /**
-     * Deeply research a specific topic for a company.
+     * Step 1: Scan a company website for relevant pages (Sitemap/Links)
      * @param {string} url - base website URL
-     * @param {string} topic - prompt from user (e.g. "Find deal history")
+     * @param {string} topic - research topic to filter links
+     * @returns {Promise<Array<{url: string, title: string, reason: string}>>}
      */
-    static async researchCompany(url, topic) {
-        console.log(`🕵️‍♀️ Researching ${topic} for ${url}...`);
+    static async scanCompany(url, topic) {
+        console.log(`🕵️‍♀️ Scanning ${url} for topic: ${topic}...`);
 
-        // 1. Fetch homepage to find relevant links
         let rootUrl = url;
         if (!rootUrl.startsWith('http')) rootUrl = 'https://' + rootUrl;
 
@@ -23,57 +23,75 @@ export class ResearchService {
             const html = await this.fetchHtml(rootUrl);
             const $ = cheerio.load(html);
 
-            // Extract all links
-            const links = [];
+            // Extract all unique links
+            const uniqueLinks = new Map();
             $('a').each((i, el) => {
                 const href = $(el).attr('href');
+                const text = $(el).text().trim() || "Link";
+
                 if (href && !href.startsWith('#') && !href.startsWith('mailto')) {
-                    // Resolve relative URLs
                     try {
                         const fullUrl = new URL(href, rootUrl).href;
+                        // Only internal links
                         if (fullUrl.includes(new URL(rootUrl).hostname)) {
-                            links.push({ text: $(el).text().trim(), url: fullUrl });
+                            uniqueLinks.set(fullUrl, text);
                         }
                     } catch (e) { }
                 }
             });
 
-            // 2. Ask AI which links are most relevant to the topic
-            const linkSelectionPrompt = `
-                I need to find information about "${topic}" for the company at ${rootUrl}.
-                Here are the links found on the homepage:
-                ${JSON.stringify(links.slice(0, 50))} // Limit to 50 links to save context
+            // Convert map to array for AI
+            const links = Array.from(uniqueLinks.entries()).map(([linkUrl, text]) => ({ url: linkUrl, text }));
 
-                Return a JSON array of the top 3 URLs that are most likely to contain this information.
-                Format: ["url1", "url2", "url3"]
+            // Ask AI to select relevant links
+            const linkSelectionPrompt = `
+                I am researching "${topic}" for the company at ${rootUrl}.
+                Here are the links found on the homepage:
+                ${JSON.stringify(links.slice(0, 100))}
+
+                Select up to 5 URLs that are most likely to contain this information.
+                Return a strict JSON array of objects with keys: "url", "title" (cleaned up link text), and "reason" (why you chose it).
+                
+                Example: [{"url": "...", "title": "About Us", "reason": "Company history"}]
             `;
 
             const linkResult = await model.generateContent(linkSelectionPrompt);
-            const linkJson = this.parseJson(linkResult.response.text());
-            const targetUrls = linkJson || [rootUrl]; // Fallback to root if fails
+            const selectedLinks = this.parseJson(linkResult.response.text());
 
-            console.log(`🔗 Scraper targeting:`, targetUrls);
+            return selectedLinks || [{ url: rootUrl, title: "Homepage", reason: "Fallback" }];
 
-            // 3. Scrape target pages and aggregate content
+        } catch (e) {
+            console.error('Scan failed:', e);
+            throw new Error(`Scan failed: ${e.message}`);
+        }
+    }
+
+    /**
+     * Step 2: Deeply research specific URLs
+     * @param {Array<string>} targetUrls - list of URLs to scrape
+     * @param {string} topic - prompt from user
+     */
+    static async researchCompany(targetUrls, topic) {
+        console.log(`🕵️‍♀️ Researching ${topic} on ${targetUrls.length} pages...`);
+
+        try {
+            // Scrape target pages and aggregate content
             let aggregatedContent = "";
             for (const target of targetUrls) {
                 try {
                     const pageHtml = await this.fetchHtml(target);
+                    // Simple text extraction - could be improved
                     const $$ = cheerio.load(pageHtml);
-                    // Remove scripts, styles
-                    $$('script').remove();
-                    $$('style').remove();
-                    $$('nav').remove();
-                    $$('footer').remove();
+                    $$('script, style, nav, footer, svg, noscript').remove();
 
-                    const text = $$('body').text().replace(/\s+/g, ' ').substring(0, 10000); // Limit context
+                    const text = $$('body').text().replace(/\s+/g, ' ').trim().substring(0, 15000);
                     aggregatedContent += `\n\n--- SOURCE: ${target} ---\n${text}`;
                 } catch (e) {
                     console.error(`Failed to scrape ${target}: ${e.message}`);
                 }
             }
 
-            // 4. Synthesize answer
+            // Synthesize answer
             const synthesisPrompt = `
                 You are a real estate investment analyst.
                 
@@ -99,13 +117,26 @@ export class ResearchService {
     }
 
     static async fetchHtml(url) {
-        const response = await fetch(url, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        try {
+            const response = await fetch(url, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.9'
+                }
+            });
+            if (!response.ok) {
+                // If 403/401, throw specific error
+                if (response.status === 403 || response.status === 401) {
+                    throw new Error(`Access denied (${response.status}). The site may block scrapers.`);
+                }
+                throw new Error(`HTTP ${response.status}`);
             }
-        });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return await response.text();
+            return await response.text();
+        } catch (e) {
+            console.warn(`Failed to fetch ${url}:`, e.message);
+            return ""; // Return empty string so partial failures don't kill the whole process
+        }
     }
 
     static parseJson(text) {

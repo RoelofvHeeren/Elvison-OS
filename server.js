@@ -676,12 +676,25 @@ app.post('/api/knowledge/create-internal', requireAuth, async (req, res) => {
 // --- RESEARCH ---
 import { ResearchService } from './src/backend/services/research-service.js';
 
-app.post('/api/companies/research', async (req, res) => {
+app.post('/api/companies/research/scan', async (req, res) => {
     try {
         const { url, topic } = req.body;
         if (!url) return res.status(400).json({ error: 'URL is required' });
 
-        const result = await ResearchService.researchCompany(url, topic);
+        const links = await ResearchService.scanCompany(url, topic);
+        res.json({ links });
+    } catch (e) {
+        console.error('Research Scan Error:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/companies/research', async (req, res) => {
+    try {
+        const { urls, topic } = req.body; // Expects array of URLs now
+        if (!urls || !Array.isArray(urls)) return res.status(400).json({ error: 'List of URLs is required' });
+
+        const result = await ResearchService.researchCompany(urls, topic);
         res.json({ result });
     } catch (e) {
         console.error('Research API Error:', e);
