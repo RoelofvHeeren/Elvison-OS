@@ -11,11 +11,12 @@ export class CompanyScorer {
         console.log(`🧹 Starting cleanup for ICP: ${icpName} (ID: ${icpId})`);
 
         // Determine type based on name
+        // Determine type based on name
         const isFamilyOffice = icpName.toLowerCase().includes('family office');
-        const isInvestmentFirm = icpName.toLowerCase().includes('investment firm');
+        const isInvestmentFirm = icpName.toLowerCase().includes('investment firm') || icpName.toLowerCase().includes('investment fund');
 
         if (!isFamilyOffice && !isInvestmentFirm) {
-            throw new Error(`Unsupported ICP type: ${icpName}. Only 'Family Offices' and 'Investment Firms' are supported.`);
+            throw new Error(`Unsupported ICP type: ${icpName}. Only 'Family Offices' and 'Investment Firms/Funds' are supported.`);
         }
 
         // Fetch leads for this ICP
