@@ -673,6 +673,24 @@ app.post('/api/knowledge/create-internal', requireAuth, async (req, res) => {
 
 // --- ICP & CLEANUP ---
 
+// --- RESEARCH ---
+import { ResearchService } from './src/backend/services/research-service.js';
+
+app.post('/api/companies/research', async (req, res) => {
+    try {
+        const { url, topic } = req.body;
+        if (!url) return res.status(400).json({ error: 'URL is required' });
+
+        const result = await ResearchService.researchCompany(url, topic);
+        res.json({ result });
+    } catch (e) {
+        console.error('Research API Error:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// --- ICP & CLEANUP ---
+
 import { CompanyScorer } from './src/backend/services/company-scorer.js';
 
 app.post('/api/strategies/:id/cleanup', requireAuth, async (req, res) => {
