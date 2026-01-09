@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Building2, ChevronDown, ChevronUp, Trash2, Users } from 'lucide-react'
+import { Building2, ChevronDown, ChevronUp, Trash2, Users, Search } from 'lucide-react'
 import { fetchLeads, deleteLead } from '../utils/api'
 import { useIcp } from '../context/IcpContext'
 
