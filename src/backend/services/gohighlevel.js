@@ -2,11 +2,20 @@ import axios from 'axios';
 
 class GoHighLevelService {
     constructor() {
-        this.apiKey = process.env.GHL_API_KEY;
-        this.locationId = process.env.GHL_LOCATION_ID || '5tJd1yCE13B3wwdy9qvl';
-        // GHL API v2 base URL
-        this.baseUrl = 'https://services.leadconnectorhq.com';
         this.customFieldCache = null;
+    }
+
+    get apiKey() {
+        return process.env.GHL_API_KEY;
+    }
+
+    get locationId() {
+        return process.env.GHL_LOCATION_ID || '5tJd1yCE13B3wwdy9qvl';
+    }
+
+    get baseUrl() {
+        // Use API v2 for Private Integration Tokens (PIT)
+        return 'https://services.leadconnectorhq.com';
     }
 
     _getHeaders() {
