@@ -47,12 +47,16 @@ export class ResearchService {
             const linkSelectionPrompt = `
                 I am researching "${topic}" for the company at ${rootUrl}.
                 Here are the links found on the homepage:
-                ${JSON.stringify(links.slice(0, 100))}
+                ${JSON.stringify(links.slice(0, 200))}
 
-                Select up to 5 URLs that are most likely to contain this information.
+                Select up to 20 URLs that are most likely to contain this information.
+                Prioritize pages like:
+                - "Team" / "Leadership" / "People"
+                - "Portfolio" / "Investments" / "Case Studies"
+                - "Strategy" / "Approach" / "Family Office"
+                - "About Us" / "History"
+
                 Return a strict JSON array of objects with keys: "url", "title" (cleaned up link text), and "reason" (why you chose it).
-                
-                Example: [{"url": "...", "title": "About Us", "reason": "Company history"}]
             `;
 
             const linkResult = await model.generateContent(linkSelectionPrompt);
