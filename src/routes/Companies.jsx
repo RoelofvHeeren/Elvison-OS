@@ -343,7 +343,6 @@ function Companies() {
                                 {filters.icpId && (
                                     <div className="flex items-center gap-4">
                                         <button
-                                            onClick={() => setCleaning(!cleaning && true)} // Hack to trigger modal if need be, but better separate
                                             className="px-4 py-2 bg-white/5 border border-white/10 hover:bg-white/10 text-gray-300 rounded-lg text-xs font-bold uppercase tracking-wider transition-all"
                                             onClick={() => window.document.getElementById('rules_modal').showModal()}
                                         >
