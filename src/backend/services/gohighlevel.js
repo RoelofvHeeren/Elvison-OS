@@ -84,11 +84,24 @@ class GoHighLevelService {
     }
 
     async ensureElvisonFields() {
-        const [emailFieldId, linkedinFieldId] = await Promise.all([
-            this.ensureCustomField('elvison_email_message', 'Elvison Email Message', 'LARGE_TEXT'),
-            this.ensureCustomField('elvison_connection_request', 'Elvison Connection Request', 'LARGE_TEXT')
-        ]);
-        return { emailFieldId, linkedinFieldId };
+        try {
+            const fields = await this.getCustomFields();
+
+            // Map our internal names to GHL field names (case-insensitive search)
+            const findFieldId = (nameQuery) => {
+                const field = fields.find(f => f.name.toLowerCase() === nameQuery.toLowerCase());
+                return field ? field.id : null;
+            };
+
+            return {
+                emailFieldId: findFieldId('Email Copy'),
+                linkedinFieldId: findFieldId('Linkedin Message'),
+                companyProfileId: findFieldId('Company Profile')
+            };
+        } catch (error) {
+            console.error('Error resolving custom fields:', error.message);
+            return {};
+        }
     }
 
     // =====================
@@ -122,12 +135,8 @@ class GoHighLevelService {
                 name: t.name
             }));
         } catch (error) {
-            console.error('[GHL] Failed to list tags:', {
-                status: error.response?.status,
-                statusText: error.response?.statusText,
-                data: error.response?.data,
-                message: error.message
-            });
+            // Log full error for debugging but don't crash
+            console.error('[GHL] Failed to list tags:', error.message);
             return [];
         }
     }
@@ -157,14 +166,16 @@ class GoHighLevelService {
     async createContact(lead, fieldIds = null, triggerTag = 'elvison os') {
         if (!this.apiKey) throw new Error('GHL_API_KEY is missing');
 
-        // Skip custom fields for now to simplify - just create contact with tag
-        // if (!fieldIds) {
-        //     fieldIds = await this.ensureElvisonFields();
-        // }
+        // Dynamically find field IDs if not provided
+        if (!fieldIds) {
+            fieldIds = await this.ensureElvisonFields();
+            console.log('[GHL] Resolved Field IDs:', fieldIds);
+        }
 
         const customData = lead.custom_data || {};
         const emailMessage = customData.email_message || '';
-        const connectionRequest = customData.connection_request || '';
+        const connectionRequest = customData.connection_request || ''; // This maps to "Linkedin Message" based on user context
+        const companyProfile = customData.company_profile || '';
 
         try {
             const payload = {
@@ -180,22 +191,26 @@ class GoHighLevelService {
                 customFields: []
             };
 
-            // Add custom fields if we have messages
-            if (emailMessage) {
-                payload.customFields.push({ key: 'elvison_email_message', value: emailMessage });
+            // Add Custom Fields if IDs were resolved
+            if (fieldIds.emailFieldId && emailMessage) {
+                payload.customFields.push({ id: fieldIds.emailFieldId, value: emailMessage });
             }
-            if (connectionRequest) {
-                payload.customFields.push({ key: 'elvison_connection_request', value: connectionRequest });
+            if (fieldIds.linkedinFieldId && connectionRequest) {
+                payload.customFields.push({ id: fieldIds.linkedinFieldId, value: connectionRequest });
+            }
+            if (fieldIds.companyProfileId && companyProfile) {
+                payload.customFields.push({ id: fieldIds.companyProfileId, value: companyProfile });
             }
 
-            console.log(`Creating GHL contact: ${payload.email} with tag: ${triggerTag}`);
+            console.log('[GHL] Creating contact payload:', JSON.stringify(payload, null, 2));
 
             const response = await axios.post(
-                `${this.baseUrl}/contacts`,
+                `${this.baseUrl}/locations/${this.locationId}/contacts`,
                 payload,
                 { headers: this._getHeaders() }
             );
 
+            console.log(`[GHL] Contact created successfully: ${response.data.contact?.id}`);
             return response.data.contact;
         } catch (error) {
             console.error('Failed to create GHL contact:', error.response?.data || error.message);
