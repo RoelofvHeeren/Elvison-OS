@@ -467,26 +467,46 @@ function Companies() {
                                                 <div className="h-[1px] flex-1 bg-gradient-to-r from-transparent via-teal-500/20 to-teal-500/20"></div>
                                                 <span className="text-[11px] uppercase tracking-[0.4em] font-black text-teal-500/50">Market Intelligence Report</span>
                                                 <div className="h-[1px] flex-1 bg-gradient-to-r from-teal-500/20 via-teal-500/20 to-transparent"></div>
+
+                                                <button
+                                                    onClick={() => openResearchModal(company)}
+                                                    className="flex items-center gap-2 px-3 py-1.5 bg-teal-500/10 hover:bg-teal-500/20 text-teal-400 rounded-lg text-xs font-bold uppercase tracking-wider transition-all border border-teal-500/20"
+                                                >
+                                                    <Search className="w-3 h-3" />
+                                                    Deep Research
+                                                </button>
                                             </div>
 
                                             {company.profile ? (
                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                                                     {(() => {
                                                         const sections = parseProfileIntoSections(company.profile);
+                                                        const DISPLAY_ORDER = [
+                                                            'Summary',
+                                                            'Investment Strategy',
+                                                            'Scale & Geographic Focus',
+                                                            'Portfolio Observations',
+                                                            'Key Highlights',
+                                                            'Fit Analysis'
+                                                        ];
+
                                                         const defaultIcons = {
                                                             'Summary': <Building2 className="w-4 h-4 text-teal-400" />,
-                                                            'General Overview': <Building2 className="w-4 h-4 text-teal-400" />,
                                                             'Investment Strategy': <Users className="w-4 h-4 text-purple-400" />,
                                                             'Scale & Geographic Focus': <Users className="w-4 h-4 text-orange-400" />,
                                                             'Portfolio Observations': <Building2 className="w-4 h-4 text-blue-400" />,
-                                                            'Key Highlights': <ChevronDown className="w-4 h-4 text-yellow-400" />
+                                                            'Key Highlights': <ChevronDown className="w-4 h-4 text-yellow-400" />,
+                                                            'Fit Analysis': <div className="w-4 h-4 rounded-full border-2 border-green-500/50 flex items-center justify-center text-[10px] font-bold text-green-400">✓</div>
                                                         };
 
-                                                        return Object.entries(sections).map(([title, content]) => (
-                                                            <div key={title} className={title === 'Summary' || title === 'Key Highlights' || title === 'General Overview' ? 'col-span-1 md:col-span-2' : ''}>
-                                                                {renderReportSection(title, content, defaultIcons[title] || <Building2 className="w-4 h-4 text-teal-400" />)}
-                                                            </div>
-                                                        ));
+                                                        return DISPLAY_ORDER.map(title => {
+                                                            if (!sections[title]) return null;
+                                                            return (
+                                                                <div key={title} className={title === 'Summary' || title === 'Key Highlights' || title === 'Fit Analysis' ? 'col-span-1 md:col-span-2' : ''}>
+                                                                    {renderReportSection(title, sections[title], defaultIcons[title] || <Building2 className="w-4 h-4 text-teal-400" />)}
+                                                                </div>
+                                                            );
+                                                        });
                                                     })()}
                                                 </div>
                                             ) : (
@@ -655,7 +675,94 @@ function Companies() {
                 </div>
             </dialog>
         </div>
+            </dialog >
+
+        {/* Research Modal */ }
+    {
+        researchModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+                <div className="bg-[#111] border border-white/10 rounded-2xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl">
+                    <div className="flex items-center justify-between p-6 border-b border-white/5">
+                        <h3 className="text-xl font-serif font-bold text-white flex items-center gap-2">
+                            <Search className="w-5 h-5 text-teal-400" />
+                            Deep Research: <span className="text-teal-400">{researchTarget?.name}</span>
+                        </h3>
+                        <button
+                            onClick={() => setResearchModalOpen(false)}
+                            className="text-gray-400 hover:text-white transition-colors"
+                        >
+                            ✕
+                        </button>
+                    </div>
+
+                    <div className="p-6 flex-1 overflow-y-auto space-y-6">
+                        {!researchResult ? (
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-xs uppercase tracking-wider font-bold text-gray-500 mb-2">Research Goal</label>
+                                    <textarea
+                                        value={researchTopic}
+                                        onChange={(e) => setResearchTopic(e.target.value)}
+                                        className="w-full bg-black/20 border border-white/10 rounded-xl p-4 text-white focus:outline-none focus:border-teal-500/50 min-h-[100px]"
+                                        placeholder="What specifically do you want to find?"
+                                    />
+                                </div>
+
+                                <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 flex items-start gap-3">
+                                    <div className="p-1 bg-blue-500/20 rounded-full mt-0.5">
+                                        <Search className="w-3 h-3 text-blue-400" />
+                                    </div>
+                                    <div className="text-sm text-blue-200">
+                                        <p className="font-bold mb-1">How this works</p>
+                                        <p className="opacity-80">Our AI agent will visit the website ({researchTarget?.website}), scan the homepage for relevant links (e.g. "Portfolio", "Case Studies"), crawl those pages, and synthesize the specific answers you need.</p>
+                                    </div>
+                                </div>
+
+                                {isResearching && (
+                                    <div className="text-center py-8">
+                                        <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-teal-500 mb-4"></div>
+                                        <p className="text-teal-400 font-mono text-sm animate-pulse">Scanning site structure & Extracting data...</p>
+                                    </div>
+                                )}
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
+                                <div className="prose prose-invert prose-sm max-w-none">
+                                    <h4 className="text-teal-400 font-bold uppercase tracking-widest text-xs mb-4">Research Findings</h4>
+                                    <div className="bg-white/5 rounded-xl p-6 border border-white/10 whitespace-pre-wrap">
+                                        {researchResult}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="p-6 border-t border-white/5 flex gap-3 justify-end bg-[#0f0f0f] rounded-b-2xl">
+                        {!researchResult && (
+                            <button
+                                onClick={handleResearch}
+                                disabled={isResearching || !researchTarget?.website}
+                                className={`px-6 py-2 rounded-lg font-bold text-sm transition-all ${isResearching
+                                        ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
+                                        : 'bg-teal-500 hover:bg-teal-400 text-black'
+                                    }`}
+                            >
+                                {isResearching ? 'Researching...' : 'Start Research Run'}
+                            </button>
+                        )}
+                        {researchResult && (
+                            <button
+                                onClick={() => setResearchModalOpen(false)}
+                                className="px-6 py-2 bg-white text-black font-bold text-sm rounded-lg hover:bg-gray-200 transition-colors"
+                            >
+                                Done
+                            </button>
+                        )}
+                    </div>
+                </div>
+            </div>
+        )
+    }
+        </div >
     )
 }
-
-export default Companies
