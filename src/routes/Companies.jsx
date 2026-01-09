@@ -233,49 +233,66 @@ function Companies() {
         );
     }
 
-    const parseProfileIntoSections = (profile) => {
-        if (!profile) return {};
-        const sections = {};
+    const parseProfileIntoSections = (profileText) => {
+        if (!profileText) return {};
 
-        const lines = profile.split('\n');
-        let currentSection = 'General Overview';
+        // Normalize text first - remove bold/headers markers to simplify matching
+        let cleanText = profileText.replace(/\*\*/g, '').replace(/###/g, '');
+
+        // Define mappings for normalization
+        const mappings = {
+            'Executive Summary': 'Summary',
+            'General Overview': 'Summary',
+            'Company Overview': 'Summary',
+            'Deal History': 'Portfolio Observations',
+            'Recent Transactions': 'Portfolio Observations',
+            'Key People': 'Key Highlights',
+            'Management Team': 'Key Highlights',
+            'Fit Analysis': 'Fit Analysis',
+            'Strategic Fit': 'Fit Analysis'
+        };
+
+        const sections = {};
+        const lines = cleanText.split('\n');
+        let currentSection = 'Summary'; // Default start
         let currentContent = [];
+
+        // Keywords that likely start a section (including colon optional)
+        const sectionKeywords = [
+            'Summary', 'Investment Strategy', 'Scale & Geographic Focus',
+            'Portfolio Observations', 'Key Highlights', 'Fit Analysis',
+            'Executive Summary', 'General Overview', 'Deal History', 'Key People'
+        ];
 
         lines.forEach(line => {
             const trimmed = line.trim();
             if (!trimmed) return;
 
-            // Header Patterns:
-            // 1. Markdown: # Title or ## Title
-            // 2. Bold numbered: **1. Title:** or **Title:**
-            // 3. Numbered: 1. Title: 
-            // 4. CAPS title: SUMMARY: or STRATEGY:
-            const markdownMatch = trimmed.match(/^#+\s+(.*)$/);
-            const boldMatch = trimmed.match(/^\*\*(?:\d+\.\s+)?(.*?):?\s*\*\*$/) || trimmed.match(/^\*\*(.*?)\*\*$/);
-            const colonMatch = trimmed.match(/^(\d+\.\s+)?([A-Z][\w\s&/]{2,40}):\s*$/);
-            const capsMatch = trimmed.match(/^([A-Z\s]{4,30}):\s*$/);
+            // Check if line starts with a keyword (fuzzy match)
+            // e.g. "Investment Strategy:" or "1. Investment Strategy"
+            const keywordMatch = sectionKeywords.find(k =>
+                trimmed.toLowerCase().startsWith(k.toLowerCase()) ||
+                trimmed.toLowerCase().includes(k.toLowerCase() + ':')
+            );
 
-            const headerTitle = (markdownMatch?.[1] || boldMatch?.[1] || colonMatch?.[2] || capsMatch?.[1])?.trim();
-
-            // If it's a short title-like line and we found a match, treat as new section
-            if (headerTitle && headerTitle.length < 60) {
-                if (currentContent.length > 0) {
-                    sections[currentSection] = currentContent.join('\n').trim();
+            if (keywordMatch && trimmed.length < 50) { // Assume header lines are short
+                // Save previous section
+                if (currentSection && currentContent.length > 0) {
+                    sections[currentSection] = (sections[currentSection] || '') + '\n' + currentContent.join('\n').trim();
                 }
-                currentSection = headerTitle.replace(/[*#:]/g, '').trim();
+
+                // Map to standard name
+                let standardName = mappings[keywordMatch] || keywordMatch;
+                currentSection = standardName;
                 currentContent = [];
             } else {
                 currentContent.push(line);
             }
         });
 
-        if (currentContent.length > 0) {
-            sections[currentSection] = currentContent.join('\n').trim();
-        }
-
-        // Cleanup: If "General Overview" is empty and we have others, delete it
-        if (sections['General Overview'] === '' && Object.keys(sections).length > 1) {
-            delete sections['General Overview'];
+        // Save last section
+        if (currentSection && currentContent.length > 0) {
+            sections[currentSection] = (sections[currentSection] || '') + '\n' + currentContent.join('\n').trim();
         }
 
         return sections;
@@ -743,8 +760,8 @@ function Companies() {
                                 onClick={handleResearch}
                                 disabled={isResearching || !researchTarget?.website}
                                 className={`px-6 py-2 rounded-lg font-bold text-sm transition-all ${isResearching
-                                        ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
-                                        : 'bg-teal-500 hover:bg-teal-400 text-black'
+                                    ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
+                                    : 'bg-teal-500 hover:bg-teal-400 text-black'
                                     }`}
                             >
                                 {isResearching ? 'Researching...' : 'Start Research Run'}
