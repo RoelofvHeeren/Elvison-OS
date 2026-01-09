@@ -885,7 +885,7 @@ function Companies() {
                                                         AI Recommended
                                                     </h5>
                                                     <div className="space-y-2">
-                                                        {foundLinks.filter(link => link.reason).map((link, idx) => (
+                                                        {recommendedLinks.map((link, idx) => (
                                                             <div key={'rec' + idx}
                                                                 onClick={() => {
                                                                     if (selectedLinks.includes(link.url)) {
@@ -895,8 +895,8 @@ function Companies() {
                                                                     }
                                                                 }}
                                                                 className={`group p-3 rounded-xl border cursor-pointer transition-all flex items-start gap-3 ${selectedLinks.includes(link.url)
-                                                                        ? 'bg-teal-500/10 border-teal-500/50 shadow-[0_0_15px_-3px_rgba(20,184,166,0.2)]'
-                                                                        : 'bg-white/5 border-white/5 hover:bg-white/10'
+                                                                    ? 'bg-teal-500/10 border-teal-500/50 shadow-[0_0_15px_-3px_rgba(20,184,166,0.2)]'
+                                                                    : 'bg-white/5 border-white/5 hover:bg-white/10'
                                                                     }`}
                                                             >
                                                                 <div className={`mt-1 w-5 h-5 rounded border flex items-center justify-center transition-colors ${selectedLinks.includes(link.url) ? 'bg-teal-500 border-teal-500' : 'border-gray-600 group-hover:border-gray-400'
@@ -919,7 +919,7 @@ function Companies() {
                                                 {/* All Other Links */}
                                                 <div>
                                                     <div className="flex items-center justify-between mb-3">
-                                                        <h5 className="text-xs font-bold text-gray-500 uppercase tracking-widest">All Found Pages ({foundLinks.length})</h5>
+                                                        <h5 className="text-xs font-bold text-gray-500 uppercase tracking-widest">All Found Pages ({allLinks.length})</h5>
                                                         <input
                                                             type="text"
                                                             placeholder="Filter links..."
@@ -929,7 +929,7 @@ function Companies() {
                                                         />
                                                     </div>
                                                     <div className="space-y-1 max-h-[200px] overflow-y-auto pr-2 custom-scrollbar">
-                                                        {foundLinks
+                                                        {allLinks
                                                             .filter(l => {
                                                                 const isRecommended = l.reason; // Check if it has a reason, meaning it's in recommended
                                                                 const matchesSearch = !linkSearch || (l.title && l.title.toLowerCase().includes(linkSearch.toLowerCase())) || l.url.toLowerCase().includes(linkSearch.toLowerCase());
@@ -945,8 +945,8 @@ function Companies() {
                                                                         }
                                                                     }}
                                                                     className={`p-2 rounded-lg border cursor-pointer transition-all flex items-center gap-3 ${selectedLinks.includes(link.url)
-                                                                            ? 'bg-blue-500/10 border-blue-500/30'
-                                                                            : 'bg-transparent border-transparent hover:bg-white/5'
+                                                                        ? 'bg-blue-500/10 border-blue-500/30'
+                                                                        : 'bg-transparent border-transparent hover:bg-white/5'
                                                                         }`}
                                                                 >
                                                                     <div className={`w-4 h-4 rounded border flex items-center justify-center ${selectedLinks.includes(link.url) ? 'bg-blue-500 border-blue-500' : 'border-gray-700'
