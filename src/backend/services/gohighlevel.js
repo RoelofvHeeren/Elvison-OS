@@ -3,14 +3,17 @@ import axios from 'axios';
 class GoHighLevelService {
     constructor() {
         this.apiKey = process.env.GHL_API_KEY;
-        this.baseUrl = 'https://rest.gohighlevel.com/v1';
-        this.customFieldCache = null; // Cache custom field IDs
+        this.locationId = process.env.GHL_LOCATION_ID || '5tJd1yCE13B3wwdy9qvl';
+        // GHL API v2 base URL
+        this.baseUrl = 'https://services.leadconnectorhq.com';
+        this.customFieldCache = null;
     }
 
     _getHeaders() {
         return {
             'Authorization': `Bearer ${this.apiKey}`,
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'Version': '2021-07-28'  // Required for v2 API
         };
     }
 
@@ -18,10 +21,6 @@ class GoHighLevelService {
     // CUSTOM FIELD MANAGEMENT
     // =====================
 
-    /**
-     * Fetches all custom fields for the location.
-     * Caches the result to avoid repeated API calls.
-     */
     async getCustomFields() {
         if (this.customFieldCache) return this.customFieldCache;
 
@@ -31,9 +30,10 @@ class GoHighLevelService {
         }
 
         try {
-            const response = await axios.get(`${this.baseUrl}/custom-fields`, {
-                headers: this._getHeaders()
-            });
+            const response = await axios.get(
+                `${this.baseUrl}/locations/${this.locationId}/customFields`,
+                { headers: this._getHeaders() }
+            );
 
             this.customFieldCache = response.data.customFields || [];
             return this.customFieldCache;
@@ -43,10 +43,6 @@ class GoHighLevelService {
         }
     }
 
-    /**
-     * Creates a custom field if it doesn't exist.
-     * Returns the field ID.
-     */
     async ensureCustomField(fieldKey, fieldName, fieldType = 'TEXT') {
         const fields = await this.getCustomFields();
         const existing = fields.find(f => f.fieldKey === fieldKey);
@@ -56,23 +52,21 @@ class GoHighLevelService {
             return existing.id;
         }
 
-        // Create the field
         try {
-            const response = await axios.post(`${this.baseUrl}/custom-fields`, {
-                name: fieldName,
-                fieldKey: fieldKey,
-                placeholder: fieldName,
-                dataType: fieldType
-            }, {
-                headers: this._getHeaders()
-            });
+            const response = await axios.post(
+                `${this.baseUrl}/locations/${this.locationId}/customFields`,
+                {
+                    name: fieldName,
+                    fieldKey: fieldKey,
+                    placeholder: fieldName,
+                    dataType: fieldType
+                },
+                { headers: this._getHeaders() }
+            );
 
             const newField = response.data.customField;
             console.log(`GHL Custom field "${fieldKey}" created with ID: ${newField.id}`);
-
-            // Invalidate cache so it's refreshed next time
             this.customFieldCache = null;
-
             return newField.id;
         } catch (error) {
             console.error(`Failed to create GHL custom field "${fieldKey}":`, error.response?.data || error.message);
@@ -80,15 +74,11 @@ class GoHighLevelService {
         }
     }
 
-    /**
-     * Ensures our required custom fields exist and returns their IDs.
-     */
     async ensureElvisonFields() {
         const [emailFieldId, linkedinFieldId] = await Promise.all([
             this.ensureCustomField('elvison_email_message', 'Elvison Email Message', 'LARGE_TEXT'),
             this.ensureCustomField('elvison_connection_request', 'Elvison Connection Request', 'LARGE_TEXT')
         ]);
-
         return { emailFieldId, linkedinFieldId };
     }
 
@@ -96,9 +86,6 @@ class GoHighLevelService {
     // TAGS
     // =====================
 
-    /**
-     * Fetches all tags from GoHighLevel.
-     */
     async listTags() {
         if (!this.apiKey) {
             console.warn('GHL_API_KEY is not set');
@@ -106,12 +93,13 @@ class GoHighLevelService {
         }
 
         try {
-            const response = await axios.get(`${this.baseUrl}/tags`, {
-                headers: this._getHeaders()
-            });
+            const response = await axios.get(
+                `${this.baseUrl}/locations/${this.locationId}/tags`,
+                { headers: this._getHeaders() }
+            );
 
             return (response.data.tags || []).map(t => ({
-                id: t.name, // Use tag name as ID since that's what we pass to createContact
+                id: t.name,  // Use tag name as ID for createContact
                 name: t.name
             }));
         } catch (error) {
@@ -120,18 +108,15 @@ class GoHighLevelService {
         }
     }
 
-    /**
-     * Creates a new tag in GoHighLevel.
-     */
     async createTag(tagName) {
         if (!this.apiKey) throw new Error('GHL_API_KEY is missing');
 
         try {
-            const response = await axios.post(`${this.baseUrl}/tags`, {
-                name: tagName
-            }, {
-                headers: this._getHeaders()
-            });
+            const response = await axios.post(
+                `${this.baseUrl}/locations/${this.locationId}/tags`,
+                { name: tagName },
+                { headers: this._getHeaders() }
+            );
 
             console.log(`GHL Tag "${tagName}" created successfully`);
             return response.data.tag || { name: tagName };
@@ -145,53 +130,47 @@ class GoHighLevelService {
     // CONTACT MANAGEMENT
     // =====================
 
-    /**
-     * Creates a contact with custom field values for AI-generated messages.
-     * @param {Object} lead - The lead data from Elvison
-     * @param {Object} fieldIds - { emailFieldId, linkedinFieldId }
-     * @param {string} triggerTag - Tag to add (triggers workflow)
-     */
     async createContact(lead, fieldIds = null, triggerTag = 'elvison os') {
         if (!this.apiKey) throw new Error('GHL_API_KEY is missing');
 
-        // Ensure fields exist if not provided
-        if (!fieldIds) {
-            fieldIds = await this.ensureElvisonFields();
-        }
+        // Skip custom fields for now to simplify - just create contact with tag
+        // if (!fieldIds) {
+        //     fieldIds = await this.ensureElvisonFields();
+        // }
 
-        // Extract AI-generated messages from lead.custom_data
         const customData = lead.custom_data || {};
         const emailMessage = customData.email_message || '';
         const connectionRequest = customData.connection_request || '';
 
         try {
             const payload = {
+                locationId: this.locationId,
                 email: lead.email,
                 phone: lead.phone_numbers?.[0]?.number || lead.phone || '',
                 firstName: lead.person_name?.split(' ')[0] || '',
                 lastName: lead.person_name?.split(' ').slice(1).join(' ') || '',
                 name: lead.person_name || '',
                 companyName: lead.company_name || '',
-                title: lead.job_title || '',
-                website: customData.company_website || '',
                 source: 'Elvison AI',
                 tags: [triggerTag],
-                customField: {}
+                customFields: []
             };
 
-            // Map custom field IDs to values
-            if (fieldIds.emailFieldId && emailMessage) {
-                payload.customField[fieldIds.emailFieldId] = emailMessage;
+            // Add custom fields if we have messages
+            if (emailMessage) {
+                payload.customFields.push({ key: 'elvison_email_message', value: emailMessage });
             }
-            if (fieldIds.linkedinFieldId && connectionRequest) {
-                payload.customField[fieldIds.linkedinFieldId] = connectionRequest;
+            if (connectionRequest) {
+                payload.customFields.push({ key: 'elvison_connection_request', value: connectionRequest });
             }
 
-            console.log(`Creating GHL contact: ${payload.email} with custom fields:`, Object.keys(payload.customField).length);
+            console.log(`Creating GHL contact: ${payload.email} with tag: ${triggerTag}`);
 
-            const response = await axios.post(`${this.baseUrl}/contacts`, payload, {
-                headers: this._getHeaders()
-            });
+            const response = await axios.post(
+                `${this.baseUrl}/contacts`,
+                payload,
+                { headers: this._getHeaders() }
+            );
 
             return response.data.contact;
         } catch (error) {
@@ -200,37 +179,15 @@ class GoHighLevelService {
         }
     }
 
-    /**
-     * Adds a contact to a campaign (for V1 API).
-     */
-    async addContactToCampaign(contactId, campaignId) {
-        if (!this.apiKey) throw new Error('GHL_API_KEY is missing');
-
-        try {
-            const response = await axios.post(`${this.baseUrl}/campaigns/${campaignId}/addToCampaign`, {
-                contactId: contactId
-            }, {
-                headers: this._getHeaders()
-            });
-            return response.data;
-        } catch (error) {
-            console.error(`Failed to add contact ${contactId} to campaign ${campaignId}:`, error.response?.data || error.message);
-            throw error;
-        }
-    }
-
-    /**
-     * Adds a tag to an existing contact.
-     */
     async addTagToContact(contactId, tag) {
         if (!this.apiKey) throw new Error('GHL_API_KEY is missing');
 
         try {
-            const response = await axios.post(`${this.baseUrl}/contacts/${contactId}/tags`, {
-                tags: [tag]
-            }, {
-                headers: this._getHeaders()
-            });
+            const response = await axios.post(
+                `${this.baseUrl}/contacts/${contactId}/tags`,
+                { tags: [tag] },
+                { headers: this._getHeaders() }
+            );
             return response.data;
         } catch (error) {
             console.error(`Failed to add tag "${tag}" to contact ${contactId}:`, error.response?.data || error.message);
