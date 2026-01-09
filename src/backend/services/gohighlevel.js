@@ -128,7 +128,7 @@ class GoHighLevelService {
      * @param {Object} fieldIds - { emailFieldId, linkedinFieldId }
      * @param {string} triggerTag - Tag to add (triggers workflow)
      */
-    async createContact(lead, fieldIds = null, triggerTag = 'Elvison AI Lead') {
+    async createContact(lead, fieldIds = null, triggerTag = 'elvison os') {
         if (!this.apiKey) throw new Error('GHL_API_KEY is missing');
 
         // Ensure fields exist if not provided
