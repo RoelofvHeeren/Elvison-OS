@@ -35,12 +35,16 @@ export class CompanyScorer {
             errors: 0
         };
 
-        for (const lead of leads) {
+        // BATCH PROCESSING CONSTANTS
+        const CONCURRENCY_LIMIT = 8; // Process 8 companies at once
+        const typeStr = isFamilyOffice ? 'FAMILY_OFFICE' : 'INVESTMENT_FIRM';
+
+        // Helper to process a single lead
+        const processLead = async (lead) => {
             try {
-                const scoreData = await this.rescoreLead(lead, isFamilyOffice ? 'FAMILY_OFFICE' : 'INVESTMENT_FIRM');
+                const scoreData = await this.rescoreLead(lead, typeStr);
 
                 if (scoreData) {
-                    // Update DB with new score
                     const updatedCustomData = {
                         ...(lead.custom_data || {}),
                         fit_score: scoreData.fit_score,
@@ -50,7 +54,6 @@ export class CompanyScorer {
                         rescored_at: new Date().toISOString()
                     };
 
-                    // STRICT RULE: < 6 => DISQUALIFY
                     if (scoreData.fit_score < 6) {
                         await query(`
                             UPDATE leads 
@@ -70,14 +73,17 @@ export class CompanyScorer {
                     results.errors++;
                 }
                 results.processed++;
-
-                // Rate limit slightly
-                await new Promise(r => setTimeout(r, 200));
-
             } catch (e) {
                 console.error(`Error processing lead ${lead.id}:`, e);
                 results.errors++;
             }
+        };
+
+        // Run with concurrency control
+        for (let i = 0; i < leads.length; i += CONCURRENCY_LIMIT) {
+            const batch = leads.slice(i, i + CONCURRENCY_LIMIT);
+            console.log(`Processing batch ${Math.floor(i / CONCURRENCY_LIMIT) + 1} / ${Math.ceil(leads.length / CONCURRENCY_LIMIT)}`);
+            await Promise.all(batch.map(lead => processLead(lead)));
         }
 
         return results;
