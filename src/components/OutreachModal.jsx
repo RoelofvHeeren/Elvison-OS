@@ -16,6 +16,7 @@ export default function OutreachModal({ isOpen, onClose, selectedLeadsCount, sel
     const [selectedGhlTags, setSelectedGhlTags] = useState([]) // Array for multi-select
     const [loadingGhl, setLoadingGhl] = useState(false)
     const [ghlDropdownOpen, setGhlDropdownOpen] = useState(false)
+    const [ghlSearchQuery, setGhlSearchQuery] = useState('')
 
     // Create tag
     const [showCreateTag, setShowCreateTag] = useState(false)
@@ -322,24 +323,46 @@ export default function OutreachModal({ isOpen, onClose, selectedLeadsCount, sel
                                             {/* Dropdown Menu */}
                                             {ghlDropdownOpen && (
                                                 <div className="absolute z-10 w-full mt-2 bg-[#1a1d21] border border-white/10 rounded-xl shadow-xl max-h-60 overflow-y-auto">
+
+                                                    {/* Search Input */}
+                                                    <div className="sticky top-0 p-2 bg-[#1a1d21] border-b border-white/10 z-20">
+                                                        <input
+                                                            type="text"
+                                                            value={ghlSearchQuery}
+                                                            onChange={(e) => setGhlSearchQuery(e.target.value)}
+                                                            placeholder="Search tags..."
+                                                            className="w-full px-3 py-2 text-sm bg-black/30 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-teal-500/50"
+                                                            autoFocus
+                                                        />
+                                                    </div>
+
                                                     {ghlTags.length === 0 ? (
                                                         <div className="px-4 py-3 text-sm text-gray-500">
                                                             No tags found in GoHighLevel
                                                         </div>
                                                     ) : (
-                                                        ghlTags.map(tag => (
-                                                            <button
-                                                                key={tag.id}
-                                                                onClick={() => toggleGhlTag(tag.name)}
-                                                                className={`w-full flex items-center justify-between px-4 py-2.5 text-sm hover:bg-white/5 transition-colors ${selectedGhlTags.includes(tag.name) ? 'bg-indigo-500/10 text-indigo-400' : 'text-gray-300'
-                                                                    }`}
-                                                            >
-                                                                <span>{tag.name}</span>
-                                                                {selectedGhlTags.includes(tag.name) && (
-                                                                    <Check className="w-4 h-4 text-indigo-400" />
-                                                                )}
-                                                            </button>
-                                                        ))
+                                                        ghlTags
+                                                            .filter(tag => tag.name.toLowerCase().includes(ghlSearchQuery.toLowerCase()))
+                                                            .map(tag => (
+                                                                <button
+                                                                    key={tag.id}
+                                                                    onClick={() => toggleGhlTag(tag.name)}
+                                                                    className={`w-full flex items-center justify-between px-4 py-2.5 text-sm hover:bg-white/5 transition-colors ${selectedGhlTags.includes(tag.name) ? 'bg-indigo-500/10 text-indigo-400' : 'text-gray-300'
+                                                                        }`}
+                                                                >
+                                                                    <span>{tag.name}</span>
+                                                                    {selectedGhlTags.includes(tag.name) && (
+                                                                        <Check className="w-4 h-4 text-indigo-400" />
+                                                                    )}
+                                                                </button>
+                                                            ))
+                                                    )}
+
+                                                    {/* Show "No results" if query yields nothing */}
+                                                    {ghlTags.length > 0 && ghlTags.filter(tag => tag.name.toLowerCase().includes(ghlSearchQuery.toLowerCase())).length === 0 && (
+                                                        <div className="px-4 py-3 text-sm text-gray-500 text-center">
+                                                            No tags match your search
+                                                        </div>
                                                     )}
 
                                                     {/* Create New Tag Option */}
