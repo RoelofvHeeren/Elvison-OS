@@ -93,27 +93,30 @@ class GoHighLevelService {
     }
 
     // =====================
-    // WORKFLOWS / CAMPAIGNS
+    // TAGS
     // =====================
 
-    async listWorkflows() {
+    /**
+     * Fetches all tags from GoHighLevel.
+     */
+    async listTags() {
         if (!this.apiKey) {
             console.warn('GHL_API_KEY is not set');
             return [];
         }
 
         try {
-            const response = await axios.get(`${this.baseUrl}/campaigns`, {
+            const response = await axios.get(`${this.baseUrl}/tags`, {
                 headers: this._getHeaders()
             });
 
-            return (response.data.campaigns || []).map(c => ({
-                id: c.id,
-                name: c.name,
-                status: c.status
+            // GHL returns { tags: [{ name: 'tagName' }, ...] }
+            return (response.data.tags || []).map(t => ({
+                id: t.name, // Use tag name as ID since that's what we pass to createContact
+                name: t.name
             }));
         } catch (error) {
-            console.error('Failed to list GHL campaigns:', error.response?.data || error.message);
+            console.error('Failed to list GHL tags:', error.response?.data || error.message);
             return [];
         }
     }

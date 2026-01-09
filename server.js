@@ -2151,14 +2151,14 @@ app.get('/api/integrations/aimfox/campaigns', requireAuth, async (req, res) => {
     }
 })
 
-// List GoHighLevel Workflows (Campaigns in V1)
-app.get('/api/integrations/ghl/workflows', requireAuth, async (req, res) => {
+// List GoHighLevel Tags
+app.get('/api/integrations/ghl/tags', requireAuth, async (req, res) => {
     try {
-        const workflows = await ghlService.listWorkflows()
-        res.json({ workflows })
+        const tags = await ghlService.listTags()
+        res.json({ tags })
     } catch (err) {
-        console.error('GHL workflows error:', err)
-        res.status(500).json({ error: 'Failed to fetch GoHighLevel workflows' })
+        console.error('GHL tags error:', err)
+        res.status(500).json({ error: 'Failed to fetch GoHighLevel tags' })
     }
 })
 
@@ -2196,8 +2196,8 @@ app.post('/api/integrations/push', requireAuth, async (req, res) => {
                         if (tool === 'aimfox') {
                             await aimfoxService.addLeadToCampaign(campaignId, lead)
                         } else if (tool === 'gohighlevel') {
-                            const contact = await ghlService.createContact(lead)
-                            await ghlService.addContactToCampaign(contact.id, campaignId)
+                            // campaignId is actually the tag name for GHL
+                            await ghlService.createContact(lead, null, campaignId)
                         }
 
                         // Update leads status locally

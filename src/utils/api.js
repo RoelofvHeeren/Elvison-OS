@@ -136,9 +136,9 @@ export const fetchAimfoxCampaigns = async () => {
   return data.campaigns
 }
 
-export const fetchGhlWorkflows = async () => {
-  const { data } = await client.get('/api/integrations/ghl/workflows')
-  return data.workflows
+export const fetchGhlTags = async () => {
+  const { data } = await client.get('/api/integrations/ghl/tags')
+  return data
 }
 
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));

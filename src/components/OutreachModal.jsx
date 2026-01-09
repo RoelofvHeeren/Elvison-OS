@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { X, Send, CheckCircle, AlertTriangle, Loader2 } from 'lucide-react'
-import { fetchAimfoxCampaigns, fetchGhlWorkflows, pushLeadsToOutreach } from '../utils/api'
+import { fetchAimfoxCampaigns, fetchGhlTags, pushLeadsToOutreach } from '../utils/api'
 
 export default function OutreachModal({ isOpen, onClose, selectedLeadsCount, selectedLeadIds, onComplete }) {
     const [tool, setTool] = useState('') // 'aimfox' | 'gohighlevel'
@@ -34,12 +34,12 @@ export default function OutreachModal({ isOpen, onClose, selectedLeadsCount, sel
                     data = await fetchAimfoxCampaigns()
                     if (data.campaigns) setCampaigns(data.campaigns)
                 } else if (tool === 'gohighlevel') {
-                    data = await fetchGhlWorkflows()
-                    if (data.workflows) setCampaigns(data.workflows)
+                    data = await fetchGhlTags()
+                    if (data.tags) setCampaigns(data.tags)
                 }
             } catch (err) {
                 console.error(err)
-                setError(`Failed to load ${tool === 'aimfox' ? 'Aimfox campaigns' : 'GoHighLevel workflows'}`)
+                setError(`Failed to load ${tool === 'aimfox' ? 'Aimfox campaigns' : 'GoHighLevel tags'}`)
             } finally {
                 setLoading(false)
             }
@@ -146,7 +146,7 @@ export default function OutreachModal({ isOpen, onClose, selectedLeadsCount, sel
                                             }`}
                                     >
                                         <span className="font-semibold text-sm">GoHighLevel</span>
-                                        <span className="text-[10px] opacity-60">Email / SMS</span>
+                                        <span className="text-[10px] opacity-60">Email Outreach</span>
                                     </button>
                                 </div>
                             </div>
@@ -155,7 +155,7 @@ export default function OutreachModal({ isOpen, onClose, selectedLeadsCount, sel
                             {tool && (
                                 <div className="space-y-2 animate-in fade-in slide-in-from-top-2">
                                     <label className="text-xs font-bold uppercase tracking-wider text-gray-500">
-                                        Select {tool === 'aimfox' ? 'Campaign' : 'Workflow'}
+                                        Select {tool === 'aimfox' ? 'Campaign' : 'Tag'}
                                     </label>
                                     {loading ? (
                                         <div className="flex items-center gap-2 text-sm text-gray-400 py-2">
