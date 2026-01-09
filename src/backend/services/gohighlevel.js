@@ -2,10 +2,9 @@ import axios from 'axios';
 
 class GoHighLevelService {
     constructor() {
-        // We use Location API Key for simplicity as requested by User logic often
-        // Alternatively, this could use OAuth access tokens if configured
         this.apiKey = process.env.GHL_API_KEY;
-        this.baseUrl = 'https://rest.gohighlevel.com/v1'; // GHL API v1 (Location API Key)
+        this.baseUrl = 'https://rest.gohighlevel.com/v1';
+        this.customFieldCache = null; // Cache custom field IDs
     }
 
     _getHeaders() {
@@ -15,6 +14,88 @@ class GoHighLevelService {
         };
     }
 
+    // =====================
+    // CUSTOM FIELD MANAGEMENT
+    // =====================
+
+    /**
+     * Fetches all custom fields for the location.
+     * Caches the result to avoid repeated API calls.
+     */
+    async getCustomFields() {
+        if (this.customFieldCache) return this.customFieldCache;
+
+        if (!this.apiKey) {
+            console.warn('GHL_API_KEY is not set');
+            return [];
+        }
+
+        try {
+            const response = await axios.get(`${this.baseUrl}/custom-fields`, {
+                headers: this._getHeaders()
+            });
+
+            this.customFieldCache = response.data.customFields || [];
+            return this.customFieldCache;
+        } catch (error) {
+            console.error('Failed to fetch GHL custom fields:', error.response?.data || error.message);
+            return [];
+        }
+    }
+
+    /**
+     * Creates a custom field if it doesn't exist.
+     * Returns the field ID.
+     */
+    async ensureCustomField(fieldKey, fieldName, fieldType = 'TEXT') {
+        const fields = await this.getCustomFields();
+        const existing = fields.find(f => f.fieldKey === fieldKey);
+
+        if (existing) {
+            console.log(`GHL Custom field "${fieldKey}" already exists with ID: ${existing.id}`);
+            return existing.id;
+        }
+
+        // Create the field
+        try {
+            const response = await axios.post(`${this.baseUrl}/custom-fields`, {
+                name: fieldName,
+                fieldKey: fieldKey,
+                placeholder: fieldName,
+                dataType: fieldType
+            }, {
+                headers: this._getHeaders()
+            });
+
+            const newField = response.data.customField;
+            console.log(`GHL Custom field "${fieldKey}" created with ID: ${newField.id}`);
+
+            // Invalidate cache so it's refreshed next time
+            this.customFieldCache = null;
+
+            return newField.id;
+        } catch (error) {
+            console.error(`Failed to create GHL custom field "${fieldKey}":`, error.response?.data || error.message);
+            throw error;
+        }
+    }
+
+    /**
+     * Ensures our required custom fields exist and returns their IDs.
+     */
+    async ensureElvisonFields() {
+        const [emailFieldId, linkedinFieldId] = await Promise.all([
+            this.ensureCustomField('elvison_email_message', 'Elvison Email Message', 'LARGE_TEXT'),
+            this.ensureCustomField('elvison_connection_request', 'Elvison Connection Request', 'LARGE_TEXT')
+        ]);
+
+        return { emailFieldId, linkedinFieldId };
+    }
+
+    // =====================
+    // WORKFLOWS / CAMPAIGNS
+    // =====================
+
     async listWorkflows() {
         if (!this.apiKey) {
             console.warn('GHL_API_KEY is not set');
@@ -22,31 +103,6 @@ class GoHighLevelService {
         }
 
         try {
-            // This is actually "Campaigns" in v1 usually, but let's check for Workflows.
-            // GHL v1 has /campaigns. Workflows might be different.
-            // If using v2 (OAuth), it would be /workflows/.
-            // Let's assume v1 for now as it's easier with Location Key.
-            // However, modern GHL uses Workflows heavily.
-            // If V1 resource is "campaigns", we'll list those.
-
-            // NOTE: Verified GHL API v1 'workflows' endpoint might not exist publicly in the same way.
-            // v1 has /campaigns. v2 has /workflows.
-            // If the user wants "Workflows", we might need v2 or to call the "add to workflow" via webhooks.
-            // But let's try to list campaigns for v1 compatibility or assume they mean Campaigns/Workflows mixed.
-            // Let's stick to 'campaigns' for V1 if 'workflows' is not available, but I'll label them "Workflows / Campaigns" in UI.
-
-            // Trying v1 campaigns endpoint
-            // const response = await axios.get(\`\${this.baseUrl}/campaigns\?status=published\`, {
-            //     headers: this._getHeaders()
-            // });
-
-            // Actually, for adding to a 'workflow', frequent pattern is adding contact then triggering a tag or using the contact ID.
-
-            // Let's try to fetch campaigns/workflows. 
-            // If we can't fetch workflows in v1, we will return an empty list or mock it for now
-            // and maybe rely on just adding contacts + tags.
-
-            // SAFE BET: V1 Campaigns
             const response = await axios.get(`${this.baseUrl}/campaigns`, {
                 headers: this._getHeaders()
             });
@@ -56,45 +112,74 @@ class GoHighLevelService {
                 name: c.name,
                 status: c.status
             }));
-
         } catch (error) {
-            console.error('Failed to list GHL campaigns/workflows:', error.response?.data || error.message);
-            // Fallback for demo if API fails
+            console.error('Failed to list GHL campaigns:', error.response?.data || error.message);
             return [];
         }
     }
 
-    async createContact(lead) {
+    // =====================
+    // CONTACT MANAGEMENT
+    // =====================
+
+    /**
+     * Creates a contact with custom field values for AI-generated messages.
+     * @param {Object} lead - The lead data from Elvison
+     * @param {Object} fieldIds - { emailFieldId, linkedinFieldId }
+     * @param {string} triggerTag - Tag to add (triggers workflow)
+     */
+    async createContact(lead, fieldIds = null, triggerTag = 'Elvison AI Lead') {
         if (!this.apiKey) throw new Error('GHL_API_KEY is missing');
+
+        // Ensure fields exist if not provided
+        if (!fieldIds) {
+            fieldIds = await this.ensureElvisonFields();
+        }
+
+        // Extract AI-generated messages from lead.custom_data
+        const customData = lead.custom_data || {};
+        const emailMessage = customData.email_message || '';
+        const connectionRequest = customData.connection_request || '';
 
         try {
             const payload = {
                 email: lead.email,
-                phone: lead.phone_numbers?.[0]?.number || lead.phone, // mapping first enriched phone
-                firstName: lead.person_name?.split(' ')[0],
-                lastName: lead.person_name?.split(' ').slice(1).join(' '),
-                name: lead.person_name,
-                companyName: lead.company_name,
-                title: lead.job_title,
-                website: lead.custom_data?.company_website,
-                customField: {
-                    // GHL custom fields are usually ID-based. 
-                    // We might default to tags instead for easier integration.
-                },
-                tags: ['Elvison AI Lead']
+                phone: lead.phone_numbers?.[0]?.number || lead.phone || '',
+                firstName: lead.person_name?.split(' ')[0] || '',
+                lastName: lead.person_name?.split(' ').slice(1).join(' ') || '',
+                name: lead.person_name || '',
+                companyName: lead.company_name || '',
+                title: lead.job_title || '',
+                website: customData.company_website || '',
+                source: 'Elvison AI',
+                tags: [triggerTag],
+                customField: {}
             };
+
+            // Map custom field IDs to values
+            if (fieldIds.emailFieldId && emailMessage) {
+                payload.customField[fieldIds.emailFieldId] = emailMessage;
+            }
+            if (fieldIds.linkedinFieldId && connectionRequest) {
+                payload.customField[fieldIds.linkedinFieldId] = connectionRequest;
+            }
+
+            console.log(`Creating GHL contact: ${payload.email} with custom fields:`, Object.keys(payload.customField).length);
 
             const response = await axios.post(`${this.baseUrl}/contacts`, payload, {
                 headers: this._getHeaders()
             });
 
-            return response.data.contact; // Return created contact
+            return response.data.contact;
         } catch (error) {
             console.error('Failed to create GHL contact:', error.response?.data || error.message);
             throw error;
         }
     }
 
+    /**
+     * Adds a contact to a campaign (for V1 API).
+     */
     async addContactToCampaign(contactId, campaignId) {
         if (!this.apiKey) throw new Error('GHL_API_KEY is missing');
 
@@ -111,20 +196,21 @@ class GoHighLevelService {
         }
     }
 
-    async addContactToWorkflow(contactId, workflowId) {
+    /**
+     * Adds a tag to an existing contact.
+     */
+    async addTagToContact(contactId, tag) {
         if (!this.apiKey) throw new Error('GHL_API_KEY is missing');
 
-        // V1 doesn't support adding to workflow directly by ID easily without v2.
-        // We will stick to Campaign for V1.
         try {
-            const response = await axios.post(`${this.baseUrl}/campaigns/${workflowId}/addToCampaign`, {
-                contactId: contactId
+            const response = await axios.post(`${this.baseUrl}/contacts/${contactId}/tags`, {
+                tags: [tag]
             }, {
                 headers: this._getHeaders()
             });
             return response.data;
         } catch (error) {
-            console.error(`Failed to add contact ${contactId} to workflow ${workflowId}:`, error.response?.data || error.message);
+            console.error(`Failed to add tag "${tag}" to contact ${contactId}:`, error.response?.data || error.message);
             throw error;
         }
     }
