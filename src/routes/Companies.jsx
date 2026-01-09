@@ -11,7 +11,46 @@ function Companies() {
     const [cleaning, setCleaning] = useState(false)
     const [cleaningProgress, setCleaningProgress] = useState(null)
 
+    // Research State
+    const [researchModalOpen, setResearchModalOpen] = useState(false);
+    const [researchTarget, setResearchTarget] = useState(null); // { name, website }
+    const [researchTopic, setResearchTopic] = useState("Find detailed deal history, recent transactions, and specific property examples.");
+    const [researchResult, setResearchResult] = useState(null);
+    const [isResearching, setIsResearching] = useState(false);
+
     const { icps, fetchIcps } = useIcp()
+
+    const openResearchModal = (company) => {
+        setResearchTarget(company);
+        setResearchResult(null);
+        setResearchModalOpen(true);
+    };
+
+    const handleResearch = async () => {
+        if (!researchTarget?.website) return;
+        setIsResearching(true);
+        try {
+            const response = await fetch('/api/companies/research', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    url: researchTarget.website,
+                    topic: researchTopic
+                })
+            });
+            const data = await response.json();
+            if (data.result) {
+                setResearchResult(data.result);
+            } else {
+                setResearchResult("No findings returned or error occurred.");
+            }
+        } catch (e) {
+            console.error(e);
+            setResearchResult("Error during research: " + e.message);
+        } finally {
+            setIsResearching(false);
+        }
+    };
 
     const handleCleanup = async (icpId) => {
         if (!window.confirm("WARNING: This will audit ALL companies in this strategy and DELETE any that score below 6/10. This cannot be undone.\n\nAre you sure?")) {
