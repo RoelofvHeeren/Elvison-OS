@@ -691,10 +691,27 @@ app.post('/api/companies/research/scan', async (req, res) => {
 
 app.post('/api/companies/research', async (req, res) => {
     try {
-        const { urls, topic } = req.body; // Expects array of URLs now
+        const { urls, topic, companyName } = req.body; // Add companyName to identify which company
         if (!urls || !Array.isArray(urls)) return res.status(400).json({ error: 'List of URLs is required' });
 
         const result = await ResearchService.researchCompany(urls, topic);
+
+        // Save to database if companyName provided
+        if (companyName) {
+            try {
+                await query(
+                    `UPDATE companies 
+                     SET company_profile = $1, last_updated = NOW() 
+                     WHERE company_name = $2`,
+                    [result, companyName]
+                );
+                console.log(`✅ Saved deep research for ${companyName}`);
+            } catch (dbError) {
+                console.error('Failed to save research to DB:', dbError);
+                // Don't fail the request if DB save fails
+            }
+        }
+
         res.json({ result });
     } catch (e) {
         console.error('Research API Error:', e);

@@ -84,7 +84,8 @@ function Companies() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     urls: selectedLinks,
-                    topic: researchTopic
+                    topic: researchTopic,
+                    companyName: researchTarget?.company_name // Add company identifier
                 })
             });
 
@@ -96,6 +97,9 @@ function Companies() {
             const data = await response.json();
             setResearchResult(data.result || "No findings returned.");
             setResearchStep('result');
+
+            // Refresh company data to show updated profile
+            await fetchCompanies();
         } catch (e) {
             console.error(e);
             setResearchResult("Error during analysis: " + e.message);
