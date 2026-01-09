@@ -275,9 +275,6 @@ function Companies() {
     const parseProfileIntoSections = (profileText) => {
         if (!profileText) return {};
 
-        // Normalize text first - remove bold/headers markers to simplify matching
-        let cleanText = profileText.replace(/\*\*/g, '').replace(/###/g, '');
-
         // Define mappings for normalization
         const mappings = {
             'Executive Summary': 'Summary',
@@ -292,7 +289,7 @@ function Companies() {
         };
 
         const sections = {};
-        const lines = cleanText.split('\n');
+        const lines = profileText.split('\n');
         let currentSection = 'Summary'; // Default start
         let currentContent = [];
 
@@ -307,14 +304,22 @@ function Companies() {
             const trimmed = line.trim();
             if (!trimmed) return;
 
-            // Check if line starts with a keyword (fuzzy match)
-            // e.g. "Investment Strategy:" or "1. Investment Strategy"
+            // Remove common header markers for checking
+            // Remove leading #, **, digits like "1. ", "1.", and trailing **, :
+            const cleanLine = trimmed
+                .replace(/^#+\s*/, '') // Remove # 
+                .replace(/^\*\*/, '') // Remove start **
+                .replace(/\*\*$/, '') // Remove end **
+                .replace(/^(\d+\.)\s*/, '') // Remove "1. "
+                .replace(/:$/, '') // Remove trailing :
+                .trim();
+
+            // Check if cleanLine is exactly one of our keywords (case insensitive)
             const keywordMatch = sectionKeywords.find(k =>
-                trimmed.toLowerCase().startsWith(k.toLowerCase()) ||
-                trimmed.toLowerCase().includes(k.toLowerCase() + ':')
+                cleanLine.toLowerCase() === k.toLowerCase()
             );
 
-            if (keywordMatch && trimmed.length < 50) { // Assume header lines are short
+            if (keywordMatch) {
                 // Save previous section
                 if (currentSection && currentContent.length > 0) {
                     sections[currentSection] = (sections[currentSection] || '') + '\n' + currentContent.join('\n').trim();
