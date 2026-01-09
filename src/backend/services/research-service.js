@@ -11,50 +11,105 @@ export class ResearchService {
      * Step 1: Scan a company website for relevant pages (Sitemap/Links)
      * @param {string} url - base website URL
      * @param {string} topic - research topic to filter links
-     * @returns {Promise<Array<{url: string, title: string, reason: string}>>}
+     * @returns {Promise<{recommended: Array, all: Array}>}
      */
     static async scanCompany(url, topic) {
         console.log(`🕵️‍♀️ Scanning ${url} for topic: ${topic}...`);
 
         let rootUrl = url;
         if (!rootUrl.startsWith('http')) rootUrl = 'https://' + rootUrl;
+        const domain = new URL(rootUrl).hostname;
 
         try {
+            const allLinks = new Map(); // url -> text
+
+            // Step 1: Try to get sitemap
+            console.log('📋 Checking for sitemap...');
+            const sitemapUrls = await this.extractSitemapUrls(rootUrl);
+            console.log(`Found ${sitemapUrls.length} URLs from sitemap`);
+
+            sitemapUrls.forEach(sitemapUrl => {
+                // Use the last part of the URL as the title/text
+                const path = new URL(sitemapUrl).pathname;
+                const title = path.split('/').filter(Boolean).pop() || 'Page';
+                allLinks.set(sitemapUrl, title.replace(/-/g, ' '));
+            });
+
+            // Step 2: Crawl homepage
+            console.log('🏠 Crawling homepage...');
             const html = await this.fetchHtml(rootUrl);
             const $ = cheerio.load(html);
 
-            // Extract all unique links
-            const uniqueLinks = new Map();
             $('a').each((i, el) => {
                 const href = $(el).attr('href');
-                const text = $(el).text().trim() || "Link";
+                const text = $(el).text().trim() || "";
 
                 if (href && !href.startsWith('#') && !href.startsWith('mailto')) {
                     try {
                         const fullUrl = new URL(href, rootUrl).href;
-                        // Only internal links
-                        if (fullUrl.includes(new URL(rootUrl).hostname)) {
-                            uniqueLinks.set(fullUrl, text);
+                        if (fullUrl.includes(domain)) {
+                            allLinks.set(fullUrl, text);
                         }
                     } catch (e) { }
                 }
             });
 
+            // Step 3: Crawl key sub-pages that likely have portfolio links
+            // Look for links like /real-estate/, /portfolio/, /investments/, /our-work/, etc.
+            const keyPages = [];
+            allLinks.forEach((text, linkUrl) => {
+                const path = new URL(linkUrl).pathname.toLowerCase();
+                if (
+                    path.includes('real-estate') ||
+                    path.includes('infrastructure') ||
+                    path.includes('private-equity') ||
+                    path.includes('portfolio') ||
+                    path.includes('investments') ||
+                    path.includes('our-work')
+                ) {
+                    keyPages.push(linkUrl);
+                }
+            });
+
+            console.log(`🔍 Crawling ${keyPages.length} key sub-pages...`);
+            for (const pageUrl of keyPages.slice(0, 5)) { // Limit to 5 sub-pages
+                try {
+                    const pageHtml = await this.fetchHtml(pageUrl);
+                    const $$ = cheerio.load(pageHtml);
+                    $$('a').each((i, el) => {
+                        const href = $$(el).attr('href');
+                        const text = $$(el).text().trim() || "";
+                        if (href && !href.startsWith('#') && !href.startsWith('mailto')) {
+                            try {
+                                const fullUrl = new URL(href, pageUrl).href;
+                                if (fullUrl.includes(domain)) {
+                                    allLinks.set(fullUrl, text);
+                                }
+                            } catch (e) { }
+                        }
+                    });
+                } catch (e) {
+                    console.warn(`Failed to crawl ${pageUrl}: ${e.message}`);
+                }
+            }
+
             // Convert map to array for AI
-            const links = Array.from(uniqueLinks.entries()).map(([linkUrl, text]) => ({ url: linkUrl, text }));
+            const links = Array.from(allLinks.entries()).map(([linkUrl, text]) => ({ url: linkUrl, text }));
+            console.log(`📊 Total unique links found: ${links.length}`);
 
             // Ask AI to select relevant links
             const linkSelectionPrompt = `
                 I am researching "${topic}" for the company at ${rootUrl}.
-                Here are the links found on the homepage:
+                Here are the links found on the website (including sitemap and sub-pages):
                 ${JSON.stringify(links.slice(0, 500))}
 
                 Select up to 20 URLs that are most likely to contain this information.
                 Rank them by relevance score (0-100).
                 
                 Prioritize pages like:
+                - Portfolio pages / Case Studies / Project pages
                 - "Team" / "Leadership" / "People"
-                - "Portfolio" / "Investments" / "Case Studies"
+                - "Investments" / "Our Work"
                 - "Strategy" / "Approach" / "Family Office"
                 - "About Us" / "History"
 
@@ -73,6 +128,61 @@ export class ResearchService {
             console.error('Scan failed:', e);
             throw new Error(`Scan failed: ${e.message}`);
         }
+    }
+
+    /**
+     * Try to extract all URLs from sitemap.xml
+     */
+    static async extractSitemapUrls(rootUrl) {
+        const sitemapPaths = ['/sitemap.xml', '/sitemap_index.xml', '/wp-sitemap.xml'];
+
+        for (const path of sitemapPaths) {
+            try {
+                const sitemapUrl = new URL(path, rootUrl).href;
+                const xml = await this.fetchHtml(sitemapUrl);
+
+                if (!xml.includes('<?xml') && !xml.includes('<urlset') && !xml.includes('<sitemapindex')) {
+                    continue; // Not a valid sitemap
+                }
+
+                const urls = [];
+
+                // Extract <loc> tags
+                const locMatches = xml.match(/<loc>(.*?)<\/loc>/g);
+                if (locMatches) {
+                    for (const match of locMatches) { // Use for...of for await inside loop
+                        const url = match.replace(/<\/?loc>/g, '').trim();
+
+                        // If it's a sitemap index, recursively fetch child sitemaps
+                        if (url.endsWith('.xml')) {
+                            // Don't recurse too deep, just fetch this one sitemap
+                            try {
+                                const childXml = await this.fetchHtml(url);
+                                const childLocs = childXml.match(/<loc>(.*?)<\/loc>/g);
+                                if (childLocs) {
+                                    childLocs.forEach(childMatch => {
+                                        const childUrl = childMatch.replace(/<\/?loc>/g, '').trim();
+                                        if (!childUrl.endsWith('.xml')) {
+                                            urls.push(childUrl);
+                                        }
+                                    });
+                                }
+                            } catch (e) {
+                                console.warn(`Failed to fetch child sitemap ${url}`);
+                            }
+                        } else {
+                            urls.push(url);
+                        }
+                    }
+                }
+
+                return urls;
+            } catch (e) {
+                // Try next sitemap path
+            }
+        }
+
+        return []; // No sitemap found
     }
 
     /**
