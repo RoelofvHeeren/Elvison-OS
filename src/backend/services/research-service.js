@@ -47,22 +47,27 @@ export class ResearchService {
             const linkSelectionPrompt = `
                 I am researching "${topic}" for the company at ${rootUrl}.
                 Here are the links found on the homepage:
-                ${JSON.stringify(links.slice(0, 200))}
+                ${JSON.stringify(links.slice(0, 500))}
 
                 Select up to 20 URLs that are most likely to contain this information.
+                Rank them by relevance score (0-100).
+                
                 Prioritize pages like:
                 - "Team" / "Leadership" / "People"
                 - "Portfolio" / "Investments" / "Case Studies"
                 - "Strategy" / "Approach" / "Family Office"
                 - "About Us" / "History"
 
-                Return a strict JSON array of objects with keys: "url", "title" (cleaned up link text), and "reason" (why you chose it).
+                Return a strict JSON array of objects with keys: "url", "title" (cleaned up link text), "reason" (why you chose it), and "score" (number).
             `;
 
             const linkResult = await model.generateContent(linkSelectionPrompt);
             const selectedLinks = this.parseJson(linkResult.response.text());
 
-            return selectedLinks || [{ url: rootUrl, title: "Homepage", reason: "Fallback" }];
+            return {
+                recommended: selectedLinks || [],
+                all: links // Return all raw links so user can manually select others
+            };
 
         } catch (e) {
             console.error('Scan failed:', e);

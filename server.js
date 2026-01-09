@@ -681,8 +681,8 @@ app.post('/api/companies/research/scan', async (req, res) => {
         const { url, topic } = req.body;
         if (!url) return res.status(400).json({ error: 'URL is required' });
 
-        const links = await ResearchService.scanCompany(url, topic);
-        res.json({ links });
+        const { recommended, all } = await ResearchService.scanCompany(url, topic);
+        res.json({ recommended, all });
     } catch (e) {
         console.error('Research Scan Error:', e);
         res.status(500).json({ error: e.message });

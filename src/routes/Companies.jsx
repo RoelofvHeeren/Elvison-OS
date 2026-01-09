@@ -21,8 +21,10 @@ function Companies() {
 
     // New Multi-Step State
     const [researchStep, setResearchStep] = useState('input'); // 'input', 'scanning', 'selecting', 'analyzing', 'result'
-    const [foundLinks, setFoundLinks] = useState([]);
+    const [allLinks, setAllLinks] = useState([]);
+    const [recommendedLinks, setRecommendedLinks] = useState([]);
     const [selectedLinks, setSelectedLinks] = useState([]);
+    const [linkSearch, setLinkSearch] = useState('');
 
     const { icps, fetchIcps } = useIcp()
 
@@ -30,8 +32,10 @@ function Companies() {
         setResearchTarget(company);
         setResearchResult(null);
         setResearchStep('input');
-        setFoundLinks([]);
+        setAllLinks([]);
+        setRecommendedLinks([]);
         setSelectedLinks([]);
+        setLinkSearch('');
         setResearchModalOpen(true);
     };
 
@@ -51,8 +55,18 @@ function Companies() {
             if (!response.ok) throw new Error(await response.text());
 
             const data = await response.json();
-            setFoundLinks(data.links || []);
-            setSelectedLinks(data.links?.map(l => l.url) || []); // Select all by default
+
+            // Deduplicate: exact url match
+            const recommended = data.recommended || [];
+            const all = data.all || [];
+
+            setRecommendedLinks(recommended);
+            setAllLinks(all);
+
+            // Default select highly relevant ones (score > 70)
+            const highValueLinks = recommended.filter(l => (l.score || 0) > 70).map(l => l.url);
+            setSelectedLinks(highValueLinks.length > 0 ? highValueLinks : recommended.map(l => l.url));
+
             setResearchStep('selecting');
         } catch (e) {
             console.error(e);
@@ -856,36 +870,96 @@ function Companies() {
                                         {/* Step 3: Select Links */}
                                         {researchStep === 'selecting' && (
                                             <>
-                                                <div className="flex items-center justify-between mb-2">
-                                                    <h4 className="text-sm font-bold text-white uppercase tracking-wider">Select Pages to Analyze</h4>
-                                                    <span className="text-xs text-teal-400">{selectedLinks.length} selected</span>
+                                                <div className="flex items-center justify-between mb-4">
+                                                    <div>
+                                                        <h4 className="text-sm font-bold text-white uppercase tracking-wider">Select Pages to Analyze</h4>
+                                                        <p className="text-xs text-gray-400">Select any pages you want the AI to read.</p>
+                                                    </div>
+                                                    <span className="text-xs font-mono px-2 py-1 bg-teal-500/20 text-teal-400 rounded-lg">{selectedLinks.length} selected</span>
                                                 </div>
-                                                <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2">
-                                                    {foundLinks.map((link, idx) => (
-                                                        <div key={idx}
-                                                            onClick={() => {
-                                                                if (selectedLinks.includes(link.url)) {
-                                                                    setSelectedLinks(selectedLinks.filter(l => l !== link.url));
-                                                                } else {
-                                                                    setSelectedLinks([...selectedLinks, link.url]);
-                                                                }
-                                                            }}
-                                                            className={`p-3 rounded-lg border cursor-pointer transition-all flex items-start gap-3 ${selectedLinks.includes(link.url)
-                                                                ? 'bg-teal-500/10 border-teal-500/50'
-                                                                : 'bg-white/5 border-white/5 hover:bg-white/10'
-                                                                }`}
-                                                        >
-                                                            <div className={`mt-1 w-4 h-4 rounded border flex items-center justify-center ${selectedLinks.includes(link.url) ? 'bg-teal-500 border-teal-500' : 'border-gray-500'
-                                                                }`}>
-                                                                {selectedLinks.includes(link.url) && <div className="w-2 h-2 bg-black rounded-sm" />}
+
+                                                {/* AI Recommendations */}
+                                                <div className="mb-6">
+                                                    <h5 className="text-xs font-bold text-teal-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                                                        <span className="w-2 h-2 rounded-full bg-teal-500 animate-pulse"></span>
+                                                        AI Recommended
+                                                    </h5>
+                                                    <div className="space-y-2">
+                                                        {foundLinks.filter(link => link.reason).map((link, idx) => (
+                                                            <div key={'rec' + idx}
+                                                                onClick={() => {
+                                                                    if (selectedLinks.includes(link.url)) {
+                                                                        setSelectedLinks(selectedLinks.filter(l => l !== link.url));
+                                                                    } else {
+                                                                        setSelectedLinks([...selectedLinks, link.url]);
+                                                                    }
+                                                                }}
+                                                                className={`group p-3 rounded-xl border cursor-pointer transition-all flex items-start gap-3 ${selectedLinks.includes(link.url)
+                                                                        ? 'bg-teal-500/10 border-teal-500/50 shadow-[0_0_15px_-3px_rgba(20,184,166,0.2)]'
+                                                                        : 'bg-white/5 border-white/5 hover:bg-white/10'
+                                                                    }`}
+                                                            >
+                                                                <div className={`mt-1 w-5 h-5 rounded border flex items-center justify-center transition-colors ${selectedLinks.includes(link.url) ? 'bg-teal-500 border-teal-500' : 'border-gray-600 group-hover:border-gray-400'
+                                                                    }`}>
+                                                                    {selectedLinks.includes(link.url) && <div className="w-2.5 h-2.5 bg-black rounded-sm" />}
+                                                                </div>
+                                                                <div className="flex-1">
+                                                                    <div className="flex items-center justify-between">
+                                                                        <div className="text-sm font-bold text-gray-200">{link.title || link.url}</div>
+                                                                        {link.score && <div className="text-[10px] font-mono bg-teal-500/20 text-teal-300 px-1.5 py-0.5 rounded">{link.score}% match</div>}
+                                                                    </div>
+                                                                    <div className="text-xs text-gray-500 break-all line-clamp-1">{link.url}</div>
+                                                                    {link.reason && <div className="text-xs text-teal-400/80 mt-1 italic">"{link.reason}"</div>}
+                                                                </div>
                                                             </div>
-                                                            <div>
-                                                                <div className="text-sm font-bold text-gray-200">{link.title || link.url}</div>
-                                                                <div className="text-xs text-gray-500 break-all">{link.url}</div>
-                                                                {link.reason && <div className="text-xs text-teal-400/80 mt-1 italic">"{link.reason}"</div>}
-                                                            </div>
-                                                        </div>
-                                                    ))}
+                                                        ))}
+                                                    </div>
+                                                </div>
+
+                                                {/* All Other Links */}
+                                                <div>
+                                                    <div className="flex items-center justify-between mb-3">
+                                                        <h5 className="text-xs font-bold text-gray-500 uppercase tracking-widest">All Found Pages ({foundLinks.length})</h5>
+                                                        <input
+                                                            type="text"
+                                                            placeholder="Filter links..."
+                                                            value={linkSearch}
+                                                            onChange={(e) => setLinkSearch(e.target.value)}
+                                                            className="bg-black/20 border border-white/10 rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:border-teal-500/50 w-32"
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-1 max-h-[200px] overflow-y-auto pr-2 custom-scrollbar">
+                                                        {foundLinks
+                                                            .filter(l => {
+                                                                const isRecommended = l.reason; // Check if it has a reason, meaning it's in recommended
+                                                                const matchesSearch = !linkSearch || (l.title && l.title.toLowerCase().includes(linkSearch.toLowerCase())) || l.url.toLowerCase().includes(linkSearch.toLowerCase());
+                                                                return !isRecommended && matchesSearch;
+                                                            })
+                                                            .map((link, idx) => (
+                                                                <div key={'all' + idx}
+                                                                    onClick={() => {
+                                                                        if (selectedLinks.includes(link.url)) {
+                                                                            setSelectedLinks(selectedLinks.filter(l => l !== link.url));
+                                                                        } else {
+                                                                            setSelectedLinks([...selectedLinks, link.url]);
+                                                                        }
+                                                                    }}
+                                                                    className={`p-2 rounded-lg border cursor-pointer transition-all flex items-center gap-3 ${selectedLinks.includes(link.url)
+                                                                            ? 'bg-blue-500/10 border-blue-500/30'
+                                                                            : 'bg-transparent border-transparent hover:bg-white/5'
+                                                                        }`}
+                                                                >
+                                                                    <div className={`w-4 h-4 rounded border flex items-center justify-center ${selectedLinks.includes(link.url) ? 'bg-blue-500 border-blue-500' : 'border-gray-700'
+                                                                        }`}>
+                                                                        {selectedLinks.includes(link.url) && <div className="w-2 h-2 bg-black rounded-sm" />}
+                                                                    </div>
+                                                                    <div className="flex-1 min-w-0">
+                                                                        <div className="text-xs text-gray-300 truncate">{link.title || 'Untitled Link'}</div>
+                                                                        <div className="text-[10px] text-gray-600 truncate">{link.url}</div>
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                    </div>
                                                 </div>
                                             </>
                                         )}
