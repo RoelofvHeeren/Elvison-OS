@@ -107,6 +107,26 @@ function Companies() {
         }
     };
 
+    const handleRegenerateOutreach = async () => {
+        if (!researchTarget?.company_name) return;
+
+        try {
+            const response = await fetch(`/api/companies/${encodeURIComponent(researchTarget.company_name)}/regenerate-outreach`, {
+                method: 'POST'
+            });
+
+            if (!response.ok) throw new Error('Failed to regenerate outreach');
+
+            const data = await response.json();
+            console.log('✅ Outreach regenerated:', data);
+            alert('Outreach messages regenerated successfully!');
+            await fetchCompanies(); // Refresh to show updated messages
+        } catch (e) {
+            console.error('Outreach regeneration failed:', e);
+            alert('Failed to regenerate outreach: ' + e.message);
+        }
+    };
+
     const handleCleanup = async (icpId) => {
         if (!window.confirm("WARNING: This will audit ALL companies in this strategy and DELETE any that score below 6/10. This cannot be undone.\n\nAre you sure?")) {
             return;

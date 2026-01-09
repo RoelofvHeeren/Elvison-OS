@@ -691,30 +691,87 @@ app.post('/api/companies/research/scan', async (req, res) => {
 
 app.post('/api/companies/research', async (req, res) => {
     try {
-        const { urls, topic, companyName } = req.body; // Add companyName to identify which company
+        const { urls, topic, companyName } = req.body;
         if (!urls || !Array.isArray(urls)) return res.status(400).json({ error: 'List of URLs is required' });
 
         const result = await ResearchService.researchCompany(urls, topic);
 
-        // Save to database if companyName provided
+        // Merge with existing profile if companyName provided
         if (companyName) {
             try {
+                // Get existing profile
+                const { rows } = await query(
+                    'SELECT company_profile FROM companies WHERE company_name = $1',
+                    [companyName]
+                );
+
+                const existingProfile = rows[0]?.company_profile || '';
+
+                // Use AI to merge old + new research
+                const mergedProfile = await ResearchService.mergeProfiles(existingProfile, result);
+
                 await query(
                     `UPDATE companies 
                      SET company_profile = $1, last_updated = NOW() 
                      WHERE company_name = $2`,
-                    [result, companyName]
+                    [mergedProfile, companyName]
                 );
-                console.log(`✅ Saved deep research for ${companyName}`);
-            } catch (dbError) {
-                console.error('Failed to save research to DB:', dbError);
-                // Don't fail the request if DB save fails
-            }
-        }
+                console.log(`✅ Merged and saved deep research for ${companyName}`);
 
-        res.json({ result });
+                res.json({ result: mergedProfile });
+            } catch (dbError) {
+                console.error('Failed to merge/save research:', dbError);
+                // Fallback: return the new research even if merge fails
+                res.json({ result });
+            }
+        } else {
+            res.json({ result });
+        }
     } catch (e) {
         console.error('Research API Error:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Regenerate outreach messages for a company (used after Deep Research adds new info)
+app.post('/api/companies/:companyName/regenerate-outreach', async (req, res) => {
+    try {
+        const { companyName } = req.params;
+
+        // Get company details
+        const { rows } = await query(
+            'SELECT id, company_name, website, company_profile FROM companies WHERE company_name = $1',
+            [companyName]
+        );
+
+        if (rows.length === 0) {
+            return res.status(404).json({ error: 'Company not found' });
+        }
+
+        const company = rows[0];
+
+        // Import OutreachService dynamically
+        const { OutreachService } = await import('./src/backend/services/outreach-service.js');
+
+        // Generate new outreach messages
+        const messages = await OutreachService.createLeadMessages({
+            company_name: company.company_name,
+            website: company.website,
+            company_profile: company.company_profile
+        });
+
+        // Update in database
+        await query(
+            `UPDATE companies 
+             SET linkedin_message = $1, email_subject = $2, email_body = $3 
+             WHERE company_name = $4`,
+            [messages.linkedin_message, messages.email_subject, messages.email_body, companyName]
+        );
+
+        console.log(`✅ Regenerated outreach for ${companyName}`);
+        res.json({ success: true, messages });
+    } catch (e) {
+        console.error('Outreach Regeneration Error:', e);
         res.status(500).json({ error: e.message });
     }
 });

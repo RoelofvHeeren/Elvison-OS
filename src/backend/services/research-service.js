@@ -267,8 +267,47 @@ export class ResearchService {
             return finalResult.response.text();
 
         } catch (e) {
-            console.error('Research failed:', e);
+            console.error('Deep research failed:', e);
             throw new Error(`Research failed: ${e.message}`);
+        }
+    }
+
+    /**
+     * Merge new research with existing company profile using AI
+     */
+    static async mergeProfiles(existingProfile, newResearch) {
+        if (!existingProfile || existingProfile.trim().length === 0) {
+            return newResearch; // No existing profile, just return new research
+        }
+
+        try {
+            const mergePrompt = `
+                You are updating a company profile with new research findings.
+                
+                **Existing Profile:**
+                ${existingProfile}
+                
+                **New Research:**
+                ${newResearch}
+                
+                **Task:**
+                Intelligently merge these two profiles into one comprehensive report.
+                - Preserve ALL unique information from both sources
+                - Remove duplicates and redundancies
+                - If new research has more specific/detailed information, use that instead of older vague info
+                - Maintain the markdown structure and section organization
+                - Prioritize recent information over old when there are conflicts
+                - Keep the combined profile well-organized and scannable
+                
+                Return ONLY the merged markdown profile, no preamble.
+            `;
+
+            const result = await model.generateContent(mergePrompt);
+            return result.response.text();
+        } catch (e) {
+            console.error('Profile merge failed:', e);
+            // Fallback: concatenate with a separator
+            return `${existingProfile}\n\n---\n\n## Updated Research\n\n${newResearch}`;
         }
     }
 
