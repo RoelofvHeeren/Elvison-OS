@@ -2163,24 +2163,44 @@ app.get('/api/integrations/ghl/tags', requireAuth, async (req, res) => {
 })
 
 // DEBUG: Test GHL Connection (Public)
+// DEBUG: Test GHL Connection (Public)
 app.get('/api/test-ghl', async (req, res) => {
     try {
-        const tags = await ghlService.listTags();
+        // Direct call to see headers and response
+        const axios = (await import('axios')).default;
+        const key = process.env.GHL_API_KEY;
+        const locationId = process.env.GHL_LOCATION_ID || '5tJd1yCE13B3wwdy9qvl';
+
+        console.log('Testing GHL with key length:', key?.length);
+
+        const response = await axios.get(
+            `https://services.leadconnectorhq.com/locations/${locationId}/tags`,
+            {
+                headers: {
+                    'Authorization': `Bearer ${key?.trim()}`,
+                    'Content-Type': 'application/json',
+                    'Version': '2021-07-28'
+                }
+            }
+        );
+
         res.json({
             success: true,
-            tags: tags.slice(0, 3),
-            count: tags.length,
+            tags: response.data.tags?.slice(0, 3),
+            total: response.data.tags?.length,
             debug: {
-                hasKey: !!process.env.GHL_API_KEY,
-                locationId: process.env.GHL_LOCATION_ID || 'fallback'
+                headers: response.config.headers['Authorization'] ? 'Bearer [HIDDEN]' : 'Missing',
+                url: response.config.url
             }
         });
     } catch (err) {
         res.status(500).json({
             error: err.message,
+            status: err.response?.status,
+            data: err.response?.data,
             debug: {
                 hasKey: !!process.env.GHL_API_KEY,
-                locationId: process.env.GHL_LOCATION_ID || 'fallback'
+                locationId: process.env.GHL_LOCATION_ID
             }
         });
     }
