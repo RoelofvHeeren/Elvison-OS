@@ -677,17 +677,35 @@ import { CompanyScorer } from './src/backend/services/company-scorer.js';
 
 app.post('/api/strategies/:id/cleanup', requireAuth, async (req, res) => {
     const { id } = req.params;
+
+    // Set up SSE headers
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
     try {
         const { rows } = await query('SELECT name FROM icps WHERE id = $1', [id]);
-        if (rows.length === 0) return res.status(404).json({ error: 'ICP not found' });
+        if (rows.length === 0) {
+            res.write(`data: ${JSON.stringify({ error: 'ICP not found' })}\n\n`);
+            return res.end();
+        }
 
         const icpName = rows[0].name;
-        const result = await CompanyScorer.cleanupICP(id, icpName);
 
-        res.json({ success: true, stats: result });
+        // Run cleanup with progress callback
+        const result = await CompanyScorer.cleanupICP(id, icpName, (progress) => {
+            // Stream progress update
+            res.write(`data: ${JSON.stringify({ type: 'progress', stats: progress })}\n\n`);
+        });
+
+        // Final success message
+        res.write(`data: ${JSON.stringify({ type: 'complete', success: true, stats: result })}\n\n`);
+        res.end();
+
     } catch (e) {
         console.error('Cleanup Failed:', e);
-        res.status(500).json({ error: e.message });
+        res.write(`data: ${JSON.stringify({ type: 'error', error: e.message })}\n\n`);
+        res.end();
     }
 });
 

@@ -9,6 +9,7 @@ function Companies() {
     const [expandedCompany, setExpandedCompany] = useState(null)
     const [filters, setFilters] = useState({ icpId: '' })
     const [cleaning, setCleaning] = useState(false)
+    const [cleaningProgress, setCleaningProgress] = useState(null)
 
     const { icps, fetchIcps } = useIcp()
 
@@ -18,23 +19,48 @@ function Companies() {
         }
 
         setCleaning(true);
+        setCleaningProgress({ processed: 0, total: 0, kept: 0, disqualified: 0 });
+
         try {
-            const res = await fetch(`/api/strategies/${icpId}/cleanup`, {
+            const response = await fetch(`/api/strategies/${icpId}/cleanup`, {
                 method: 'POST'
             });
-            const data = await res.json();
 
-            if (data.success) {
-                alert(`Cleanup Complete!\n\nKept: ${data.stats.kept}\nRemoved: ${data.stats.disqualified}\nErrors: ${data.stats.errors}`);
-                loadCompanies(); // Reload
-            } else {
-                alert('Cleanup failed: ' + data.error);
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value);
+                const lines = chunk.split('\n\n');
+
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        try {
+                            const data = JSON.parse(line.slice(6));
+
+                            if (data.type === 'progress') {
+                                setCleaningProgress(data.stats);
+                            } else if (data.type === 'complete') {
+                                alert(`Cleanup Complete!\n\nKept: ${data.stats.kept}\nRemoved: ${data.stats.disqualified}`);
+                                loadCompanies(); // Reload
+                            } else if (data.type === 'error' || data.error) {
+                                alert('Cleanup failed: ' + (data.error || 'Unknown error'));
+                            }
+                        } catch (e) {
+                            console.error('Error parsing SSE:', e);
+                        }
+                    }
+                }
             }
         } catch (e) {
             console.error(e);
             alert('Error running cleanup');
         } finally {
             setCleaning(false);
+            setCleaningProgress(null);
         }
     }
 
@@ -311,20 +337,29 @@ function Companies() {
                                 </select>
 
                                 {filters.icpId && (
-                                    <button
-                                        onClick={() => handleCleanup(filters.icpId)}
-                                        disabled={cleaning}
-                                        className={`
-                                            px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all
-                                            ${cleaning
-                                                ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
-                                                : 'bg-rose-500/10 text-rose-400 border border-rose-500/20 hover:bg-rose-500/20'
-                                            }
-                                        `}
-                                    >
-                                        <Trash2 className={`w-4 h-4 ${cleaning ? 'animate-spin' : ''}`} />
-                                        {cleaning ? 'Cleaning...' : 'Cleanup Strategy'}
-                                    </button>
+                                    <div className="flex items-center gap-4">
+                                        {cleaning && cleaningProgress && (
+                                            <div className="text-xs text-gray-400 font-mono">
+                                                <span className="text-white font-bold">{cleaningProgress.processed}</span>/{cleaningProgress.total}
+                                                <span className="ml-2 text-green-400">Kept: {cleaningProgress.kept}</span>
+                                                <span className="ml-2 text-rose-400">Drop: {cleaningProgress.disqualified}</span>
+                                            </div>
+                                        )}
+                                        <button
+                                            onClick={() => handleCleanup(filters.icpId)}
+                                            disabled={cleaning}
+                                            className={`
+                                                px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all
+                                                ${cleaning
+                                                    ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
+                                                    : 'bg-rose-500/10 text-rose-400 border border-rose-500/20 hover:bg-rose-500/20'
+                                                }
+                                            `}
+                                        >
+                                            <Trash2 className={`w-4 h-4 ${cleaning ? 'animate-spin' : ''}`} />
+                                            {cleaning ? 'Cleaning...' : 'Cleanup Strategy'}
+                                        </button>
+                                    </div>
                                 )}
                             </div>
                         </div>

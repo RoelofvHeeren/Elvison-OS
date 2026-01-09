@@ -7,7 +7,7 @@ const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
 export class CompanyScorer {
 
-    static async cleanupICP(icpId, icpName) {
+    static async cleanupICP(icpId, icpName, onProgress) {
         console.log(`🧹 Starting cleanup for ICP: ${icpName} (ID: ${icpId})`);
 
         // Determine type based on name
@@ -32,7 +32,8 @@ export class CompanyScorer {
             processed: 0,
             disqualified: 0,
             kept: 0,
-            errors: 0
+            errors: 0,
+            total: leads.length
         };
 
         // BATCH PROCESSING CONSTANTS
@@ -84,6 +85,11 @@ export class CompanyScorer {
             const batch = leads.slice(i, i + CONCURRENCY_LIMIT);
             console.log(`Processing batch ${Math.floor(i / CONCURRENCY_LIMIT) + 1} / ${Math.ceil(leads.length / CONCURRENCY_LIMIT)}`);
             await Promise.all(batch.map(lead => processLead(lead)));
+
+            // Report progress
+            if (onProgress) {
+                onProgress({ ...results });
+            }
         }
 
         return results;
