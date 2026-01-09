@@ -96,23 +96,38 @@ class GoHighLevelService {
     // =====================
 
     async listTags() {
-        if (!this.apiKey) {
-            console.warn('GHL_API_KEY is not set');
+        const key = this.apiKey ? this.apiKey.trim() : null;
+        if (!key) {
+            console.error('GHL_API_KEY is missing/empty during listTags call');
             return [];
         }
 
-        try {
-            const response = await axios.get(
-                `${this.baseUrl}/locations/${this.locationId}/tags`,
-                { headers: this._getHeaders() }
-            );
+        const url = `${this.baseUrl}/locations/${this.locationId}/tags`;
+        console.log(`[GHL] Fetching tags from: ${url}`);
 
-            return (response.data.tags || []).map(t => ({
-                id: t.name,  // Use tag name as ID for createContact
+        try {
+            const response = await axios.get(url, {
+                headers: {
+                    'Authorization': `Bearer ${key}`,
+                    'Content-Type': 'application/json',
+                    'Version': '2021-07-28'
+                }
+            });
+
+            const tags = response.data.tags || [];
+            console.log(`[GHL] Successfully fetched ${tags.length} tags`);
+
+            return tags.map(t => ({
+                id: t.name,
                 name: t.name
             }));
         } catch (error) {
-            console.error('Failed to list GHL tags:', error.response?.data || error.message);
+            console.error('[GHL] Failed to list tags:', {
+                status: error.response?.status,
+                statusText: error.response?.statusText,
+                data: error.response?.data,
+                message: error.message
+            });
             return [];
         }
     }
