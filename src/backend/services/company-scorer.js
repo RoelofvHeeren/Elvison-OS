@@ -153,15 +153,6 @@ OUTPUT JSON:
 }`;
         }
 
-OUTPUT JSON:
-        {
-            "fit_score": number(1 - 10),
-                "fit_reason": "string (concise reason)",
-                    "is_investor": boolean,
-                        "investor_type": "string (PE/REIT/Pension/Broker/Family Office/Other)"
-        } `;
-        }
-
         try {
             const result = await model.generateContent(prompt);
             const text = result.response.text();
