@@ -38,6 +38,12 @@ function Companies() {
                     topic: researchTopic
                 })
             });
+
+            if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`Server returned ${response.status}: ${text.slice(0, 100)}...`);
+            }
+
             const data = await response.json();
             if (data.result) {
                 setResearchResult(data.result);
