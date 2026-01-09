@@ -29,10 +29,14 @@ export class ResearchService {
             console.log(`Found ${sitemapUrls.length} URLs from sitemap`);
 
             sitemapUrls.forEach(sitemapUrl => {
-                // Use the last part of the URL as the title/text
-                const path = new URL(sitemapUrl).pathname;
-                const title = path.split('/').filter(Boolean).pop() || 'Page';
-                allLinks.set(sitemapUrl, title.replace(/-/g, ' '));
+                try {
+                    // Use the last part of the URL as the title/text
+                    const path = new URL(sitemapUrl).pathname;
+                    const title = path.split('/').filter(Boolean).pop() || 'Page';
+                    allLinks.set(sitemapUrl, title.replace(/-/g, ' '));
+                } catch (e) {
+                    console.warn(`Skipping invalid sitemap URL: ${sitemapUrl}`);
+                }
             });
 
             // Step 2: Crawl homepage
@@ -58,16 +62,20 @@ export class ResearchService {
             // Look for links like /real-estate/, /portfolio/, /investments/, /our-work/, etc.
             const keyPages = [];
             allLinks.forEach((text, linkUrl) => {
-                const path = new URL(linkUrl).pathname.toLowerCase();
-                if (
-                    path.includes('real-estate') ||
-                    path.includes('infrastructure') ||
-                    path.includes('private-equity') ||
-                    path.includes('portfolio') ||
-                    path.includes('investments') ||
-                    path.includes('our-work')
-                ) {
-                    keyPages.push(linkUrl);
+                try {
+                    const path = new URL(linkUrl).pathname.toLowerCase();
+                    if (
+                        path.includes('real-estate') ||
+                        path.includes('infrastructure') ||
+                        path.includes('private-equity') ||
+                        path.includes('portfolio') ||
+                        path.includes('investments') ||
+                        path.includes('our-work')
+                    ) {
+                        keyPages.push(linkUrl);
+                    }
+                } catch (e) {
+                    console.warn(`Skipping invalid link: ${linkUrl}`);
                 }
             });
 
