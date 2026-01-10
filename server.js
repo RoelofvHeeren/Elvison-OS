@@ -855,6 +855,15 @@ app.post('/api/companies/add-manual', requireAuth, async (req, res) => {
             companyProfile = `Company: ${result.companyName}\nDomain: ${domain}`;
         }
 
+        // 2b. UPSERT Company into Database (FIX: Ensure it exists in companies table)
+        await query(
+            `INSERT INTO companies (user_id, company_name, domain, website, company_profile, last_updated)
+             VALUES ($1, $2, $3, $4, $5, NOW())
+             ON CONFLICT (user_id, company_name) 
+             DO UPDATE SET company_profile = COALESCE(companies.company_profile, EXCLUDED.company_profile), last_updated = NOW()`,
+            [req.userId, result.companyName, domain, url, companyProfile]
+        );
+
         // 3. Save team members to database
         sendProgress(res, `Saving ${result.teamMembers.length} team members...`);
         const savedMembers = [];
@@ -1326,6 +1335,55 @@ app.post('/api/crm-columns', requireAuth, async (req, res) => {
 })
 
 // --- LEADS & CRM ---
+
+// Get ALL Companies (For Companies View)
+app.get('/api/companies', requireAuth, async (req, res) => {
+    try {
+        const { rows } = await query(`
+            SELECT 
+                c.*,
+                COUNT(l.id) as lead_count
+            FROM companies c
+            LEFT JOIN leads l ON c.company_name = l.company_name AND c.user_id = l.user_id
+            WHERE c.user_id = $1
+            GROUP BY c.id
+            ORDER BY c.created_at DESC
+        `, [req.userId]);
+
+        res.json({ companies: rows });
+    } catch (e) {
+        console.error('Failed to fetch companies:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Delete Company and its Leads
+app.delete('/api/companies/:id', requireAuth, async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        // 1. Delete associated leads
+        // First get company name to delete leads by name if needed, but we can delete by joins if we had foreign keys.
+        // reliably, leads are linked by company_name AND user_id. 
+        // Let's get the company details first.
+        const { rows } = await query('SELECT * FROM companies WHERE id = $1 AND user_id = $2', [id, req.userId]);
+        if (rows.length === 0) {
+            return res.status(404).json({ error: 'Company not found' });
+        }
+        const company = rows[0];
+
+        // Delete leads
+        await query('DELETE FROM leads WHERE company_name = $1 AND user_id = $2', [company.company_name, req.userId]);
+
+        // Delete company
+        await query('DELETE FROM companies WHERE id = $1 AND user_id = $2', [id, req.userId]);
+
+        res.json({ message: 'Company and leads deleted' });
+    } catch (e) {
+        console.error('Failed to delete company:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
 
 // Get Leads with Pagination
 app.get('/api/leads', requireAuth, async (req, res) => {
@@ -2256,6 +2314,7 @@ app.post('/api/agents/run', requireAuth, async (req, res) => {
 
         // Build comprehensive stats object for DB storage (same structure as success path)
         const statsForDB = {
+            ...errorStats, // CRITICAL: Preserve partial stats like companies_discovered
             partialStats: true,
             error: error.message,
             // Cost data (from CostTracker.getSummary() attached to error)

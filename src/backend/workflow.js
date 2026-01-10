@@ -1111,7 +1111,7 @@ ${JSON.stringify(batch.map(l => ({
         }
 
         // --- Save to CRM ---
-        await saveLeadsToDB(finalLeads, userId, icpId, logStep);
+        await saveLeadsToDB(finalLeads, userId, icpId, logStep, 'NEW', runId);
 
         return {
             status: finalLeads.length >= targetLeads ? 'success' : 'partial',
@@ -1182,7 +1182,7 @@ const validateLeadForCRM = (lead, status) => {
 /**
  * DB Persistence with CRM Admission Gate
  */
-const saveLeadsToDB = async (leads, userId, icpId, logStep, forceStatus = 'NEW') => {
+const saveLeadsToDB = async (leads, userId, icpId, logStep, forceStatus = 'NEW', runId = null) => {
     if (!leads || leads.length === 0) return;
 
     let savedCount = 0;
@@ -1201,8 +1201,8 @@ const saveLeadsToDB = async (leads, userId, icpId, logStep, forceStatus = 'NEW')
             const exists = await query("SELECT id FROM leads WHERE email = $1 AND user_id = $2", [lead.email, userId]);
             if (exists.rows.length > 0) continue;
 
-            await query(`INSERT INTO leads(company_name, person_name, email, job_title, linkedin_url, status, source, user_id, icp_id, custom_data)
-                        VALUES($1, $2, $3, $4, $5, $6, 'Outbound Agent', $7, $8, $9)`,
+            await query(`INSERT INTO leads(company_name, person_name, email, job_title, linkedin_url, status, source, user_id, icp_id, custom_data, run_id)
+                        VALUES($1, $2, $3, $4, $5, $6, 'Outbound Agent', $7, $8, $9, $10)`,
                 [lead.company_name, `${lead.first_name} ${lead.last_name} `, lead.email, lead.title, lead.linkedin_url, forceStatus, userId, icpId, {
                     icp_id: icpId,
                     score: lead.match_score,
@@ -1213,7 +1213,7 @@ const saveLeadsToDB = async (leads, userId, icpId, logStep, forceStatus = 'NEW')
                     email_subject: lead.email_subject,
                     connection_request: lead.connection_request,
                     disqualification_reason: lead.disqualification_reason
-                }]);
+                }, runId]);
             savedCount++;
         } catch (e) {
             console.error('Failed to save lead:', e.message);

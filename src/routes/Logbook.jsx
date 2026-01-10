@@ -206,6 +206,8 @@ const Logbook = () => {
 
         const filtering = stats.filtering_breakdown || {}
         const leads = outputData.leads || metadata.leads || []
+        const companiesList = Array.from(new Set(leads.map(l => l.company_name).filter(Boolean)))
+        const uniqueCompanies = companiesList.length
 
         // ROBUST COST PARSING: Handle both CostTracker format (camelCase) and legacy format (snake_case)
         // CostTracker.getSummary() returns: { cost: { total, formatted }, breakdown: { byAgent, byModel }, calls: [...] }
@@ -240,16 +242,27 @@ const Logbook = () => {
         const resultsPerTerm = searchStats.results_per_term || {}
         const totalSearchResults = searchStats.total_results || 0
 
+        // COMPANIES COUNT LOGIC:
+        // 1. Try explicit 'companies_discovered' from workflow
+        // 2. Fallback to 'companiesFound' (legacy)
+        // 3. CRITICAL FIX: If the stat equals totalLeads (bug) or is 0, use uniqueCompanies from the leads list itself.
+        let companiesCount = stats.companies_discovered || stats.companiesFound || 0;
+        const totalLeads = stats.leads_returned || stats.leadsGenerated || 0;
+
+        if (companiesCount === 0 || (companiesCount === totalLeads && uniqueCompanies > 0 && uniqueCompanies < totalLeads)) {
+            companiesCount = uniqueCompanies;
+        }
+
         return {
-            companies: stats.companies_discovered || stats.companiesFound || 0,
-            totalLeads: stats.leads_returned || stats.leadsGenerated || 0,
+            companies: companiesCount,
+            totalLeads: totalLeads,
             qualified: filtering.qualified || stats.qualified || stats.leadsQualified || 0,
             disqualified: filtering.dropped || stats.dropped || stats.leadsDisqualified || 0,
             emailYield: stats.email_yield_percentage || stats.emailYield || 0,
             logs: executionLogs.length > 0 ? executionLogs : executionTimeline, // Prioritize granular logs
             timeline: executionTimeline,
             leads: leads,
-            companies_list: Array.from(new Set(leads.map(l => l.company_name).filter(Boolean))),
+            companies_list: companiesList,
             // Search stats for display
             searchStats: {
                 termsUsed,

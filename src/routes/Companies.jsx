@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Building2, ChevronDown, ChevronUp, Trash2, Users, Search, PlusCircle } from 'lucide-react'
-import { fetchLeads, deleteLead } from '../utils/api'
+import { fetchLeads, deleteLead, fetchCompanies, deleteCompany } from '../utils/api'
 import { useIcp } from '../context/IcpContext'
 import AddCompanyModal from '../components/AddCompanyModal'
 
@@ -250,135 +250,41 @@ function Companies() {
     const loadCompanies = async () => {
         setLoading(true)
         try {
-            // Fetch ALL leads - request large page size to get everything
-            const params = { pageSize: 1000 } // Request up to 1000 leads
-            if (filters.icpId) params.icpId = filters.icpId
+            const response = await fetchCompanies();
 
-            const response = await fetchLeads(params)
+            // Map to expected structure
+            const mappedCompanies = (response.companies || []).map(c => ({
+                id: c.id,
+                name: c.company_name,
+                domain: c.domain,
+                website: c.website,
+                company_profile: c.company_profile,
+                lead_count: parseInt(c.lead_count || 0),
+                fit_score: c.fit_score || 0,
+                last_updated: c.last_updated,
+                leads: [] // Empty as we don't load them here anymore
+            }));
 
-            // Handle both array and paginated response
-            let allLeads = []
-            if (Array.isArray(response)) {
-                allLeads = response
-            } else if (response?.data) {
-                allLeads = response.data
-
-                // If there are more pages, fetch them
-                if (response.pagination?.totalPages > 1) {
-                    const totalPages = response.pagination.totalPages
-                    const pagePromises = []
-
-                    for (let page = 2; page <= totalPages; page++) {
-                        pagePromises.push(fetchLeads({ ...params, page }))
-                    }
-
-                    const results = await Promise.all(pagePromises)
-                    results.forEach(result => {
-                        const pageData = Array.isArray(result) ? result : (result?.data || [])
-                        allLeads.push(...pageData)
-                    })
-                }
-            }
-
-            // Group leads by company
-            const companyMap = new Map()
-
-            allLeads.forEach(lead => {
-                let companyName = lead.company_name || 'Unknown Company'
-
-                // Parse custom_data safely
-                let customData = {}
-                if (lead.custom_data) {
-                    try {
-                        customData = typeof lead.custom_data === 'string'
-                            ? JSON.parse(lead.custom_data)
-                            : lead.custom_data
-                    } catch (e) {
-                        console.error('Error parsing custom_data', e)
-                    }
-                }
-
-                const companyWebsite = customData.company_website || customData.company_domain || ''
-                // Normalize domain for deduplication
-                const rawDomain = companyWebsite.replace(/^(https?:\/\/)?(www\.)?/, '').split('/')[0].toLowerCase()
-
-                // DEDUPLICATION LOGIC:
-                // Use normalized domain as the primary key if available, otherwise name
-                const dedupKey = rawDomain || companyName.toLowerCase().replace(/[^a-z0-9]/g, '')
-
-                if (!companyMap.has(dedupKey)) {
-                    // Extract fit score
-                    let fitScore = 'N/A';
-
-                    if (customData.fit_score !== undefined) {
-                        fitScore = parseInt(customData.fit_score);
-                    } else if (customData.score !== undefined) {
-                        // Legacy handling
-                        fitScore = typeof customData.score === 'number' && customData.score <= 1
-                            ? Math.round(customData.score * 10)
-                            : parseInt(customData.score);
-                    }
-
-                    companyMap.set(dedupKey, {
-                        name: companyName, // Use the first encounter name
-                        website: companyWebsite,
-                        profile: customData.company_profile || '',
-                        fitScore: fitScore,
-                        leads: [],
-                        leadCount: 0,
-                        domain: rawDomain
-                    })
-                }
-
-                const entry = companyMap.get(dedupKey)
-
-                // Prefer shorter/cleaner names for the primary display
-                if (companyName.length < entry.name.length && companyName.length > 3) {
-                    entry.name = companyName
-                }
-
-                entry.leads.push({
-                    id: lead.id,
-                    personName: lead.person_name,
-                    jobTitle: lead.job_title,
-                    email: lead.email,
-                    linkedinUrl: lead.linkedin_url
-                })
-            })
-
-            // Convert to array and calculate lead counts
-            const companiesArray = Array.from(companyMap.values()).map(company => ({
-                ...company,
-                leadCount: company.leads.length
-            }))
-
-            // Sort by lead count descending
-            companiesArray.sort((a, b) => b.leadCount - a.leadCount)
-
-            setCompanies(companiesArray)
-        } catch (error) {
-            console.error('Failed to load companies:', error)
+            setCompanies(mappedCompanies)
+        } catch (err) {
+            console.error('Failed to load companies:', err)
         } finally {
             setLoading(false)
         }
     }
 
-    const handleDeleteCompany = async (companyName) => {
-        if (!window.confirm(`Delete all leads from "${companyName}"? This cannot be undone.`)) {
+    const handleDeleteCompany = async (companyId, companyName) => {
+        if (!window.confirm(`Delete "${companyName}" and all its leads? This cannot be undone.`)) {
             return
         }
 
-        const company = companies.find(c => c.name === companyName)
-        if (!company) return
-
         try {
-            // Delete all leads for this company
-            await Promise.all(company.leads.map(lead => deleteLead(lead.id)))
+            await deleteCompany(companyId)
 
-            // Reload companies
-            await loadCompanies()
+            // Optimistic update
+            setCompanies(companies.filter(c => c.id !== companyId))
         } catch (error) {
-            console.error('Failed to delete company leads:', error)
+            console.error('Failed to delete company:', error)
             alert('Failed to delete company. Please try again.')
         }
     }
@@ -600,7 +506,6 @@ function Companies() {
                     )}
                 </div>
 
-                {/* Companies List */}
                 {loading ? (
                     <div className="text-center py-20">
                         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-teal-500 mx-auto mb-4"></div>
@@ -665,7 +570,7 @@ function Companies() {
                                             <button
                                                 onClick={(e) => {
                                                     e.stopPropagation()
-                                                    handleDeleteCompany(company.name)
+                                                    handleDeleteCompany(company.id, company.name)
                                                 }}
                                                 className="ml-4 p-3 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-xl transition-all border border-rose-500/20 group/del"
                                                 title="Delete company"

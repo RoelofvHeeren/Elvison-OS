@@ -36,6 +36,16 @@ export const fetchLeads = async (params = {}) => {
   return data
 }
 
+export const fetchCompanies = async () => {
+  const { data } = await client.get('/api/companies')
+  return data
+}
+
+export const deleteCompany = async (id) => {
+  const { data } = await client.delete(`/api/companies/${id}`)
+  return data
+}
+
 export const approveLead = async (id, reason) => {
   const { data } = await client.post(`/api/leads/${id}/approve`, { reason })
   return data
