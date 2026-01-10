@@ -501,6 +501,86 @@ function Companies() {
                         >
                             🧹 Run DEEP Cleanup (AI Re-score All)
                         </button>
+                        <button
+                            onClick={async () => {
+                                if (!confirm('🔒 DEEP CLEANUP V2: This uses the HARDCODED company action spec to:\n\n✅ Delete service providers, wealth managers, tech vendors\n✅ Keep real investors with proper ICP classification\n✅ Merge duplicates and subsidiaries\n✅ Clean up leads with bad titles\n✅ Rebuild all fit scores (0-10)\n\nThis is the PRODUCTION cleanup. Continue?')) return;
+
+                                const statusDiv = document.createElement('div');
+                                statusDiv.id = 'cleanup-status';
+                                statusDiv.className = 'fixed inset-0 bg-black/90 flex items-center justify-center z-50';
+                                statusDiv.innerHTML = `
+                                    <div class="bg-gray-900 p-8 rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-auto">
+                                        <h2 class="text-xl font-bold text-white mb-4">🔒 Deep Cleanup V2 - Production Cleanup</h2>
+                                        <div id="cleanup-log" class="text-sm text-gray-300 space-y-1 font-mono max-h-96 overflow-auto"></div>
+                                        <div id="cleanup-summary" class="mt-4 p-4 bg-black/50 rounded-xl hidden"></div>
+                                        <button id="cleanup-close" class="mt-4 px-4 py-2 bg-teal-500 text-white rounded-lg hidden">Close & Refresh</button>
+                                    </div>
+                                `;
+                                document.body.appendChild(statusDiv);
+                                const log = document.getElementById('cleanup-log');
+                                const summary = document.getElementById('cleanup-summary');
+                                const closeBtn = document.getElementById('cleanup-close');
+
+                                try {
+                                    const res = await fetch('/api/admin/deep-cleanup-v2', { method: 'POST' });
+                                    const reader = res.body.getReader();
+                                    const decoder = new TextDecoder();
+
+                                    while (true) {
+                                        const { value, done } = await reader.read();
+                                        if (done) break;
+                                        const chunk = decoder.decode(value);
+                                        const lines = chunk.split('\n\n');
+                                        for (const line of lines) {
+                                            if (line.startsWith('data: ')) {
+                                                try {
+                                                    const data = JSON.parse(line.slice(6));
+                                                    if (data.type === 'action') {
+                                                        const colors = {
+                                                            'DELETED': 'text-red-400',
+                                                            'KEPT': 'text-green-400',
+                                                            'MERGED': 'text-yellow-400',
+                                                            'REVIEW_REQUIRED': 'text-orange-400'
+                                                        };
+                                                        log.innerHTML += `<div class="${colors[data.status] || 'text-gray-400'}">${data.status}: ${data.company}${data.icp_type ? ' (' + data.icp_type + ')' : ''}${data.fit_score !== undefined ? ' [Score: ' + data.fit_score + ']' : ''}</div>`;
+                                                    } else if (data.type === 'status' || data.type === 'phase') {
+                                                        log.innerHTML += `<div class="text-blue-400 font-bold">${data.message}</div>`;
+                                                    } else if (data.type === 'progress') {
+                                                        log.innerHTML += `<div class="text-purple-400">Progress: ${data.processed}/${data.total} | Kept: ${data.kept} | Deleted: ${data.deleted} | Merged: ${data.merged}</div>`;
+                                                    } else if (data.type === 'complete') {
+                                                        summary.classList.remove('hidden');
+                                                        summary.innerHTML = `
+                                                            <h3 class="text-lg font-bold text-white mb-2">✅ Deep Cleanup V2 Complete!</h3>
+                                                            <div class="grid grid-cols-3 gap-4 text-sm">
+                                                                <div><span class="text-green-400 font-bold">${data.results.kept}</span> Kept</div>
+                                                                <div><span class="text-red-400 font-bold">${data.results.deleted}</span> Deleted</div>
+                                                                <div><span class="text-yellow-400 font-bold">${data.results.merged}</span> Merged</div>
+                                                                <div><span class="text-orange-400 font-bold">${data.results.review_required}</span> Review Required</div>
+                                                                <div><span class="text-blue-400 font-bold">${data.results.leads_deleted}</span> Leads Deleted</div>
+                                                                <div><span class="text-gray-400 font-bold">${data.results.errors}</span> Errors</div>
+                                                            </div>
+                                                            ${data.qaReport?.duplicates?.length ? '<div class="mt-4 text-yellow-400">⚠️ ' + data.qaReport.duplicates.length + ' duplicate domains found</div>' : ''}
+                                                        `;
+                                                        closeBtn.classList.remove('hidden');
+                                                    }
+                                                    log.scrollTop = log.scrollHeight;
+                                                } catch (e) { }
+                                            }
+                                        }
+                                    }
+                                } catch (e) {
+                                    log.innerHTML += `<div class="text-red-500">Error: ${e.message}</div>`;
+                                }
+
+                                closeBtn.onclick = () => {
+                                    statusDiv.remove();
+                                    window.location.reload();
+                                };
+                            }}
+                            className="ml-4 text-xs text-purple-500 hover:text-purple-400 underline decoration-dotted transition-colors font-bold"
+                        >
+                            🔒 V2: Full Spec Cleanup
+                        </button>
                     </div>
                 </div>
 

@@ -379,6 +379,279 @@ If NOT keeping, just write "DISQUALIFIED: [reason]"
     }
 });
 
+// ============================================================================
+// DEEP CLEANUP V2 - Comprehensive investor database cleanup with hardcoded actions
+// ============================================================================
+app.post('/api/admin/deep-cleanup-v2', requireAuth, async (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    const send = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+
+    try {
+        const userId = req.userId;
+
+        // Import cleanup functions
+        const {
+            COMPANY_ACTIONS,
+            cleanCompanyName,
+            extractRootDomain,
+            checkDomainMatch,
+            calculateFitScore,
+            shouldKeepLead,
+            classifyLeadSeniority,
+            classifyLeadRoleGroup
+        } = await import('./src/backend/services/deep-cleanup-v2.js');
+
+        send({ type: 'status', message: '🚀 Deep Cleanup V2 Starting...' });
+        send({ type: 'status', message: `Loaded ${Object.keys(COMPANY_ACTIONS).length} predefined company actions` });
+
+        // Step 1: Run schema migration
+        send({ type: 'phase', phase: 1, message: 'Running schema migration...' });
+        try {
+            await query(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS company_name_clean TEXT`);
+            await query(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS website_root_domain TEXT`);
+            await query(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS icp_type TEXT`);
+            await query(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS capital_role TEXT`);
+            await query(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS canada_relevance TEXT`);
+            await query(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS data_quality_flags JSONB DEFAULT '[]'`);
+            await query(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS confidence_score INTEGER DEFAULT 50`);
+            await query(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS fit_score_breakdown JSONB`);
+            await query(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS cleanup_status TEXT DEFAULT 'PENDING'`);
+            await query(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS parent_company_id UUID`);
+            await query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS lead_role_group TEXT`);
+            await query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS lead_seniority TEXT`);
+            send({ type: 'status', message: '✅ Schema migration complete' });
+        } catch (e) {
+            send({ type: 'warning', message: 'Schema migration partial: ' + e.message });
+        }
+
+        // Step 2: Get all companies
+        send({ type: 'phase', phase: 2, message: 'Fetching all companies...' });
+        const { rows: companies } = await query(`
+            SELECT id, company_name, website, company_profile, fit_score, user_id
+            FROM companies WHERE user_id = $1
+            ORDER BY company_name
+        `, [userId]);
+
+        send({ type: 'status', message: `Found ${companies.length} companies to process` });
+
+        const results = {
+            total: companies.length,
+            processed: 0,
+            kept: 0,
+            deleted: 0,
+            merged: 0,
+            review_required: 0,
+            errors: 0,
+            leads_deleted: 0,
+            leads_updated: 0,
+            actions: [],
+            duplicates_found: []
+        };
+
+        // Step 3: Normalize and apply actions
+        send({ type: 'phase', phase: 3, message: 'Processing companies...' });
+
+        const domainMap = new Map(); // Track domains for duplicate detection
+
+        for (const company of companies) {
+            try {
+                const nameClean = cleanCompanyName(company.company_name);
+                const rootDomain = extractRootDomain(company.website || '');
+
+                // Check for duplicate by domain
+                if (rootDomain && domainMap.has(rootDomain)) {
+                    const existingCompany = domainMap.get(rootDomain);
+                    results.duplicates_found.push({
+                        duplicate: company.company_name,
+                        canonical: existingCompany,
+                        domain: rootDomain
+                    });
+                } else if (rootDomain) {
+                    domainMap.set(rootDomain, company.company_name);
+                }
+
+                // Look up in hardcoded actions
+                let action = COMPANY_ACTIONS[company.company_name] ||
+                    COMPANY_ACTIONS[nameClean] ||
+                    null;
+
+                // Try partial match for company names
+                if (!action) {
+                    for (const [key, value] of Object.entries(COMPANY_ACTIONS)) {
+                        if (company.company_name.toLowerCase().includes(key.toLowerCase()) ||
+                            key.toLowerCase().includes(company.company_name.toLowerCase())) {
+                            action = value;
+                            break;
+                        }
+                    }
+                }
+
+                let status = 'PENDING';
+                let icp_type = null;
+                let capital_role = null;
+                let flags = [];
+                let confidence = 50;
+
+                if (action) {
+                    status = action.status;
+                    icp_type = action.icp_type || null;
+                    capital_role = action.capital_role || null;
+                    flags = action.flags || [];
+                    confidence = status === 'KEEP' ? 90 : (status === 'DELETE' ? 10 : 50);
+                } else {
+                    // No hardcoded action - check domain match
+                    const domainCheck = checkDomainMatch(company.company_name, rootDomain);
+                    if (!domainCheck.match && rootDomain) {
+                        flags.push('DOMAIN_MISMATCH');
+                        status = 'REVIEW_REQUIRED';
+                        confidence = 30;
+                    }
+                }
+
+                // Calculate fit score
+                const fitResult = calculateFitScore({ icp_type, capital_role, canada_relevance: 'UNKNOWN' });
+
+                // Apply action
+                if (status === 'DELETE') {
+                    // Delete company and leads
+                    const leadsDeleted = await query('DELETE FROM leads WHERE company_name = $1 AND user_id = $2 RETURNING id', [company.company_name, userId]);
+                    await query('DELETE FROM companies WHERE id = $1', [company.id]);
+                    await query('DELETE FROM researched_companies WHERE company_name = $1 AND user_id = $2', [company.company_name, userId]);
+
+                    results.deleted++;
+                    results.leads_deleted += leadsDeleted.rowCount;
+
+                    send({ type: 'action', company: company.company_name, status: 'DELETED', reason: flags.join(', ') || icp_type });
+                } else if (status === 'MERGE') {
+                    // Mark as merged but don't delete yet (for review)
+                    await query(`
+                        UPDATE companies SET 
+                            cleanup_status = 'MERGED',
+                            data_quality_flags = $1,
+                            company_name_clean = $2,
+                            website_root_domain = $3
+                        WHERE id = $4
+                    `, [JSON.stringify(flags), nameClean, rootDomain, company.id]);
+
+                    results.merged++;
+                    send({ type: 'action', company: company.company_name, status: 'MERGED', merge_into: action?.merge_into });
+                } else {
+                    // KEEP or REVIEW_REQUIRED - update the record
+                    await query(`
+                        UPDATE companies SET 
+                            cleanup_status = $1,
+                            icp_type = $2,
+                            capital_role = $3,
+                            data_quality_flags = $4,
+                            confidence_score = $5,
+                            fit_score = $6,
+                            fit_score_breakdown = $7,
+                            company_name_clean = $8,
+                            website_root_domain = $9,
+                            last_updated = NOW()
+                        WHERE id = $10
+                    `, [
+                        status,
+                        icp_type,
+                        capital_role,
+                        JSON.stringify(flags),
+                        confidence,
+                        fitResult.fit_score,
+                        JSON.stringify(fitResult.fit_score_breakdown),
+                        nameClean,
+                        rootDomain,
+                        company.id
+                    ]);
+
+                    if (status === 'KEEP') {
+                        results.kept++;
+                        send({ type: 'action', company: company.company_name, status: 'KEPT', icp_type, fit_score: fitResult.fit_score });
+                    } else {
+                        results.review_required++;
+                        send({ type: 'action', company: company.company_name, status: 'REVIEW_REQUIRED', flags });
+                    }
+                }
+
+                results.processed++;
+                results.actions.push({
+                    company: company.company_name,
+                    status,
+                    icp_type,
+                    fit_score: fitResult.fit_score,
+                    flags
+                });
+
+                // Progress update
+                if (results.processed % 10 === 0) {
+                    send({ type: 'progress', ...results });
+                }
+
+            } catch (e) {
+                console.error(`Error processing ${company.company_name}:`, e);
+                results.errors++;
+                results.processed++;
+            }
+        }
+
+        // Step 4: Clean up leads
+        send({ type: 'phase', phase: 4, message: 'Cleaning up leads...' });
+
+        const { rows: allLeads } = await query(`
+            SELECT id, title, company_name FROM leads WHERE user_id = $1
+        `, [userId]);
+
+        for (const lead of allLeads) {
+            const keep = shouldKeepLead(lead.title);
+            const seniority = classifyLeadSeniority(lead.title);
+            const roleGroup = classifyLeadRoleGroup(lead.title);
+
+            if (!keep) {
+                await query('DELETE FROM leads WHERE id = $1', [lead.id]);
+                results.leads_deleted++;
+            } else {
+                await query(`
+                    UPDATE leads SET lead_seniority = $1, lead_role_group = $2 WHERE id = $3
+                `, [seniority, roleGroup, lead.id]);
+                results.leads_updated++;
+            }
+        }
+
+        // Step 5: Generate QA Report
+        send({ type: 'phase', phase: 5, message: 'Generating QA report...' });
+
+        const qaReport = {
+            summary: {
+                total_processed: results.processed,
+                kept: results.kept,
+                deleted: results.deleted,
+                merged: results.merged,
+                review_required: results.review_required,
+                errors: results.errors
+            },
+            leads: {
+                deleted: results.leads_deleted,
+                updated: results.leads_updated
+            },
+            duplicates: results.duplicates_found.slice(0, 20),
+            domain_mismatches: results.actions
+                .filter(a => a.flags?.includes('DOMAIN_MISMATCH'))
+                .slice(0, 20)
+                .map(a => a.company)
+        };
+
+        send({ type: 'complete', results, qaReport });
+        res.end();
+
+    } catch (e) {
+        console.error('Deep cleanup v2 failed:', e);
+        send({ type: 'error', message: e.message });
+        res.end();
+    }
+});
+
 
 // TEMP: Backfill Companies from Leads
 app.post('/api/admin/backfill-companies', async (req, res) => {
