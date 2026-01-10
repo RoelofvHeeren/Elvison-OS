@@ -11,7 +11,6 @@ export class CompanyScorer {
         console.log(`🧹 Starting cleanup for ICP: ${icpName} (ID: ${icpId})`);
 
         // Determine type based on name
-        // Determine type based on name
         const isFamilyOffice = icpName.toLowerCase().includes('family office');
         const isInvestmentFirm = icpName.toLowerCase().includes('investment firm') || icpName.toLowerCase().includes('investment fund');
 
@@ -19,56 +18,76 @@ export class CompanyScorer {
             throw new Error(`Unsupported ICP type: ${icpName}. Only 'Family Offices' and 'Investment Firms/Funds' are supported.`);
         }
 
-        // Fetch leads for this ICP
-        const { rows: leads } = await query(`
-            SELECT id, company_name, custom_data 
-            FROM leads 
-            WHERE icp_id = $1 
-            AND status != 'DISQUALIFIED'
+        // Get unique companies from leads for this ICP (with their profile data)
+        const { rows: companies } = await query(`
+            SELECT DISTINCT ON (l.company_name) 
+                l.company_name,
+                l.user_id,
+                l.custom_data
+            FROM leads l
+            WHERE l.icp_id = $1 
+            AND l.status != 'DISQUALIFIED'
         `, [icpId]);
 
-        console.log(`Found ${leads.length} companies to audit.`);
+        console.log(`Found ${companies.length} unique companies to audit.`);
 
         const results = {
             processed: 0,
             disqualified: 0,
             kept: 0,
             errors: 0,
-            total: leads.length
+            total: companies.length,
+            leadsDeleted: 0
         };
 
-        // BATCH PROCESSING CONSTANTS
-        const CONCURRENCY_LIMIT = 8; // Process 8 companies at once
+        // BATCH PROCESSING
+        const CONCURRENCY_LIMIT = 8;
         const typeStr = isFamilyOffice ? 'FAMILY_OFFICE' : 'INVESTMENT_FIRM';
 
-        // Helper to process a single lead
-        const processLead = async (lead) => {
+        // Helper to process a single company
+        const processCompany = async (company) => {
             try {
-                const scoreData = await this.rescoreLead(lead, typeStr);
+                const scoreData = await this.rescoreLead(company, typeStr);
 
                 if (scoreData) {
-                    const updatedCustomData = {
-                        ...(lead.custom_data || {}),
-                        fit_score: scoreData.fit_score,
-                        fit_reason: scoreData.fit_reason,
-                        is_investor: scoreData.is_investor,
-                        investor_type: scoreData.investor_type,
-                        rescored_at: new Date().toISOString()
-                    };
-
                     if (scoreData.fit_score < 6) {
+                        // DELETE the company AND all its leads
+                        console.log(`❌ Deleting company: ${company.company_name} (Score: ${scoreData.fit_score})`);
+
+                        // Delete leads first
+                        const leadDeleteResult = await query(`
+                            DELETE FROM leads 
+                            WHERE company_name = $1 AND user_id = $2
+                            RETURNING id
+                        `, [company.company_name, company.user_id]);
+
+                        results.leadsDeleted += leadDeleteResult.rowCount;
+
+                        // Delete company from companies table
                         await query(`
-                            UPDATE leads 
-                            SET status = 'DISQUALIFIED', custom_data = $1 
-                            WHERE id = $2
-                        `, [updatedCustomData, lead.id]);
+                            DELETE FROM companies 
+                            WHERE company_name = $1 AND user_id = $2
+                        `, [company.company_name, company.user_id]);
+
+                        // Also remove from researched_companies if exists
+                        await query(`
+                            DELETE FROM researched_companies 
+                            WHERE company_name = $1 AND user_id = $2
+                        `, [company.company_name, company.user_id]);
+
                         results.disqualified++;
                     } else {
+                        // Keep - update the score in custom_data for all leads of this company
                         await query(`
                             UPDATE leads 
-                            SET custom_data = $1 
-                            WHERE id = $2
-                        `, [updatedCustomData, lead.id]);
+                            SET custom_data = custom_data || $1::jsonb
+                            WHERE company_name = $2 AND user_id = $3
+                        `, [JSON.stringify({
+                            fit_score: scoreData.fit_score,
+                            fit_reason: scoreData.fit_reason,
+                            rescored_at: new Date().toISOString()
+                        }), company.company_name, company.user_id]);
+
                         results.kept++;
                     }
                 } else {
@@ -76,16 +95,16 @@ export class CompanyScorer {
                 }
                 results.processed++;
             } catch (e) {
-                console.error(`Error processing lead ${lead.id}:`, e);
+                console.error(`Error processing company ${company.company_name}:`, e);
                 results.errors++;
             }
         };
 
         // Run with concurrency control
-        for (let i = 0; i < leads.length; i += CONCURRENCY_LIMIT) {
-            const batch = leads.slice(i, i + CONCURRENCY_LIMIT);
-            console.log(`Processing batch ${Math.floor(i / CONCURRENCY_LIMIT) + 1} / ${Math.ceil(leads.length / CONCURRENCY_LIMIT)}`);
-            await Promise.all(batch.map(lead => processLead(lead)));
+        for (let i = 0; i < companies.length; i += CONCURRENCY_LIMIT) {
+            const batch = companies.slice(i, i + CONCURRENCY_LIMIT);
+            console.log(`Processing batch ${Math.floor(i / CONCURRENCY_LIMIT) + 1} / ${Math.ceil(companies.length / CONCURRENCY_LIMIT)}`);
+            await Promise.all(batch.map(c => processCompany(c)));
 
             // Report progress
             if (onProgress) {
@@ -93,6 +112,7 @@ export class CompanyScorer {
             }
         }
 
+        console.log(`✅ Cleanup complete: Kept ${results.kept}, Deleted ${results.disqualified} companies (${results.leadsDeleted} leads)`);
         return results;
     }
 
