@@ -600,13 +600,13 @@ app.post('/api/admin/deep-cleanup-v2', requireAuth, async (req, res) => {
         send({ type: 'phase', phase: 4, message: 'Cleaning up leads...' });
 
         const { rows: allLeads } = await query(`
-            SELECT id, title, company_name FROM leads WHERE user_id = $1
+            SELECT id, job_title, company_name FROM leads WHERE user_id = $1
         `, [userId]);
 
         for (const lead of allLeads) {
-            const keep = shouldKeepLead(lead.title);
-            const seniority = classifyLeadSeniority(lead.title);
-            const roleGroup = classifyLeadRoleGroup(lead.title);
+            const keep = shouldKeepLead(lead.job_title);
+            const seniority = classifyLeadSeniority(lead.job_title);
+            const roleGroup = classifyLeadRoleGroup(lead.job_title);
 
             if (!keep) {
                 await query('DELETE FROM leads WHERE id = $1', [lead.id]);
