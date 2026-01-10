@@ -987,9 +987,9 @@ app.post('/api/companies/team/enrich-batch', requireAuth, async (req, res) => {
             return res.status(400).json({ error: 'memberIds array is required' });
         }
 
-        // Get team members
+        // Get team members with company domain
         const { rows } = await query(
-            `SELECT id, person_name, company_name FROM company_team_members 
+            `SELECT id, person_name, company_name, company_domain FROM company_team_members 
              WHERE id = ANY($1) AND user_id = $2`,
             [memberIds, req.userId]
         );
@@ -1008,7 +1008,8 @@ app.post('/api/companies/team/enrich-batch', requireAuth, async (req, res) => {
         const contacts = rows.map(r => ({
             id: r.id,
             name: r.person_name,
-            companyName: r.company_name
+            companyName: r.company_name,
+            companyDomain: r.company_domain
         }));
 
         const results = await enrichContactsBatch(contacts);
