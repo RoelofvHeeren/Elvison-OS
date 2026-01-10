@@ -1409,7 +1409,8 @@ app.get('/api/companies', requireAuth, async (req, res) => {
         const { rows } = await query(`
             SELECT 
                 c.*,
-                COUNT(l.id) as lead_count
+                COUNT(l.id) as lead_count,
+                MAX(l.icp_id) as icp_id
             FROM companies c
             LEFT JOIN leads l ON c.company_name = l.company_name AND c.user_id = l.user_id
             WHERE c.user_id = $1
