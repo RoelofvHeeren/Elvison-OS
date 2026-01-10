@@ -91,6 +91,50 @@ export async function findTeamPages(url, companyName = '') {
 }
 
 /**
+ * Select the most relevant pages for team research using Gemini
+ * @param {string} domain 
+ * @param {string[]} links 
+ * @returns {Promise<string[]>}
+ */
+async function selectRelevantPages(domain, links) {
+    if (!links || links.length === 0) return [];
+
+    const apiKey = process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY;
+    if (!apiKey) return links.slice(0, 5);
+
+    const gemini = new GeminiModel(apiKey, 'gemini-2.0-flash');
+
+    const prompt = `
+    I am analyzing the company at ${domain} to extract information about their leadership team.
+    
+    AVAILABLE PAGES:
+    ${links.slice(0, 150).join('\n')}
+    
+    TASK: Select the Top 15 most relevant URLs that would likely contain:
+    - Founder/CEO/Partner names and bios
+    - Team/Leadership/Management overview
+    - About Us / Company History
+    - Portfolio / Partners / Track Record
+    
+    OUTPUT: Return ONLY a raw JSON object with a "urls" array.
+    Example: {"urls": ["https://example.com/team", "https://example.com/about"]}
+    `;
+
+    try {
+        const response = await gemini.getResponse({ input: prompt, temperature: 0 });
+        const text = response.output?.find(o => o.type === 'message')?.content?.[0]?.text || '';
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+            const parsed = JSON.parse(jsonMatch[0]);
+            return parsed.urls || [];
+        }
+    } catch (e) {
+        console.warn(`[TeamExtractor] Smart selection failed:`, e.message);
+    }
+    return links.slice(0, 10);
+}
+
+/**
  * Extract team members from page content using Gemini
  * @param {string} pageContent - HTML/text content from team pages
  * @param {string} companyName - Company name for context
@@ -106,34 +150,33 @@ export async function extractTeamMembers(pageContent, companyName) {
     const gemini = new GeminiModel(apiKey, 'gemini-2.0-flash');
 
     const prompt = `
-You are analyzing a company webpage to extract team member information.
+You are an expert researcher. Your task is to extract the LEADERSHIP TEAM and KEY DECISION MAKERS for the company: "${companyName}".
 
-Company: ${companyName}
-
-Page Content:
-${pageContent.substring(0, 15000)}
+CONTEXT FROM WEBSITE:
+${pageContent.substring(0, 25000)}
 
 ---
 
-TASK: Extract all team members mentioned on this page.
+TASK: Extract all team members, prioritizing Founders, CEOs, Partners, and Managing Directors.
 
 For each person, provide:
 1. name - Full name (required)
-2. title - Job title/role (if mentioned)
-
-OUTPUT FORMAT (JSON only, no markdown):
-{
-    "team_members": [
-        {"name": "John Smith", "title": "CEO & Founder"},
-        {"name": "Jane Doe", "title": "Director of Operations"}
-    ]
-}
+2. title - Exact job title/role as mentioned
+3. is_decision_maker - Boolean (true if they are Founder, CEO, Partner, Principal, or Director)
 
 RULES:
-- Only include actual people who work at the company
-- Ignore testimonials, quotes from external people, or news mentions
-- If title is not clear, use "Unknown Role"
-- Return empty array if no team members found
+- ONLY include people explicitly part of ${companyName}.
+- EXCLUDE external testimonials, consultants, or news mentions.
+- If you find multiple people, list them all.
+- If the title is missing, use "Unknown Role".
+- If the content mentions a "Founder" or "CEO" in the narrative (e.g., "Founded by John Doe"), extract them even if they aren't in a list.
+
+OUTPUT FORMAT (JSON only):
+{
+    "team_members": [
+        {"name": "...", "title": "...", "is_decision_maker": true}
+    ]
+}
 
 JSON OUTPUT:`;
 
@@ -150,7 +193,7 @@ JSON OUTPUT:`;
         if (jsonMatch) {
             const parsed = JSON.parse(jsonMatch[0]);
             const members = parsed.team_members || [];
-            console.log(`[TeamExtractor] Extracted ${members.length} team members`);
+            console.log(`[TeamExtractor] Extracted ${members.length} team members for ${companyName}`);
             return members;
         }
 
@@ -176,33 +219,40 @@ export async function researchCompanyTeam(url) {
         .trim()
         .replace(/\b\w/g, l => l.toUpperCase());
 
-    // Add "Properties" back if it was part of the common name (optional optimization)
     if (domain.includes('properties')) companyName += " Properties";
     if (domain.includes('homes')) companyName += " Homes";
 
     console.log(`[TeamExtractor] Starting robust research for ${companyName} (${url})`);
 
-    // 1. Find team pages (uses Google + Scan)
-    const { teamPages, allLinks, homepageText, error } = await findTeamPages(url, companyName);
+    // 1. Discovery: Homepage Scan + Sitemap
+    const { teamPages: quickTeamPages, allLinks, homepageText, error } = await findTeamPages(url, companyName);
 
-    // 2. Scrape team pages (or homepage if no team pages found)
-    const pagesToScrape = teamPages.length > 0
-        ? teamPages.slice(0, 5) // Limit to 5 pages
-        : [`https://${domain}`]; // Fallback to homepage
+    // 2. Smart Selection: Let Gemini pick the best pages from the full site structure
+    console.log(`[TeamExtractor] Discovered ${allLinks.length} total links. Selecting top pages...`);
+    const smartPages = await selectRelevantPages(domain, allLinks);
 
-    console.log(`[TeamExtractor] Scraping ${pagesToScrape.length} pages...`);
+    // Prioritize explicitly found team pages and smart pages
+    const pagesToScrape = [...new Set([
+        url,
+        ...quickTeamPages,
+        ...smartPages
+    ])].slice(0, 15); // Increase limit to 15 pages as requested
 
+    console.log(`[TeamExtractor] Scraping ${pagesToScrape.length} target pages:`, pagesToScrape);
+
+    // 3. Scrape all selected pages
     const pageContent = await scrapeSpecificPages(pagesToScrape, process.env.APIFY_API_TOKEN);
 
-    // 4. Extract team members
+    // 4. Extract team members from combined content
     let rawMembers = await extractTeamMembers(pageContent, companyName);
 
-    // 5. Fallback: If no members found via scraping, try specialized Google search
+    // 5. Fallback: If no members found, try specialized Search with site constraint
     if (rawMembers.length === 0) {
-        console.log(`[TeamExtractor] No members found via scraping. Trying specialized Google search...`);
+        console.log(`[TeamExtractor] No members found via scraping. Trying site-constrained Search fallback...`);
         try {
             const { performGoogleSearch } = await import('./apify.js');
-            const searchResults = await performGoogleSearch(`${companyName} team members leadership bios`, process.env.APIFY_API_TOKEN);
+            // STRICT SITE CONSTRAINT to prevent pulling in unrelated companies
+            const searchResults = await performGoogleSearch(`site:${domain} (team OR leadership OR founder OR principal)`, process.env.APIFY_API_TOKEN);
             const searchText = searchResults.map(r => `${r.title}\n${r.snippet}`).join('\n\n');
 
             if (searchText.length > 100) {
@@ -214,15 +264,14 @@ export async function researchCompanyTeam(url) {
         }
     }
 
-    // 6. Enrich with decision-maker flag
+    // 6. Final Enrichment & Sorting
     const teamMembers = rawMembers.map(member => ({
         ...member,
-        isDecisionMaker: isDecisionMaker(member.title),
-        sourceUrl: teamPages[0] || `https://${domain}`,
+        isDecisionMaker: member.is_decision_maker || isDecisionMaker(member.title),
+        sourceUrl: pagesToScrape[0],
         status: 'discovered'
     }));
 
-    // Sort: Decision makers first
     teamMembers.sort((a, b) => (b.isDecisionMaker ? 1 : 0) - (a.isDecisionMaker ? 1 : 0));
 
     return {
@@ -230,7 +279,7 @@ export async function researchCompanyTeam(url) {
         companyName,
         teamMembers,
         pageCount: pagesToScrape.length,
-        homepageText: homepageText?.substring(0, 2000) // For profile generation
+        homepageText: homepageText?.substring(0, 2000)
     };
 }
 

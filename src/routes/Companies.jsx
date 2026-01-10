@@ -89,7 +89,7 @@ function Companies() {
                 body: JSON.stringify({
                     urls: selectedLinks,
                     topic: researchTopic,
-                    companyName: researchTarget?.company_name // Add company identifier
+                    companyName: researchTarget?.name // Add company identifier
                 })
             });
 
@@ -112,10 +112,10 @@ function Companies() {
     };
 
     const handleRegenerateOutreach = async () => {
-        if (!researchTarget?.company_name) return;
+        if (!researchTarget?.name) return;
 
         try {
-            const response = await fetch(`/api/companies/${encodeURIComponent(researchTarget.company_name)}/regenerate-outreach`, {
+            const response = await fetch(`/api/companies/${encodeURIComponent(researchTarget.name)}/regenerate-outreach`, {
                 method: 'POST',
                 credentials: 'include'
             });
@@ -136,10 +136,10 @@ function Companies() {
     };
 
     const handleUpdateProfile = async () => {
-        if (!researchTarget?.company_name || !researchResult) return;
+        if (!researchTarget?.name || !researchResult) return;
 
         try {
-            const response = await fetch(`/api/companies/${encodeURIComponent(researchTarget.company_name)}/profile`, {
+            const response = await fetch(`/api/companies/${encodeURIComponent(researchTarget.name)}/profile`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
@@ -581,7 +581,7 @@ function Companies() {
                         {companies
                             .filter(company =>
                                 !searchQuery ||
-                                company.company_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                                company.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
                                 company.website?.toLowerCase().includes(searchQuery.toLowerCase())
                             )
                             .map((company) => (

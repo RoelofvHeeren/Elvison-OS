@@ -436,45 +436,71 @@ export const scanSiteStructure = async (domain, token = null, checkCancellation 
     console.log(`[Local Scraper] Scanning structure for ${domain}...`);
 
     try {
-        // Use cheerio for fast static analysis
         const cheerio = (await import('cheerio')).load;
-        const response = await axios.get(url, {
-            timeout: 10000,
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-            }
-        });
 
-        const $ = cheerio(response.data);
-
-        // Clean text
-        $('script, style, noscript, nav, footer, header, svg, img').remove();
-        const text = $('body').text().replace(/\s+/g, ' ').substring(0, 5000);
-
-        // Get internal links
-        const baseUrl = url.split('//')[1].split('/')[0];
-        const links = [];
-        $('a').each((i, el) => {
-            const href = $(el).attr('href');
-            if (href && (href.includes(baseUrl) || href.startsWith('/')) && !href.startsWith('#')) {
-                const fullUrl = href.startsWith('/') ? `${url.startsWith('https') ? 'https://' : 'http://'}${baseUrl}${href}` : href;
-                const lower = fullUrl.toLowerCase();
-                if (lower.includes('about') || lower.includes('team') || lower.includes('people') ||
-                    lower.includes('portfolio') || lower.includes('project') || lower.includes('invest')) {
-                    links.push(fullUrl);
+        // 1. Try to fetch Homepage and look for internal links
+        let response;
+        try {
+            response = await axios.get(url, {
+                timeout: 10000,
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/437.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
                 }
+            });
+        } catch (e) {
+            console.warn(`[Local Scraper] Homepage fetch failed: ${e.message}`);
+        }
+
+        const links = new Set();
+        let text = "";
+
+        if (response) {
+            const $ = cheerio(response.data);
+            $('script, style, noscript, nav, footer, header, svg, img').remove();
+            text = $('body').text().replace(/\s+/g, ' ').substring(0, 5000);
+
+            const baseUrl = url.split('//')[1].split('/')[0];
+            $('a').each((i, el) => {
+                const href = $(el).attr('href');
+                if (href && !href.startsWith('#') && !href.startsWith('mailto:') && !href.startsWith('tel:')) {
+                    if (href.startsWith('/') || href.includes(baseUrl)) {
+                        // Skip external or archival domains
+                        if (href.includes('archive.org') || href.includes('facebook.com') || href.includes('twitter.com') ||
+                            href.includes('linkedin.com') || href.includes('instagram.com') || href.includes('youtube.com')) {
+                            return;
+                        }
+
+                        const fullUrl = href.startsWith('/') ? `${url.startsWith('https') ? 'https://' : 'http://'}${baseUrl}${href}` : href;
+                        links.add(fullUrl.split('#')[0].split('?')[0].replace(/\/$/, ''));
+                    }
+                }
+            });
+        }
+
+        // 2. Try to find Sitemap (Sitemaps are often at /sitemap.xml or mentioned in robots.txt)
+        const commonSitemaps = ['/sitemap.xml', '/sitemap_index.xml', '/sitemap-index.xml'];
+        for (const smPath of commonSitemaps) {
+            try {
+                const smUrl = `${url.replace(/\/$/, '')}${smPath}`;
+                const smRes = await axios.get(smUrl, { timeout: 5000 });
+                if (smRes.data && (smRes.data.includes('<urlset') || smRes.data.includes('<sitemapindex'))) {
+                    console.log(`[Local Scraper] Found sitemap at ${smUrl}`);
+                    const $sm = cheerio(smRes.data, { xmlMode: true });
+                    $sm('loc').each((i, el) => {
+                        const loc = $(el).text().trim();
+                        if (loc) links.add(loc.replace(/\/$/, ''));
+                    });
+                }
+            } catch (e) {
+                // Ignore sitemap errors
             }
-        });
+        }
 
-        const uniqueLinks = [...new Set(links)];
-
-        // Return object structure for Smart Select logic
         return {
             text: `HOMEPAGE SCAN (${url}):\n${text}`,
-            links: uniqueLinks,
+            links: [...links].slice(0, 200), // Limit for safety
             error: null
         };
-
     } catch (e) {
         console.warn(`[Local Scraper] Scan Error for ${domain}:`, e.message);
         return { text: "", links: [], error: e.message };
