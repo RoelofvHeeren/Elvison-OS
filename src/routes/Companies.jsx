@@ -260,7 +260,7 @@ function Companies() {
                 name: c.company_name,
                 domain: c.domain,
                 website: c.website,
-                company_profile: c.company_profile,
+                profile: c.company_profile,
                 leadCount: parseInt(c.lead_count || 0),
                 fitScore: c.fit_score || 0,
                 icpId: c.icp_id,
