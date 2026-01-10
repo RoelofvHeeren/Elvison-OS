@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Building2, ChevronDown, ChevronUp, Trash2, Users, Search } from 'lucide-react'
+import { Building2, ChevronDown, ChevronUp, Trash2, Users, Search, PlusCircle } from 'lucide-react'
 import { fetchLeads, deleteLead } from '../utils/api'
 import { useIcp } from '../context/IcpContext'
+import AddCompanyModal from '../components/AddCompanyModal'
 
 function Companies() {
     const [companies, setCompanies] = useState([])
@@ -25,6 +26,9 @@ function Companies() {
     const [recommendedLinks, setRecommendedLinks] = useState([]);
     const [selectedLinks, setSelectedLinks] = useState([]);
     const [linkSearch, setLinkSearch] = useState('');
+
+    // Add Company Modal State
+    const [addCompanyModalOpen, setAddCompanyModalOpen] = useState(false);
 
     const { icps, fetchIcps } = useIcp()
 
@@ -461,6 +465,13 @@ function Companies() {
                                 Review all companies with leads, view company profiles, and clean up bad data.
                             </p>
                         </div>
+                        <button
+                            onClick={() => setAddCompanyModalOpen(true)}
+                            className="flex items-center gap-2 px-4 py-2 bg-teal-500/20 hover:bg-teal-500/30 text-teal-400 rounded-xl text-sm font-bold transition-all border border-teal-500/30"
+                        >
+                            <PlusCircle className="w-4 h-4" />
+                            Add Company
+                        </button>
                     </div>
                 </div>
 
@@ -1077,7 +1088,17 @@ function Companies() {
                     </div>
                 )
             }
-        </div >
+
+            {/* Add Company Modal */}
+            <AddCompanyModal
+                isOpen={addCompanyModalOpen}
+                onClose={() => setAddCompanyModalOpen(false)}
+                onComplete={() => {
+                    setAddCompanyModalOpen(false);
+                    loadCompanies(); // Refresh companies list
+                }}
+            />
+        </div>
     )
 }
 

@@ -341,4 +341,46 @@ export class ResearchService {
             return null;
         } catch (e) { return null; }
     }
+
+    /**
+     * Generate a company profile from raw text content
+     * Used for manual company research where we already have scraped content
+     * @param {string} textContent - Raw text from website
+     * @param {string} researchTopic - Optional focus for the profile
+     * @returns {Promise<string>} - Formatted company profile
+     */
+    static async generateProfileFromText(textContent, researchTopic = '') {
+        if (!textContent || textContent.trim().length < 50) {
+            return 'Insufficient content to generate profile.';
+        }
+
+        try {
+            const prompt = `
+                You are a business analyst generating a company profile.
+                
+                ${researchTopic ? `RESEARCH FOCUS: ${researchTopic}` : ''}
+                
+                SOURCE CONTENT (from company website):
+                ${textContent.substring(0, 20000)}
+                
+                INSTRUCTIONS:
+                Generate a structured company profile with the following sections:
+                
+                **Summary** - Brief overview of what the company does
+                **Investment Strategy** - If applicable, their investment focus/thesis
+                **Scale & Geographic Focus** - Size, locations, markets they operate in
+                **Key Highlights** - Notable facts, achievements, differentiators
+                **Fit Analysis** - Potential for partnership/outreach (if context is available)
+                
+                Format as clean markdown. If a section lacks content, omit it.
+                Be concise but capture all key facts.
+            `;
+
+            const result = await model.generateContent(prompt);
+            return result.response.text();
+        } catch (e) {
+            console.error('Profile generation failed:', e);
+            return `Unable to generate profile: ${e.message}`;
+        }
+    }
 }

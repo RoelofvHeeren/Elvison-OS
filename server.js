@@ -796,6 +796,327 @@ app.post('/api/companies/:companyName/regenerate-outreach', async (req, res) => 
     }
 });
 
+// --- MANUAL COMPANY RESEARCH ---
+import { researchCompanyTeam, isDecisionMaker } from './src/backend/services/team-extractor-service.js';
+import { enrichContact, enrichContactsBatch } from './src/backend/services/contact-enrichment-service.js';
+
+// Add a company manually and extract team members
+app.post('/api/companies/add-manual', requireAuth, async (req, res) => {
+    try {
+        const { url, researchTopic } = req.body;
+        if (!url) return res.status(400).json({ error: 'Company URL is required' });
+
+        // Extract domain from URL
+        const domain = url.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0].toLowerCase();
+
+        console.log(`[Manual Research] Starting research for ${domain}...`);
+
+        // 1. Research the company and extract team
+        const result = await researchCompanyTeam(domain);
+
+        if (result.error) {
+            return res.status(400).json({ error: result.error });
+        }
+
+        // 2. Generate company profile using existing service
+        let companyProfile = '';
+        try {
+            const { ResearchService } = await import('./src/backend/services/research-service.js');
+            if (result.homepageText) {
+                companyProfile = await ResearchService.generateProfileFromText(result.homepageText, researchTopic);
+            }
+        } catch (e) {
+            console.warn('[Manual Research] Profile generation failed:', e.message);
+            companyProfile = `Company: ${result.companyName}\nDomain: ${domain}`;
+        }
+
+        // 3. Save team members to database
+        const savedMembers = [];
+        for (const member of result.teamMembers) {
+            const insertResult = await query(
+                `INSERT INTO company_team_members 
+                 (user_id, company_name, company_domain, person_name, job_title, source_url, is_decision_maker, status)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, 'discovered')
+                 ON CONFLICT DO NOTHING
+                 RETURNING id, person_name, job_title, is_decision_maker, status`,
+                [req.userId, result.companyName, domain, member.name, member.title, member.sourceUrl, member.isDecisionMaker]
+            );
+
+            if (insertResult.rows.length > 0) {
+                savedMembers.push(insertResult.rows[0]);
+            }
+        }
+
+        console.log(`[Manual Research] Saved ${savedMembers.length} team members for ${result.companyName}`);
+
+        res.json({
+            success: true,
+            company: {
+                name: result.companyName,
+                domain: domain,
+                profile: companyProfile
+            },
+            teamMembers: savedMembers.length > 0 ? savedMembers : result.teamMembers.map(m => ({
+                ...m,
+                id: null, // Not saved yet
+                status: 'discovered'
+            })),
+            pageCount: result.pageCount
+        });
+
+    } catch (e) {
+        console.error('[Manual Research] Error:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Get team members for a company
+app.get('/api/companies/:domain/team', requireAuth, async (req, res) => {
+    try {
+        const { domain } = req.params;
+
+        const { rows } = await query(
+            `SELECT id, person_name, job_title, linkedin_url, email, status, is_decision_maker, enrichment_data, created_at
+             FROM company_team_members
+             WHERE user_id = $1 AND company_domain = $2
+             ORDER BY is_decision_maker DESC, created_at ASC`,
+            [req.userId, domain]
+        );
+
+        res.json({ teamMembers: rows });
+    } catch (e) {
+        console.error('[Team Members] Error:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Enrich a single team member via Google search
+app.post('/api/companies/team/:id/enrich', requireAuth, async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        // Get team member
+        const { rows } = await query(
+            'SELECT * FROM company_team_members WHERE id = $1 AND user_id = $2',
+            [id, req.userId]
+        );
+
+        if (rows.length === 0) {
+            return res.status(404).json({ error: 'Team member not found' });
+        }
+
+        const member = rows[0];
+
+        // Update status to enriching
+        await query(
+            'UPDATE company_team_members SET status = $1, updated_at = NOW() WHERE id = $2',
+            ['enriching', id]
+        );
+
+        // Run enrichment
+        const enrichment = await enrichContact(member.person_name, member.company_name);
+
+        // Update with results
+        const newStatus = (enrichment.linkedin || enrichment.email) ? 'enriched' : 'discovered';
+
+        await query(
+            `UPDATE company_team_members 
+             SET linkedin_url = COALESCE($1, linkedin_url),
+                 email = COALESCE($2, email),
+                 enrichment_data = $3,
+                 status = $4,
+                 updated_at = NOW()
+             WHERE id = $5`,
+            [enrichment.linkedin, enrichment.email, JSON.stringify(enrichment), newStatus, id]
+        );
+
+        res.json({
+            success: true,
+            linkedin: enrichment.linkedin,
+            email: enrichment.email,
+            status: newStatus
+        });
+
+    } catch (e) {
+        console.error('[Enrichment] Error:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Batch enrich multiple team members
+app.post('/api/companies/team/enrich-batch', requireAuth, async (req, res) => {
+    try {
+        const { memberIds } = req.body;
+
+        if (!memberIds || !Array.isArray(memberIds) || memberIds.length === 0) {
+            return res.status(400).json({ error: 'memberIds array is required' });
+        }
+
+        // Get team members
+        const { rows } = await query(
+            `SELECT id, person_name, company_name FROM company_team_members 
+             WHERE id = ANY($1) AND user_id = $2`,
+            [memberIds, req.userId]
+        );
+
+        if (rows.length === 0) {
+            return res.status(404).json({ error: 'No team members found' });
+        }
+
+        // Mark as enriching
+        await query(
+            `UPDATE company_team_members SET status = 'enriching', updated_at = NOW() WHERE id = ANY($1)`,
+            [memberIds]
+        );
+
+        // Run batch enrichment
+        const contacts = rows.map(r => ({
+            id: r.id,
+            name: r.person_name,
+            companyName: r.company_name
+        }));
+
+        const results = await enrichContactsBatch(contacts);
+
+        // Update each member
+        for (const result of results) {
+            const newStatus = (result.linkedin || result.email) ? 'enriched' : 'discovered';
+
+            await query(
+                `UPDATE company_team_members 
+                 SET linkedin_url = COALESCE($1, linkedin_url),
+                     email = COALESCE($2, email),
+                     enrichment_data = $3,
+                     status = $4,
+                     updated_at = NOW()
+                 WHERE id = $5`,
+                [result.linkedin, result.email, JSON.stringify(result), newStatus, result.id]
+            );
+        }
+
+        res.json({
+            success: true,
+            enriched: results.filter(r => r.linkedin || r.email).length,
+            total: results.length,
+            results: results.map(r => ({
+                id: r.id,
+                name: r.name,
+                linkedin: r.linkedin,
+                email: r.email
+            }))
+        });
+
+    } catch (e) {
+        console.error('[Batch Enrichment] Error:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Convert team member to lead
+app.post('/api/companies/team/:id/convert', requireAuth, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { icpId } = req.body;
+
+        // Get team member
+        const { rows } = await query(
+            'SELECT * FROM company_team_members WHERE id = $1 AND user_id = $2',
+            [id, req.userId]
+        );
+
+        if (rows.length === 0) {
+            return res.status(404).json({ error: 'Team member not found' });
+        }
+
+        const member = rows[0];
+
+        // Generate outreach if LinkedIn is available
+        let outreachMessages = {};
+        if (member.linkedin_url) {
+            try {
+                const { OutreachService } = await import('./src/backend/services/outreach-service.js');
+                outreachMessages = await OutreachService.createLeadMessages({
+                    first_name: member.person_name?.split(' ')[0],
+                    company_name: member.company_name,
+                    company_profile: '' // Could fetch from company if stored
+                });
+            } catch (e) {
+                console.warn('[Convert] Outreach generation failed:', e.message);
+            }
+        }
+
+        // Create lead
+        const customData = {
+            company_website: member.company_domain,
+            source: 'manual_research',
+            enrichment_data: member.enrichment_data,
+            connection_request: outreachMessages.linkedin_message || null,
+            email_message: outreachMessages.email_body || null
+        };
+
+        const leadResult = await query(
+            `INSERT INTO leads (user_id, company_name, person_name, email, job_title, linkedin_url, status, custom_data, source, icp_id)
+             VALUES ($1, $2, $3, $4, $5, $6, 'NEW', $7, 'Manual Research', $8)
+             RETURNING id`,
+            [
+                req.userId,
+                member.company_name,
+                member.person_name,
+                member.email,
+                member.job_title,
+                member.linkedin_url,
+                JSON.stringify(customData),
+                icpId || null
+            ]
+        );
+
+        // Update team member status
+        await query(
+            'UPDATE company_team_members SET status = $1, updated_at = NOW() WHERE id = $2',
+            ['converted', id]
+        );
+
+        res.json({
+            success: true,
+            leadId: leadResult.rows[0].id,
+            hasOutreach: !!outreachMessages.linkedin_message
+        });
+
+    } catch (e) {
+        console.error('[Convert] Error:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Add team member manually (when website doesn't have team page)
+app.post('/api/companies/:domain/team/add', requireAuth, async (req, res) => {
+    try {
+        const { domain } = req.params;
+        const { name, title, companyName } = req.body;
+
+        if (!name) {
+            return res.status(400).json({ error: 'Name is required' });
+        }
+
+        const result = await query(
+            `INSERT INTO company_team_members 
+             (user_id, company_name, company_domain, person_name, job_title, is_decision_maker, status)
+             VALUES ($1, $2, $3, $4, $5, $6, 'discovered')
+             RETURNING id, person_name, job_title, is_decision_maker, status`,
+            [req.userId, companyName || domain, domain, name, title || 'Unknown Role', isDecisionMaker(title)]
+        );
+
+        res.json({
+            success: true,
+            member: result.rows[0]
+        });
+
+    } catch (e) {
+        console.error('[Add Team Member] Error:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // --- ICP & CLEANUP ---
 
 import { CompanyScorer } from './src/backend/services/company-scorer.js';
