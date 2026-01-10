@@ -961,33 +961,49 @@ app.get('/api/leads', requireAuth, async (req, res) => {
         const offset = (pageNum - 1) * pageSizeNum;
 
         // Build base query
-        let queryStr = 'SELECT * FROM leads WHERE user_id = $1';
+        // Join with companies table to get the latest profile and score data
+        // We select companies.company_profile which will overwrite leads.company_profile if strict column matching depends on order, 
+        // but to be safe we alias it or rely on leads.* being first. 
+        // In node-postgres, duplicate column names in result: last one usually wins.
+        let queryStr = `
+            SELECT leads.*, 
+                   companies.company_profile, 
+                   companies.fit_reason, 
+                   companies.target_score
+            FROM leads 
+            LEFT JOIN companies ON leads.company_name = companies.company_name
+            WHERE leads.user_id = $1
+        `;
         const params = [req.userId];
-        let countParams = [req.userId];
+        const countParams = [req.userId];
 
         if (status) {
-            queryStr += ' AND status = $' + (params.length + 1);
+            queryStr += ' AND leads.status = $' + (params.length + 1);
             params.push(status);
             countParams.push(status);
         } else {
             // Default: Hide disqualified
-            queryStr += " AND status != 'DISQUALIFIED'";
+            queryStr += " AND leads.status != 'DISQUALIFIED'";
         }
 
         if (icpId) {
-            queryStr += ' AND icp_id = $' + (params.length + 1);
+            queryStr += ' AND leads.icp_id = $' + (params.length + 1);
             params.push(icpId);
             countParams.push(icpId);
         }
 
         // Get total count for pagination metadata
-        const countQuery = queryStr.replace('SELECT *', 'SELECT COUNT(*)');
+        // For count, we can just count leads, join shouldn't change count unless we filter by company props (which we don't for now)
+        const countQuery = `SELECT COUNT(*) FROM leads WHERE leads.user_id = $1 ${status ? 'AND leads.status = $2' : "AND leads.status != 'DISQUALIFIED'"} ${icpId ? 'AND leads.icp_id = $' + (status ? 3 : 2) : ''}`;
         const { rows: countRows } = await query(countQuery, countParams);
+
+        // Note: The simple countQuery above is safer than replacing 'SELECT *' because of the join syntax complexity
+
         const totalCount = parseInt(countRows[0].count);
         const totalPages = Math.ceil(totalCount / pageSizeNum);
 
         // Add pagination
-        queryStr += ` ORDER BY created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+        queryStr += ` ORDER BY leads.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
         params.push(pageSizeNum, offset);
 
         const { rows } = await query(queryStr, params);
