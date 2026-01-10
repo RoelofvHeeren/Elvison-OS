@@ -44,13 +44,16 @@ export class CompanyScorer {
         const CONCURRENCY_LIMIT = 8;
         const typeStr = isFamilyOffice ? 'FAMILY_OFFICE' : 'INVESTMENT_FIRM';
 
+        // Stricter threshold for Family Offices (8), standard for Investment Firms (6)
+        const SCORE_THRESHOLD = isFamilyOffice ? 8 : 6;
+
         // Helper to process a single company
         const processCompany = async (company) => {
             try {
                 const scoreData = await this.rescoreLead(company, typeStr);
 
                 if (scoreData) {
-                    if (scoreData.fit_score < 6) {
+                    if (scoreData.fit_score < SCORE_THRESHOLD) {
                         // DELETE the company AND all its leads
                         console.log(`❌ Deleting company: ${company.company_name} (Score: ${scoreData.fit_score})`);
 
@@ -123,25 +126,32 @@ export class CompanyScorer {
 
         let prompt = '';
         if (type === 'FAMILY_OFFICE') {
-            prompt = `You are an expert investment analyst evaluating if a company is a **Single or Multi-Family Office** that INVESTS in real estate or private equity.
+            prompt = `You are an expert investment analyst with STRICT evaluation criteria for Single/Multi-Family Offices.
 
 COMPANY: ${companyName}
 WEBSITE: ${website}
 PROFILE: ${profile.substring(0, 1500)}
 
-EVALUATION RULES:
-1. **Target**: Single Family Offices (SFO), Multi-Family Offices (MFO), Private Wealth Firms with *direct investment* mandates.
-2. **Key Signals**: Terms like "Direct Investment", "Private Capital", "Long-term capital", "Proprietary Capital", "Real Estate Portfolio".
-3. **Wealth Managers**: Standard wealth managers are usually disqualified, BUT if they mention specific "Alternative Investment" platforms, "Private Strategies", or "Direct Deals", **KEEP THEM** (Score 6-7).
+**STRICT REQUIREMENTS - MUST MEET ALL:**
+1. Must be an EXPLICIT Single Family Office (SFO) or Multi-Family Office (MFO) - NOT a wealth manager, advisor, or broker
+2. Must have a DIRECT Real Estate or Private Equity investment arm (not just "alternative investments")
+3. Must be Canadian-based or have explicit Canadian investment mandate
 
-SCORING GUIDELINES:
-- **8-10 (Perfect Fit)**: Explicitly identifies as SFO/MFO with direct real estate/PE arm AND confirms Canadian presence/focus.
-- **6-7 (Likely Fit / Keep)**: "Private Wealth" or "Investment Management" firm that appears to have discretion or direct deals. **WHEN IN DOUBT, BUT THEY ARE CANADIAN, SCORE 6 TO KEEP.**
-- **1-5 (Disqualify)**: Retail financial planners, pure brokers, insurance agents, tenants.
-- **1 (Major Disqualification)**: Non-Canadian Firm (e.g. US, UK, Middle East) unless they explicitly mention a "Toronto" or "Vancouver" office or "Canadian Investment Strategy".
+**AUTOMATIC DISQUALIFICATION (Score 1-4):**
+- Wealth managers, financial advisors, insurance companies
+- Brokers or sales-only firms
+- Consulting firms or service providers
+- Non-Canadian firms without explicit Canadian office/strategy
+- Firms that only MANAGE money but don't INVEST directly
+- Unclear or vague investment mandates
 
-CRITICAL GEOGRAPHY RULE:
-IF the company is NOT based in Canada AND does not mention a Canadian office/strategy -> SCORE 1.
+**SCORING (BE STRICT):**
+- **9-10**: Explicitly states SFO/MFO + names specific RE/PE deals or portfolios + Canadian
+- **8**: Clearly SFO/MFO with direct investment mandate + Canadian presence
+- **5-7**: Might be an investor but not explicitly SFO/MFO or unclear if direct investing
+- **1-4**: Does not meet strict criteria above
+
+**WHEN IN DOUBT, SCORE LOW.** Only 8+ scores will be kept.
 
 OUTPUT JSON:
 {
