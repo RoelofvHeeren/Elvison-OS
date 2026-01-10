@@ -1343,14 +1343,14 @@ app.get('/api/companies', requireAuth, async (req, res) => {
             SELECT 
                 c.*,
                 CAST(COUNT(l.id) AS INTEGER) as lead_count,
-                MAX(CAST(l.custom_data->>'score' AS INTEGER)) as fit_score,
+                MAX(l.custom_data->>'score') as fit_score,
                 MAX(l.icp_id) as icp_id
             FROM companies c
             LEFT JOIN leads l ON c.company_name = l.company_name AND c.user_id = l.user_id
             WHERE c.user_id = $1
             AND c.company_name != 'Unknown'
             GROUP BY c.id
-            ORDER BY c.last_updated DESC NULLS LAST
+            ORDER BY c.created_at DESC
         `, [req.userId]);
 
         res.json({ companies: rows });
