@@ -431,6 +431,76 @@ function Companies() {
                         >
                             Run Data Repair / Restore Missing Companies
                         </button>
+                        <button
+                            onClick={async () => {
+                                if (!confirm('⚠️ DEEP CLEANUP: This will re-score ALL companies using AI and DELETE those below threshold (8 for Family Offices, 6 for Funds). This may take 5-10 minutes. Continue?')) return;
+
+                                const statusDiv = document.createElement('div');
+                                statusDiv.id = 'cleanup-status';
+                                statusDiv.className = 'fixed inset-0 bg-black/90 flex items-center justify-center z-50';
+                                statusDiv.innerHTML = `
+                                    <div class="bg-gray-900 p-8 rounded-2xl max-w-2xl w-full max-h-[80vh] overflow-auto">
+                                        <h2 class="text-xl font-bold text-white mb-4">🧹 Deep Cleanup in Progress</h2>
+                                        <div id="cleanup-log" class="text-sm text-gray-300 space-y-1 font-mono"></div>
+                                        <div id="cleanup-summary" class="mt-4 p-4 bg-black/50 rounded-xl hidden"></div>
+                                        <button id="cleanup-close" class="mt-4 px-4 py-2 bg-teal-500 text-white rounded-lg hidden">Close & Refresh</button>
+                                    </div>
+                                `;
+                                document.body.appendChild(statusDiv);
+                                const log = document.getElementById('cleanup-log');
+                                const summary = document.getElementById('cleanup-summary');
+                                const closeBtn = document.getElementById('cleanup-close');
+
+                                try {
+                                    const res = await fetch('/api/admin/deep-cleanup', { method: 'POST' });
+                                    const reader = res.body.getReader();
+                                    const decoder = new TextDecoder();
+
+                                    while (true) {
+                                        const { value, done } = await reader.read();
+                                        if (done) break;
+                                        const chunk = decoder.decode(value);
+                                        const lines = chunk.split('\n\n');
+                                        for (const line of lines) {
+                                            if (line.startsWith('data: ')) {
+                                                try {
+                                                    const data = JSON.parse(line.slice(6));
+                                                    if (data.type === 'scored') {
+                                                        const color = data.action === 'DELETE' ? 'text-red-400' : 'text-green-400';
+                                                        log.innerHTML += `<div class="${color}">${data.action} ${data.company} (Score: ${data.score}/${data.threshold}) - ${data.reason}</div>`;
+                                                    } else if (data.type === 'status' || data.type === 'scraping') {
+                                                        log.innerHTML += `<div class="text-blue-400">${data.message || 'Scraping ' + data.company + '...'}</div>`;
+                                                    } else if (data.type === 'progress') {
+                                                        log.innerHTML += `<div class="text-yellow-400">Progress: ${data.processed}/${data.total} - Kept: ${data.kept}, Deleted: ${data.deleted}</div>`;
+                                                    } else if (data.type === 'complete') {
+                                                        summary.classList.remove('hidden');
+                                                        summary.innerHTML = `
+                                                            <h3 class="text-lg font-bold text-white mb-2">✅ Cleanup Complete!</h3>
+                                                            <p class="text-green-400">Kept: ${data.results.kept} companies</p>
+                                                            <p class="text-red-400">Deleted: ${data.results.deleted} companies</p>
+                                                            <p class="text-blue-400">Scraped: ${data.results.scraped} websites</p>
+                                                            <p class="text-gray-400">Errors: ${data.results.errors}</p>
+                                                        `;
+                                                        closeBtn.classList.remove('hidden');
+                                                    }
+                                                    log.scrollTop = log.scrollHeight;
+                                                } catch (e) { }
+                                            }
+                                        }
+                                    }
+                                } catch (e) {
+                                    log.innerHTML += `<div class="text-red-500">Error: ${e.message}</div>`;
+                                }
+
+                                closeBtn.onclick = () => {
+                                    statusDiv.remove();
+                                    window.location.reload();
+                                };
+                            }}
+                            className="ml-4 text-xs text-orange-500 hover:text-orange-400 underline decoration-dotted transition-colors font-bold"
+                        >
+                            🧹 Run DEEP Cleanup (AI Re-score All)
+                        </button>
                     </div>
                 </div>
 

@@ -99,6 +99,210 @@ app.post('/api/admin/cleanup', async (req, res) => {
     }
 });
 
+// COMPREHENSIVE DEEP CLEANUP - Manual verification of all companies
+app.post('/api/admin/deep-cleanup', requireAuth, async (req, res) => {
+    // SSE for streaming progress
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    const send = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+
+    try {
+        const userId = req.userId;
+        send({ type: 'status', message: 'Starting deep cleanup...' });
+
+        // 1. Get all ICPs
+        const { rows: icps } = await query('SELECT id, name FROM icps WHERE user_id = $1', [userId]);
+        const familyOfficeIcp = icps.find(i => i.name.toLowerCase().includes('family office'));
+        const investmentFundIcp = icps.find(i => i.name.toLowerCase().includes('fund') || i.name.toLowerCase().includes('investment firm'));
+
+        send({ type: 'icps', familyOffice: familyOfficeIcp?.name, investmentFund: investmentFundIcp?.name });
+
+        // 2. Get ALL companies with their profiles
+        const { rows: companies } = await query(`
+            SELECT 
+                c.id, 
+                c.company_name, 
+                c.website, 
+                c.company_profile,
+                c.fit_score,
+                c.user_id,
+                (SELECT icp_id FROM leads WHERE company_name = c.company_name AND user_id = c.user_id LIMIT 1) as current_icp_id
+            FROM companies c
+            WHERE c.user_id = $1
+            ORDER BY c.company_name
+        `, [userId]);
+
+        send({ type: 'status', message: `Found ${companies.length} companies to process` });
+
+        const results = {
+            total: companies.length,
+            processed: 0,
+            kept: 0,
+            deleted: 0,
+            rescored: 0,
+            recategorized: 0,
+            scraped: 0,
+            errors: 0,
+            deletedCompanies: [],
+            keptCompanies: []
+        };
+
+        // Import scraper
+        const { scrapeWebsiteSmart } = await import('./src/backend/services/apify.js');
+        const { GoogleGenerativeAI } = await import('@google/generative-ai');
+        const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY);
+        const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+
+        // Process each company
+        for (const company of companies) {
+            try {
+                let profile = company.company_profile || '';
+                const website = company.website || '';
+
+                // Determine current ICP type
+                let icpType = 'UNKNOWN';
+                if (company.current_icp_id === familyOfficeIcp?.id) icpType = 'FAMILY_OFFICE';
+                else if (company.current_icp_id === investmentFundIcp?.id) icpType = 'INVESTMENT_FUND';
+
+                // Check if profile is weak (less than 100 chars or doesn't mention key terms)
+                const isWeakProfile = !profile || profile.length < 100;
+
+                // If weak profile and has website, scrape it
+                if (isWeakProfile && website) {
+                    send({ type: 'scraping', company: company.company_name });
+                    try {
+                        const scraped = await scrapeWebsiteSmart(website);
+                        if (scraped && scraped.length > 100) {
+                            profile = scraped.substring(0, 3000);
+                            results.scraped++;
+                        }
+                    } catch (e) {
+                        console.error(`Scrape failed for ${company.company_name}:`, e.message);
+                    }
+                }
+
+                // Score using strict AI
+                const scorePrompt = `You are a strict investment analyst. Evaluate this company:
+
+COMPANY: ${company.company_name}
+WEBSITE: ${website}
+PROFILE: ${profile.substring(0, 2000)}
+
+TASK 1 - CATEGORIZE:
+Is this company a:
+A) Single/Multi Family Office (SFO/MFO) - manages wealth for 1-few ultra-high-net-worth families, makes DIRECT investments
+B) Investment Fund/Firm - PE fund, REIT, institutional investor, asset manager with direct deals
+C) Neither - wealth manager, advisor, broker, service provider, tenant
+
+TASK 2 - SCORE (1-10):
+For Family Offices (must score 8+ to keep):
+- 9-10: Explicit SFO/MFO + names specific RE/PE deals + Canadian
+- 8: Clear SFO/MFO + direct investment mandate + Canadian
+- 1-7: Not clearly SFO/MFO or lacking direct investment evidence
+
+For Investment Funds (must score 6+ to keep):
+- 8-10: Dedicated REPE, REIT, institutional
+- 6-7: PE firm, holdings with RE assets
+- 1-5: Service providers, brokers, lenders
+
+TASK 3 - PROFILE SUMMARY:
+Write a 2-3 sentence profile highlighting: investment focus, deal types, geography, scale.
+
+OUTPUT JSON:
+{
+    "category": "FAMILY_OFFICE" | "INVESTMENT_FUND" | "NEITHER",
+    "score": number (1-10),
+    "reason": "string",
+    "profile_summary": "string"
+}`;
+
+                let scoreData = null;
+                try {
+                    const result = await model.generateContent(scorePrompt);
+                    const text = result.response.text();
+                    const jsonMatch = text.match(/\{[\s\S]*\}/);
+                    if (jsonMatch) {
+                        scoreData = JSON.parse(jsonMatch[0]);
+                    }
+                } catch (e) {
+                    console.error('AI scoring failed:', e.message);
+                    results.errors++;
+                }
+
+                if (!scoreData) {
+                    send({ type: 'error', company: company.company_name, message: 'AI scoring failed' });
+                    results.processed++;
+                    continue;
+                }
+
+                // Determine threshold based on category
+                const threshold = scoreData.category === 'FAMILY_OFFICE' ? 8 : 6;
+                const shouldDelete = scoreData.category === 'NEITHER' || scoreData.score < threshold;
+
+                send({
+                    type: 'scored',
+                    company: company.company_name,
+                    category: scoreData.category,
+                    score: scoreData.score,
+                    threshold,
+                    action: shouldDelete ? 'DELETE' : 'KEEP',
+                    reason: scoreData.reason
+                });
+
+                if (shouldDelete) {
+                    // Delete company and all its leads
+                    await query('DELETE FROM leads WHERE company_name = $1 AND user_id = $2', [company.company_name, userId]);
+                    await query('DELETE FROM companies WHERE id = $1', [company.id]);
+                    await query('DELETE FROM researched_companies WHERE company_name = $1 AND user_id = $2', [company.company_name, userId]);
+
+                    results.deleted++;
+                    results.deletedCompanies.push({ name: company.company_name, score: scoreData.score, reason: scoreData.reason });
+                } else {
+                    // Update company with new score and profile
+                    await query(`
+                        UPDATE companies 
+                        SET fit_score = $1, company_profile = $2, last_updated = NOW()
+                        WHERE id = $3
+                    `, [scoreData.score, scoreData.profile_summary || profile, company.id]);
+
+                    // Also update leads
+                    await query(`
+                        UPDATE leads 
+                        SET custom_data = custom_data || $1::jsonb
+                        WHERE company_name = $2 AND user_id = $3
+                    `, [JSON.stringify({ fit_score: scoreData.score, cleanup_verified: true }), company.company_name, userId]);
+
+                    results.kept++;
+                    results.rescored++;
+                    results.keptCompanies.push({ name: company.company_name, score: scoreData.score, category: scoreData.category });
+                }
+
+                results.processed++;
+
+                // Progress update every 5 companies
+                if (results.processed % 5 === 0) {
+                    send({ type: 'progress', ...results });
+                }
+
+            } catch (e) {
+                console.error(`Error processing ${company.company_name}:`, e);
+                results.errors++;
+                results.processed++;
+            }
+        }
+
+        send({ type: 'complete', results });
+        res.end();
+
+    } catch (e) {
+        console.error('Deep cleanup failed:', e);
+        send({ type: 'error', message: e.message });
+        res.end();
+    }
+});
+
 
 // TEMP: Backfill Companies from Leads
 app.post('/api/admin/backfill-companies', async (req, res) => {
