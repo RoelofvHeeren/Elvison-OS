@@ -733,6 +733,26 @@ app.post('/api/companies/research', async (req, res) => {
     }
 });
 
+// Manually update company profile (from Deep Research Result)
+app.put('/api/companies/:companyName/profile', requireAuth, async (req, res) => {
+    try {
+        const { companyName } = req.params;
+        const { profile } = req.body;
+
+        if (!profile) return res.status(400).json({ error: 'Profile content is required' });
+
+        await query(
+            'UPDATE companies SET company_profile = $1, last_updated = NOW() WHERE company_name = $2',
+            [profile, companyName]
+        );
+
+        res.json({ success: true });
+    } catch (e) {
+        console.error('Update Profile Error:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // Regenerate outreach messages for a company (used after Deep Research adds new info)
 app.post('/api/companies/:companyName/regenerate-outreach', async (req, res) => {
     try {

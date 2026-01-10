@@ -127,6 +127,25 @@ function Companies() {
         }
     };
 
+    const handleUpdateProfile = async () => {
+        if (!researchTarget?.company_name || !researchResult) return;
+
+        try {
+            await fetch(`/api/companies/${encodeURIComponent(researchTarget.company_name)}/profile`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ profile: researchResult })
+            });
+
+            console.log('✅ Profile updated');
+            alert('Company profile updated successfully!');
+            await loadCompanies(); // Refresh UI
+        } catch (e) {
+            console.error('Update profile failed:', e);
+            alert('Failed to update profile: ' + e.message);
+        }
+    };
+
     const handleCleanup = async (icpId) => {
         if (!window.confirm("WARNING: This will audit ALL companies in this strategy and DELETE any that score below 6/10. This cannot be undone.\n\nAre you sure?")) {
             return;
@@ -1022,12 +1041,26 @@ function Companies() {
                                 )}
 
                                 {researchStep === 'result' && (
-                                    <button
-                                        onClick={() => setResearchModalOpen(false)}
-                                        className="px-6 py-2 bg-white/10 text-white font-bold rounded-lg hover:bg-white/20 transition-colors"
-                                    >
-                                        Done
-                                    </button>
+                                    <div className="flex gap-3">
+                                        <button
+                                            onClick={handleUpdateProfile}
+                                            className="px-4 py-2 bg-blue-500/20 text-blue-400 border border-blue-500/50 hover:bg-blue-500/30 rounded-lg text-xs font-bold uppercase tracking-wider transition-all"
+                                        >
+                                            💾 Update Profile
+                                        </button>
+                                        <button
+                                            onClick={handleRegenerateOutreach}
+                                            className="px-4 py-2 bg-teal-500/20 text-teal-400 border border-teal-500/50 hover:bg-teal-500/30 rounded-lg text-xs font-bold uppercase tracking-wider transition-all"
+                                        >
+                                            ↻ Regenerate Outreach
+                                        </button>
+                                        <button
+                                            onClick={() => setResearchModalOpen(false)}
+                                            className="px-6 py-2 bg-white/10 text-white font-bold rounded-lg hover:bg-white/20 transition-colors"
+                                        >
+                                            Done
+                                        </button>
+                                    </div>
                                 )}
                             </div>
                         </div>
