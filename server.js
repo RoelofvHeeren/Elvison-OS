@@ -149,8 +149,9 @@ app.post('/api/admin/deep-cleanup', requireAuth, async (req, res) => {
             keptCompanies: []
         };
 
-        // Import scraper
-        const { scrapeWebsiteSmart } = await import('./src/backend/services/apify.js');
+        // Import scraper and research service
+        const { scrapeWebsiteSmart, scrapeSpecificPages } = await import('./src/backend/services/apify.js');
+        const { ResearchService } = await import('./src/backend/services/research-service.js');
         const { GoogleGenerativeAI } = await import('@google/generative-ai');
         const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY);
         const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
@@ -160,67 +161,122 @@ app.post('/api/admin/deep-cleanup', requireAuth, async (req, res) => {
             try {
                 let profile = company.company_profile || '';
                 const website = company.website || '';
+                const companyName = company.company_name;
 
-                // Determine current ICP type
-                let icpType = 'UNKNOWN';
-                if (company.current_icp_id === familyOfficeIcp?.id) icpType = 'FAMILY_OFFICE';
-                else if (company.current_icp_id === investmentFundIcp?.id) icpType = 'INVESTMENT_FUND';
+                send({ type: 'processing', company: companyName, step: 'Evaluating profile quality...' });
 
-                // Check if profile is weak (less than 100 chars or doesn't mention key terms)
-                const isWeakProfile = !profile || profile.length < 100;
+                // ALWAYS try to get more info - check if profile needs enhancement
+                const needsMoreInfo = !profile ||
+                    profile.length < 500 ||
+                    profile.toLowerCase().includes('more information needed') ||
+                    profile.toLowerCase().includes('unclear') ||
+                    !profile.toLowerCase().includes('invest');
 
-                // If weak profile and has website, scrape it
-                if (isWeakProfile && website) {
-                    send({ type: 'scraping', company: company.company_name });
+                // ALWAYS scrape website if we need more info or if profile is weak
+                if (needsMoreInfo && website) {
+                    send({ type: 'scraping', company: companyName, message: 'Scraping website for detailed info...' });
                     try {
-                        const scraped = await scrapeWebsiteSmart(website);
-                        if (scraped && scraped.length > 100) {
-                            profile = scraped.substring(0, 3000);
+                        // First try smart scrape of homepage
+                        let scraped = await scrapeWebsiteSmart(website);
+
+                        // If we got content, try to find and scrape about/investment pages
+                        if (scraped && scraped.length > 200) {
+                            profile = scraped.substring(0, 4000);
                             results.scraped++;
+
+                            // Look for key pages to scrape for more detail
+                            const keyPagePatterns = ['/about', '/investment', '/portfolio', '/strategy', '/team', '/deals'];
+                            const pagesToScrape = [];
+                            for (const pattern of keyPagePatterns) {
+                                if (scraped.toLowerCase().includes(pattern)) {
+                                    const fullUrl = website.replace(/\/$/, '') + pattern;
+                                    pagesToScrape.push(fullUrl);
+                                }
+                            }
+
+                            // Scrape additional pages if found
+                            if (pagesToScrape.length > 0) {
+                                send({ type: 'deep-scraping', company: companyName, pages: pagesToScrape.length });
+                                try {
+                                    const additionalContent = await scrapeSpecificPages(pagesToScrape.slice(0, 3));
+                                    if (additionalContent && additionalContent.length > 0) {
+                                        const extraText = additionalContent.map(p => p.text || '').join('\n\n');
+                                        profile = (profile + '\n\n' + extraText).substring(0, 6000);
+                                    }
+                                } catch (e) {
+                                    console.log('Additional pages scrape failed:', e.message);
+                                }
+                            }
                         }
                     } catch (e) {
-                        console.error(`Scrape failed for ${company.company_name}:`, e.message);
+                        send({ type: 'scrape-failed', company: companyName, error: e.message });
                     }
                 }
 
-                // Score using strict AI
-                const scorePrompt = `You are a strict investment analyst. Evaluate this company:
+                // COMPREHENSIVE SCORING AND PROFILE GENERATION
+                send({ type: 'scoring', company: companyName, message: 'AI analyzing and scoring...' });
 
-COMPANY: ${company.company_name}
+                const comprehensivePrompt = `You are an expert Canadian real estate investment analyst. Thoroughly analyze this company:
+
+COMPANY: ${companyName}
 WEBSITE: ${website}
-PROFILE: ${profile.substring(0, 2000)}
+RAW DATA: ${profile.substring(0, 5000)}
 
-TASK 1 - CATEGORIZE:
-Is this company a:
-A) Single/Multi Family Office (SFO/MFO) - manages wealth for 1-few ultra-high-net-worth families, makes DIRECT investments
-B) Investment Fund/Firm - PE fund, REIT, institutional investor, asset manager with direct deals
-C) Neither - wealth manager, advisor, broker, service provider, tenant
+## TASK 1: DEEP ANALYSIS
+Analyze and extract:
+- What type of entity is this? (SFO, MFO, PE Fund, REIT, Holdings, Wealth Manager, Broker, Service Provider, etc.)
+- Do they make DIRECT investments in real estate or private equity?
+- What is their investment focus? (residential, commercial, industrial, multi-family, etc.)
+- What specific deals/projects have they done? (names, locations, values if mentioned)
+- What is their scale? (AUM, portfolio size, deal sizes)
+- Are they Canadian or have Canadian operations?
+- Any red flags? (just advisory, brokerage only, non-investor)
 
-TASK 2 - SCORE (1-10):
-For Family Offices (must score 8+ to keep):
-- 9-10: Explicit SFO/MFO + names specific RE/PE deals + Canadian
-- 8: Clear SFO/MFO + direct investment mandate + Canadian
-- 1-7: Not clearly SFO/MFO or lacking direct investment evidence
+## TASK 2: STRICT CATEGORIZATION
+Pick ONE:
+- "FAMILY_OFFICE": Explicit SFO/MFO that makes DIRECT investments. Must have evidence of proprietary capital deployed.
+- "INVESTMENT_FUND": PE Fund, REIT, Asset Manager, Holdings Company with DIRECT investments
+- "NEITHER": Wealth managers, advisors, brokers, service providers, lenders-only, unclear entities
 
-For Investment Funds (must score 6+ to keep):
-- 8-10: Dedicated REPE, REIT, institutional
-- 6-7: PE firm, holdings with RE assets
-- 1-5: Service providers, brokers, lenders
+## TASK 3: STRICT SCORING (1-10)
+For FAMILY_OFFICE (must score 8+ to keep):
+- 9-10: Explicit SFO/MFO + names specific RE deals/projects + Canadian + clear direct investment mandate
+- 8: Clear SFO/MFO + evidence of direct investing + Canadian presence
+- 1-7: Not clearly SFO/MFO OR no evidence of direct investing OR non-Canadian
 
-TASK 3 - PROFILE SUMMARY:
-Write a 2-3 sentence profile highlighting: investment focus, deal types, geography, scale.
+For INVESTMENT_FUND (must score 6+ to keep):
+- 8-10: Dedicated REPE, REIT, institutional with specific deals/portfolio
+- 6-7: PE firm or holdings with RE assets, clear investment activity
+- 1-5: Pure service providers, brokers, lenders-only, unclear
 
-OUTPUT JSON:
+For NEITHER: Score 1-3
+
+BE STRICT. When in doubt, score LOW.
+
+## TASK 4: GENERATE COMPREHENSIVE PROFILE
+If keeping this company (meets score threshold), write a structured profile:
+
+**Summary**: 1-2 sentences on who they are
+**Investment Strategy**: What they invest in, deal types, check sizes
+**Scale & Geography**: AUM, deal sizes, geographic focus  
+**Portfolio Highlights**: Specific deals/projects if known
+**Key Highlights**: 2-3 bullet points on why they're a good fit
+**Fit Analysis**: Why they match our criteria
+
+If NOT keeping, just write "DISQUALIFIED: [reason]"
+
+## OUTPUT JSON:
 {
     "category": "FAMILY_OFFICE" | "INVESTMENT_FUND" | "NEITHER",
     "score": number (1-10),
-    "reason": "string",
-    "profile_summary": "string"
+    "reason": "string (1 sentence why this score)",
+    "needs_more_research": boolean (true if you couldn't find enough info to be confident),
+    "company_profile": "string (the full structured profile OR disqualification reason)"
 }`;
 
                 let scoreData = null;
                 try {
-                    const result = await model.generateContent(scorePrompt);
+                    const result = await model.generateContent(comprehensivePrompt);
                     const text = result.response.text();
                     const jsonMatch = text.match(/\{[\s\S]*\}/);
                     if (jsonMatch) {
@@ -232,9 +288,29 @@ OUTPUT JSON:
                 }
 
                 if (!scoreData) {
-                    send({ type: 'error', company: company.company_name, message: 'AI scoring failed' });
+                    send({ type: 'error', company: companyName, message: 'AI scoring failed' });
                     results.processed++;
                     continue;
+                }
+
+                // If AI says needs more research and score is borderline, try deep research
+                if (scoreData.needs_more_research && scoreData.score >= 5 && scoreData.score < 8 && website) {
+                    send({ type: 'deep-research', company: companyName, message: 'Uncertain - doing deep research...' });
+                    try {
+                        const deepProfile = await ResearchService.generateProfileFromUrl(website, 'Investment focus, portfolio, deals, AUM, strategy');
+                        if (deepProfile && deepProfile.length > 200) {
+                            // Re-score with better data
+                            const reScoreResult = await model.generateContent(comprehensivePrompt.replace(profile.substring(0, 5000), deepProfile.substring(0, 5000)));
+                            const reScoreText = reScoreResult.response.text();
+                            const reScoreMatch = reScoreText.match(/\{[\s\S]*\}/);
+                            if (reScoreMatch) {
+                                scoreData = JSON.parse(reScoreMatch[0]);
+                                results.scraped++;
+                            }
+                        }
+                    } catch (e) {
+                        console.log('Deep research failed:', e.message);
+                    }
                 }
 
                 // Determine threshold based on category
@@ -243,7 +319,7 @@ OUTPUT JSON:
 
                 send({
                     type: 'scored',
-                    company: company.company_name,
+                    company: companyName,
                     category: scoreData.category,
                     score: scoreData.score,
                     threshold,
@@ -253,30 +329,30 @@ OUTPUT JSON:
 
                 if (shouldDelete) {
                     // Delete company and all its leads
-                    await query('DELETE FROM leads WHERE company_name = $1 AND user_id = $2', [company.company_name, userId]);
+                    await query('DELETE FROM leads WHERE company_name = $1 AND user_id = $2', [companyName, userId]);
                     await query('DELETE FROM companies WHERE id = $1', [company.id]);
-                    await query('DELETE FROM researched_companies WHERE company_name = $1 AND user_id = $2', [company.company_name, userId]);
+                    await query('DELETE FROM researched_companies WHERE company_name = $1 AND user_id = $2', [companyName, userId]);
 
                     results.deleted++;
-                    results.deletedCompanies.push({ name: company.company_name, score: scoreData.score, reason: scoreData.reason });
+                    results.deletedCompanies.push({ name: companyName, score: scoreData.score, reason: scoreData.reason });
                 } else {
-                    // Update company with new score and profile
+                    // Update company with new score and comprehensive profile
                     await query(`
                         UPDATE companies 
                         SET fit_score = $1, company_profile = $2, last_updated = NOW()
                         WHERE id = $3
-                    `, [scoreData.score, scoreData.profile_summary || profile, company.id]);
+                    `, [scoreData.score, scoreData.company_profile || profile, company.id]);
 
-                    // Also update leads
+                    // Also update leads with new score
                     await query(`
                         UPDATE leads 
                         SET custom_data = custom_data || $1::jsonb
                         WHERE company_name = $2 AND user_id = $3
-                    `, [JSON.stringify({ fit_score: scoreData.score, cleanup_verified: true }), company.company_name, userId]);
+                    `, [JSON.stringify({ fit_score: scoreData.score, cleanup_verified: true, cleanup_date: new Date().toISOString() }), companyName, userId]);
 
                     results.kept++;
                     results.rescored++;
-                    results.keptCompanies.push({ name: company.company_name, score: scoreData.score, category: scoreData.category });
+                    results.keptCompanies.push({ name: companyName, score: scoreData.score, category: scoreData.category });
                 }
 
                 results.processed++;
