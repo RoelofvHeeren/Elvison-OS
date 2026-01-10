@@ -652,6 +652,57 @@ app.post('/api/admin/deep-cleanup-v2', requireAuth, async (req, res) => {
     }
 });
 
+// Quick ICP Type Fix - Apply hardcoded company classifications
+app.post('/api/admin/fix-icp-types', requireAuth, async (req, res) => {
+    try {
+        const { COMPANY_ACTIONS, cleanCompanyName } = await import('./src/backend/services/deep-cleanup-v2.js');
+
+        const { rows: companies } = await query(`
+            SELECT id, company_name FROM companies WHERE user_id = $1
+        `, [req.userId]);
+
+        let updated = 0;
+        let errors = 0;
+        const log = [];
+
+        for (const company of companies) {
+            try {
+                const nameClean = cleanCompanyName(company.company_name);
+
+                // Look up in hardcoded actions
+                let action = COMPANY_ACTIONS[company.company_name] ||
+                    COMPANY_ACTIONS[nameClean] ||
+                    null;
+
+                // Try partial match
+                if (!action) {
+                    for (const [key, value] of Object.entries(COMPANY_ACTIONS)) {
+                        if (company.company_name.toLowerCase().includes(key.toLowerCase()) ||
+                            key.toLowerCase().includes(company.company_name.toLowerCase())) {
+                            action = value;
+                            break;
+                        }
+                    }
+                }
+
+                if (action && action.icp_type) {
+                    await query(`
+                        UPDATE companies SET icp_type = $1 WHERE id = $2
+                    `, [action.icp_type, company.id]);
+                    updated++;
+                    log.push({ company: company.company_name, icp_type: action.icp_type });
+                }
+            } catch (e) {
+                errors++;
+            }
+        }
+
+        res.json({ success: true, updated, errors, total: companies.length, log });
+    } catch (e) {
+        console.error('Fix ICP types failed:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
 
 // TEMP: Backfill Companies from Leads
 app.post('/api/admin/backfill-companies', async (req, res) => {
@@ -1969,15 +2020,43 @@ app.get('/api/companies', requireAuth, async (req, res) => {
         `;
         const params = [req.userId];
 
-        // Add ICP filter using EXISTS (safer than modifying SELECT)
+        // ICP Filter - check the company's icp_type OR lead's icp_id
         if (icpId) {
-            queryText += ` AND EXISTS (
-                SELECT 1 FROM leads 
-                WHERE company_name = c.company_name 
-                AND user_id = c.user_id 
-                AND icp_id = $2
-            )`;
-            params.push(icpId);
+            // Get the ICP name to determine which icp_types to filter
+            const { rows: icpRows } = await query('SELECT name FROM icps WHERE id = $1', [icpId]);
+            const icpName = icpRows[0]?.name?.toLowerCase() || '';
+
+            // Map ICP name to company icp_types
+            if (icpName.includes('family office')) {
+                // STRICT: Only show actual Family Offices for Family Office strategy
+                queryText += ` AND c.icp_type IN ('FAMILY_OFFICE_SINGLE', 'FAMILY_OFFICE_MULTI')`;
+            } else if (icpName.includes('fund') || icpName.includes('investment firm')) {
+                // Show investment-related types for Funds/Investment Firms strategy
+                queryText += ` AND c.icp_type IN (
+                    'REAL_ESTATE_PRIVATE_EQUITY', 
+                    'ASSET_MANAGER_MULTI_STRATEGY',
+                    'PENSION',
+                    'SOVEREIGN_WEALTH_FUND',
+                    'INSURANCE_INVESTOR',
+                    'REIT_PUBLIC',
+                    'RE_DEVELOPER_OPERATOR',
+                    'REAL_ESTATE_DEBT_FUND',
+                    'BANK_LENDER',
+                    'PLATFORM_FRACTIONAL'
+                )`;
+            } else {
+                // Fallback: filter by lead icp_id if icp_type not set
+                queryText += ` AND (
+                    c.icp_type IS NOT NULL 
+                    OR EXISTS (
+                        SELECT 1 FROM leads 
+                        WHERE company_name = c.company_name 
+                        AND user_id = c.user_id 
+                        AND icp_id = $2
+                    )
+                )`;
+                params.push(icpId);
+            }
         }
 
         queryText += ` GROUP BY c.id ORDER BY c.created_at DESC`;

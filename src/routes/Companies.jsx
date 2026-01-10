@@ -581,6 +581,21 @@ function Companies() {
                         >
                             🔒 V2: Full Spec Cleanup
                         </button>
+                        <button
+                            onClick={async () => {
+                                try {
+                                    const res = await fetch('/api/admin/fix-icp-types', { method: 'POST' });
+                                    const data = await res.json();
+                                    alert(`✅ ICP Types Fixed!\n\nUpdated: ${data.updated}\nErrors: ${data.errors}\nTotal: ${data.total}\n\nRefresh to see changes.`);
+                                    window.location.reload();
+                                } catch (e) {
+                                    alert('Error: ' + e.message);
+                                }
+                            }}
+                            className="ml-4 text-xs text-cyan-500 hover:text-cyan-400 underline decoration-dotted transition-colors"
+                        >
+                            ⚡ Quick Fix ICP Types
+                        </button>
                     </div>
                 </div>
 
