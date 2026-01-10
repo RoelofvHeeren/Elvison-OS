@@ -259,8 +259,9 @@ function Companies() {
                 domain: c.domain,
                 website: c.website,
                 company_profile: c.company_profile,
-                lead_count: parseInt(c.lead_count || 0),
-                fit_score: c.fit_score || 0,
+                leadCount: parseInt(c.lead_count || 0),
+                fitScore: c.fit_score || 0,
+                icpId: c.icp_id,
                 last_updated: c.last_updated,
                 leads: [] // Empty as we don't load them here anymore
             }));
@@ -515,9 +516,10 @@ function Companies() {
                     <div className="space-y-4">
                         {companies
                             .filter(company =>
-                                !searchQuery ||
-                                company.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                                company.website?.toLowerCase().includes(searchQuery.toLowerCase())
+                                (!filters.icpId || company.icpId === filters.icpId) && // Filter by ICP
+                                (!searchQuery ||
+                                    company.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                                    company.website?.toLowerCase().includes(searchQuery.toLowerCase()))
                             )
                             .map((company) => (
                                 <div key={company.name} className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl overflow-hidden">

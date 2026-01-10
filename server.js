@@ -1339,16 +1339,18 @@ app.post('/api/crm-columns', requireAuth, async (req, res) => {
 // Get ALL Companies (For Companies View)
 app.get('/api/companies', requireAuth, async (req, res) => {
     try {
-        const { rows } = await query(`
-            SELECT 
-                c.*,
-                COUNT(l.id) as lead_count
+        SELECT
+        c.*,
+            CAST(COUNT(l.id) AS INTEGER) as lead_count,
+            MAX(CAST(l.custom_data ->> 'score' AS INTEGER)) as fit_score,
+            MAX(l.icp_id) as icp_id
             FROM companies c
             LEFT JOIN leads l ON c.company_name = l.company_name AND c.user_id = l.user_id
             WHERE c.user_id = $1
+            AND c.company_name != 'Unknown'
             GROUP BY c.id
-            ORDER BY c.created_at DESC
-        `, [req.userId]);
+            ORDER BY c.last_updated DESC NULLS LAST
+            `, [req.userId]);
 
         res.json({ companies: rows });
     } catch (e) {
@@ -1397,13 +1399,13 @@ app.get('/api/leads', requireAuth, async (req, res) => {
 
         // Build base query
         let queryStr = `
-            SELECT leads.*, 
-                   companies.company_profile as company_profile_text, 
-                   companies.fit_score as company_fit_score
+            SELECT leads.*,
+            companies.company_profile as company_profile_text,
+            companies.fit_score as company_fit_score
             FROM leads 
             LEFT JOIN companies ON leads.company_name = companies.company_name AND leads.user_id = companies.user_id
             WHERE leads.user_id = $1
-        `;
+            `;
         const params = [req.userId];
         let countParams = [req.userId];
 
@@ -1424,7 +1426,7 @@ app.get('/api/leads', requireAuth, async (req, res) => {
 
         // Get total count for pagination metadata
         // For count, we can just count leads, join shouldn't change count unless we filter by company props (which we don't for now)
-        const countQuery = `SELECT COUNT(*) FROM leads WHERE leads.user_id = $1 ${status ? 'AND leads.status = $2' : "AND leads.status != 'DISQUALIFIED'"} ${icpId ? 'AND leads.icp_id = $' + (status ? 3 : 2) : ''}`;
+        const countQuery = `SELECT COUNT(*) FROM leads WHERE leads.user_id = $1 ${ status ? 'AND leads.status = $2' : "AND leads.status != 'DISQUALIFIED'" } ${ icpId ? 'AND leads.icp_id = $' + (status ? 3 : 2) : '' } `;
         const { rows: countRows } = await query(countQuery, countParams);
 
         // Note: The simple countQuery above is safer than replacing 'SELECT *' because of the join syntax complexity
@@ -1433,7 +1435,7 @@ app.get('/api/leads', requireAuth, async (req, res) => {
         const totalPages = Math.ceil(totalCount / pageSizeNum);
 
         // Add pagination
-        queryStr += ` ORDER BY leads.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+        queryStr += ` ORDER BY leads.created_at DESC LIMIT $${ params.length + 1 } OFFSET $${ params.length + 2 } `;
         params.push(pageSizeNum, offset);
 
         const { rows } = await query(queryStr, params);
@@ -1469,7 +1471,7 @@ app.post('/api/leads/:id/approve', requireAuth, async (req, res) => {
         let lead = rows[0];
 
         await query(
-            `INSERT INTO lead_feedback (lead_id, user_id, reason, original_status, new_status) VALUES ($1, $2, $3, $4, 'NEW')`,
+            `INSERT INTO lead_feedback(lead_id, user_id, reason, original_status, new_status) VALUES($1, $2, $3, $4, 'NEW')`,
             [id, req.userId, reason, lead.status]
         );
 
@@ -1495,8 +1497,8 @@ app.post('/api/leads/:id/approve', requireAuth, async (req, res) => {
             company_profile: lead.custom_data?.company_profile || ''
         };
 
-        console.log(`Generating outreach for approved lead ${id}...`);
-        const enrichedLeads = await service.generateOutreach([leadForAgent], agent, (msg) => console.log(`[Approval] ${msg}`));
+        console.log(`Generating outreach for approved lead ${ id }...`);
+        const enrichedLeads = await service.generateOutreach([leadForAgent], agent, (msg) => console.log(`[Approval] ${ msg }`));
 
         let updates = { status: 'NEW', source_notes: 'Approved from Logbook' };
         if (enrichedLeads.length > 0) {
@@ -1538,11 +1540,11 @@ app.post('/api/leads', requireAuth, async (req, res) => {
         await query('BEGIN')
         for (const lead of leads) {
             await query(
-                `INSERT INTO leads (company_name, person_name, email, job_title, linkedin_url, status, custom_data, source, user_id)
-                 VALUES ($1, $2, $3, $4, $5, 'NEW', $6, $7, $8)`,
+                `INSERT INTO leads(company_name, person_name, email, job_title, linkedin_url, status, custom_data, source, user_id)
+                 VALUES($1, $2, $3, $4, $5, 'NEW', $6, $7, $8)`,
                 [
                     lead.company_name,
-                    lead.first_name ? `${lead.first_name} ${lead.last_name}` : lead.person_name,
+                    lead.first_name ? `${ lead.first_name } ${ lead.last_name }` : lead.person_name,
                     lead.email,
                     lead.title,
                     lead.linkedin_url,
@@ -1592,16 +1594,16 @@ app.get('/api/runs', requireAuth, async (req, res) => {
         // Fetch runs with their latest result (if any)
         const { rows } = await query(`
             SELECT 
-                wr.*, 
-                ar.output_data,
-                i.name as icp_name
+                wr.*,
+    ar.output_data,
+    i.name as icp_name
             FROM workflow_runs wr
             LEFT JOIN agent_results ar ON wr.id = ar.run_id
             LEFT JOIN icps i ON wr.icp_id = i.id
             WHERE wr.user_id = $1
             ORDER BY wr.started_at DESC
             LIMIT 50
-        `, [req.userId])
+    `, [req.userId])
         res.json(rows)
     } catch (err) {
         console.error('Failed to fetch runs:', err)
@@ -1615,12 +1617,12 @@ app.get('/api/runs/:id', requireAuth, async (req, res) => {
         const { id } = req.params;
         const { rows } = await query(`
             SELECT 
-                wr.*, 
-                ar.output_data
+                wr.*,
+    ar.output_data
             FROM workflow_runs wr
             LEFT JOIN agent_results ar ON wr.id = ar.run_id
             WHERE wr.id = $1 AND wr.user_id = $2
-        `, [id, req.userId]);
+    `, [id, req.userId]);
 
         if (rows.length === 0) {
             return res.status(404).json({ error: 'Run not found' });
@@ -1639,20 +1641,20 @@ app.get('/api/runs/:id', requireAuth, async (req, res) => {
                 SELECT MAX(created_at) as last_log_at 
                 FROM workflow_step_logs 
                 WHERE run_id = $1
-            `, [id]);
+    `, [id]);
 
             const lastLogAt = logRes.rows[0]?.last_log_at ? new Date(logRes.rows[0].last_log_at) : startedAt;
             const logAgeMinutes = (now - lastLogAt) / (1000 * 60);
 
             // Mark as STALE if: running > 10 min AND no logs in > 5 min
             if (runningMinutes > 10 && logAgeMinutes > 5) {
-                console.log(`[Stale Detection] Run ${id} is stale (running ${runningMinutes.toFixed(1)} min, log age ${logAgeMinutes.toFixed(1)} min). Updating DB to FAILED...`);
+                console.log(`[Stale Detection]Run ${ id } is stale(running ${ runningMinutes.toFixed(1) } min, log age ${ logAgeMinutes.toFixed(1) } min).Updating DB to FAILED...`);
                 // Auto-mark as failed
                 await query(
                     `UPDATE workflow_runs SET status = 'FAILED', completed_at = NOW(), error_log = $2 WHERE id = $1`,
                     [id, 'Run terminated unexpectedly (stale detection)']
                 );
-                console.log(`[Stale Detection] DB Updated for Run ${id}`);
+                console.log(`[Stale Detection]DB Updated for Run ${ id }`);
 
                 run.status = 'FAILED';
                 run.error_log = 'Run terminated unexpectedly (stale detection)';
@@ -1673,7 +1675,7 @@ app.get('/api/runs/:id', requireAuth, async (req, res) => {
 
 // Helper to send SSE-like JSON chunks
 const sendProgress = (res, message) => {
-    res.write(`data: ${JSON.stringify({ type: 'progress', message })}\n\n`);
+    res.write(`data: ${ JSON.stringify({ type: 'progress', message }) } \n\n`);
 };
 
 // Start Run
@@ -1681,7 +1683,7 @@ app.post('/api/runs/start', requireAuth, async (req, res) => {
     const { agent_id, metadata } = req.body
     try {
         const { rows } = await query(
-            `INSERT INTO workflow_runs (agent_id, status, started_at, metadata, user_id) VALUES ($1, 'RUNNING', NOW(), $2, $3) RETURNING id`,
+            `INSERT INTO workflow_runs(agent_id, status, started_at, metadata, user_id) VALUES($1, 'RUNNING', NOW(), $2, $3) RETURNING id`,
             [agent_id, metadata, req.userId]
         )
         res.json({ run_id: rows[0].id })
@@ -1703,7 +1705,7 @@ app.post('/api/runs/complete', async (req, res) => {
         // Store results if any
         if (output_data) {
             await query(
-                `INSERT INTO agent_results (run_id, output_data) VALUES ($1, $2)`,
+                `INSERT INTO agent_results(run_id, output_data) VALUES($1, $2)`,
                 [run_id, output_data] // Storing full JSON blob
             )
         }
@@ -1738,13 +1740,13 @@ import { startApolloDomainScrape, checkApifyRun, getApifyResults } from './src/b
 // Auto-run Credit Migration on Startup (Safe idempotency)
 (async () => {
     try {
-        await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS credits INTEGER DEFAULT 500000;`);
+        await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS credits INTEGER DEFAULT 500000; `);
         // Ensure admin user exists for testing
         await query(`
-            INSERT INTO users (email, name, role, credits)
-            VALUES ('admin@elvison.ai', 'Admin', 'admin', 500000)
-            ON CONFLICT (email) DO UPDATE SET credits = 500000 WHERE users.credits IS NULL; 
-        `);
+            INSERT INTO users(email, name, role, credits)
+VALUES('admin@elvison.ai', 'Admin', 'admin', 500000)
+            ON CONFLICT(email) DO UPDATE SET credits = 500000 WHERE users.credits IS NULL;
+`);
         console.log("System: Credits system initialized.");
     } catch (e) {
         // console.error("System: Credit init informative", e); // Valid table exists
@@ -1818,11 +1820,11 @@ app.get('/api/integrations/apify/status/:runId', async (req, res) => {
 
                 try {
                     await query(
-                        `INSERT INTO leads (
-                            first_name, last_name, title, company_name, 
-                            email, linkedin_url, location, source, status
-                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'APIFY_IMPORT', 'NEW')
-                        ON CONFLICT (email) DO NOTHING`,
+                        `INSERT INTO leads(
+    first_name, last_name, title, company_name,
+    email, linkedin_url, location, source, status
+) VALUES($1, $2, $3, $4, $5, $6, $7, 'APIFY_IMPORT', 'NEW')
+                        ON CONFLICT(email) DO NOTHING`,
                         [
                             firstName,
                             lastName,
@@ -1844,7 +1846,7 @@ app.get('/api/integrations/apify/status/:runId', async (req, res) => {
                 try {
                     // deduct from the first user found (admin)
                     await query(`UPDATE users SET credits = credits - $1 WHERE id = (SELECT id FROM users LIMIT 1)`, [importedCount]);
-                    console.log(`Deducted ${importedCount} credits.`);
+                    console.log(`Deducted ${ importedCount } credits.`);
                 } catch (e) {
                     console.error("Credit deduction failed", e);
                 }
@@ -1887,9 +1889,9 @@ app.post('/api/icps', requireAuth, async (req, res) => {
         }
 
         const { rows } = await query(
-            `INSERT INTO icps (user_id, name, config, agent_config)
-             VALUES ($1, $2, $3, $4)
-             RETURNING *`,
+            `INSERT INTO icps(user_id, name, config, agent_config)
+VALUES($1, $2, $3, $4)
+RETURNING * `,
             [req.userId, name, config || {}, agent_config || {}]
         )
         res.json({ success: true, icp: rows[0] })
@@ -1915,14 +1917,14 @@ app.put('/api/icps/:id', requireAuth, async (req, res) => {
         const values = []
         let idx = 1
 
-        if (name) { updates.push(`name = $${idx++}`); values.push(name) }
-        if (config) { updates.push(`config = $${idx++}`); values.push(config) }
-        if (agent_config) { updates.push(`agent_config = $${idx++}`); values.push(agent_config) }
+        if (name) { updates.push(`name = $${ idx++ } `); values.push(name) }
+        if (config) { updates.push(`config = $${ idx++ } `); values.push(config) }
+        if (agent_config) { updates.push(`agent_config = $${ idx++ } `); values.push(agent_config) }
 
         if (updates.length > 0) {
             values.push(id) // ID is last param
             await query(
-                `UPDATE icps SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $${idx} RETURNING *`,
+                `UPDATE icps SET ${ updates.join(', ') }, updated_at = NOW() WHERE id = $${ idx } RETURNING * `,
                 values
             )
             const updatedRow = (await query('SELECT * FROM icps WHERE id = $1', [id])).rows[0]
@@ -1952,8 +1954,8 @@ app.post('/api/runs/:runId/feedback', requireAuth, async (req, res) => {
         await query('BEGIN')
         for (const fb of feedbacks) {
             await query(
-                `INSERT INTO run_feedback (run_id, icp_id, entity_type, entity_identifier, grade, notes)
-                  VALUES ($1, $2, $3, $4, $5, $6)`,
+                `INSERT INTO run_feedback(run_id, icp_id, entity_type, entity_identifier, grade, notes)
+VALUES($1, $2, $3, $4, $5, $6)`,
                 [runId, icpId, fb.entity_type, fb.entity_identifier, fb.grade, fb.notes]
             )
         }
@@ -2101,10 +2103,10 @@ app.post('/api/icps/:id/search-terms/generate', requireAuth, async (req, res) =>
 // Trigger Analysis Run (SSE Streaming)
 app.post('/api/agents/run', requireAuth, async (req, res) => {
     let { prompt, vectorStoreId, agentConfigs, mode, filters, idempotencyKey, icpId, manualDomains } = req.body
-    console.log(`Starting live workflow (Mode: ${mode || 'default'}) with prompt:`, prompt)
-    if (idempotencyKey) console.log(`🔑 Idempotency Key received: ${idempotencyKey}`)
-    if (icpId) console.log(`📋 Running for ICP ID: ${icpId}`)
-    if (manualDomains) console.log(`📋 Manual Domains provided: ${manualDomains.length} domains`)
+    console.log(`Starting live workflow(Mode: ${ mode || 'default'}) with prompt: `, prompt)
+    if (idempotencyKey) console.log(`🔑 Idempotency Key received: ${ idempotencyKey } `)
+    if (icpId) console.log(`📋 Running for ICP ID: ${ icpId } `)
+    if (manualDomains) console.log(`📋 Manual Domains provided: ${ manualDomains.length } domains`)
 
     // NEW: If icpId is provided, fetch latest optimized config from DB
     if (icpId) {
@@ -2132,7 +2134,7 @@ app.post('/api/agents/run', requireAuth, async (req, res) => {
                         // We might need to pass this to filters?
                         // filters = { ...filters, exclusions: storedConfig.exclusions };
                         // Or append to prompt?
-                        prompt += `\n\n[OPTIMIZATION EXCLUSIONS]:\n${storedConfig.exclusions.join(', ')}`;
+                        prompt += `\n\n[OPTIMIZATION EXCLUSIONS]: \n${ storedConfig.exclusions.join(', ') } `;
                     }
                     console.log("✅ Applied optimized instructions and exclusions from DB.");
                 }
@@ -2153,7 +2155,7 @@ app.post('/api/agents/run', requireAuth, async (req, res) => {
     let runId = null
     try {
         // Determine Run Name & Number
-        let runName = `Run ${new Date().toLocaleTimeString()}`; // Fallback
+        let runName = `Run ${ new Date().toLocaleTimeString() } `; // Fallback
         let runNumber = 1;
 
         if (icpId) {
@@ -2164,26 +2166,26 @@ app.post('/api/agents/run', requireAuth, async (req, res) => {
             // Get Max Run Number for this ICP
             const countRes = await query('SELECT MAX(run_number) as max_num FROM workflow_runs WHERE icp_id = $1', [icpId]);
             runNumber = (countRes.rows[0]?.max_num || 0) + 1;
-            runName = `${icpName} #${runNumber}`;
+            runName = `${ icpName } #${ runNumber } `;
         } else {
             // Generic runs
             const countRes = await query('SELECT MAX(run_number) as max_num FROM workflow_runs WHERE user_id = $1 AND icp_id IS NULL', [req.userId]);
             runNumber = (countRes.rows[0]?.max_num || 0) + 1;
-            runName = `Manual Run #${runNumber}`;
+            runName = `Manual Run #${ runNumber } `;
         }
 
         const { rows } = await query(
-            `INSERT INTO workflow_runs (agent_id, status, started_at, metadata, user_id, icp_id, run_name, run_number) 
-             VALUES ('main_workflow', 'RUNNING', NOW(), $1, $2, $3, $4, $5) RETURNING id`,
+            `INSERT INTO workflow_runs(agent_id, status, started_at, metadata, user_id, icp_id, run_name, run_number)
+VALUES('main_workflow', 'RUNNING', NOW(), $1, $2, $3, $4, $5) RETURNING id`,
             [JSON.stringify({ prompt, vectorStoreId, mode: mode || 'default', idempotencyKey }), req.userId, icpId, runName, runNumber]
         )
         runId = rows[0].id
         // Send initial connection confirmation
-        res.write(`event: run_id\ndata: ${JSON.stringify({ runId })}\n\n`)
-        res.write(`event: log\ndata: {"step": "System", "detail": "Workflow initialized. Run ID: ${runId}", "timestamp": "${new Date().toISOString()}"}\n\n`)
+        res.write(`event: run_id\ndata: ${ JSON.stringify({ runId }) } \n\n`)
+        res.write(`event: log\ndata: { "step": "System", "detail": "Workflow initialized. Run ID: ${runId}", "timestamp": "${new Date().toISOString()}" } \n\n`)
     } catch (err) {
         console.error('Failed to init run:', err)
-        res.write(`event: error\ndata: {"message": "Database initialization failed"}\n\n`)
+        res.write(`event: error\ndata: { "message": "Database initialization failed" } \n\n`)
         return res.end()
     }
 
@@ -2217,7 +2219,7 @@ app.post('/api/agents/run', requireAuth, async (req, res) => {
                         detail: logParams.detail,
                         timestamp
                     })
-                    res.write(`event: log\ndata: ${eventData}\n\n`)
+                    res.write(`event: log\ndata: ${ eventData } \n\n`)
 
                     // Capture for DB persistence (final save)
                     localExecutionLogs.push({
@@ -2231,7 +2233,7 @@ app.post('/api/agents/run', requireAuth, async (req, res) => {
                     // REAL-TIME: Also persist to workflow_step_logs table immediately
                     try {
                         await query(
-                            `INSERT INTO workflow_step_logs (run_id, step, message, created_at) VALUES ($1, $2, $3, $4)`,
+                            `INSERT INTO workflow_step_logs(run_id, step, message, created_at) VALUES($1, $2, $3, $4)`,
                             [runId, logParams.step, logParams.detail, timestamp]
                         );
                     } catch (logDbErr) {
@@ -2269,7 +2271,7 @@ app.post('/api/agents/run', requireAuth, async (req, res) => {
                 execution_logs: localExecutionLogs
             };
 
-            console.log(`[Server] Saving stats with ${localExecutionLogs.length} log entries and ${statsForDB.calls?.length || 0} API calls`);
+            console.log(`[Server] Saving stats with ${ localExecutionLogs.length } log entries and ${ statsForDB.calls?.length || 0 } API calls`);
 
             // Save output to agent_results
             const outputDataForStorage = {
@@ -2282,7 +2284,7 @@ app.post('/api/agents/run', requireAuth, async (req, res) => {
             // Delete existing result if any, then insert (no unique constraint on run_id)
             await query(`DELETE FROM agent_results WHERE run_id = $1`, [runId]);
             await query(
-                `INSERT INTO agent_results (run_id, output_data) VALUES ($1, $2)`,
+                `INSERT INTO agent_results(run_id, output_data) VALUES($1, $2)`,
                 [runId, JSON.stringify(outputDataForStorage)]
             );
 
@@ -2293,15 +2295,17 @@ app.post('/api/agents/run', requireAuth, async (req, res) => {
             );
 
             // Send success event
-            res.write(`event: complete\ndata: ${JSON.stringify({
-                status: 'success',
-                leads: result.leads?.length || 0,
-                cost: costData.cost?.formatted || '$0.00'
-            })}\n\n`);
+            res.write(`event: complete\ndata: ${
+    JSON.stringify({
+        status: 'success',
+        leads: result.leads?.length || 0,
+        cost: costData.cost?.formatted || '$0.00'
+    })
+} \n\n`);
 
         } catch (dbErr) {
             console.error('Failed to save success results:', dbErr);
-            res.write(`event: error\ndata: {"message": "Results saved but DB commit failed: ${dbErr.message}"}\n\n`);
+            res.write(`event: error\ndata: { "message": "Results saved but DB commit failed: ${dbErr.message}" } \n\n`);
         }
 
 
@@ -2328,7 +2332,7 @@ app.post('/api/agents/run', requireAuth, async (req, res) => {
             execution_logs: localExecutionLogs
         };
 
-        console.log(`[Server] Saving FAILURE stats with ${localExecutionLogs.length} log entries and ${statsForDB.calls?.length || 0} API calls`);
+        console.log(`[Server] Saving FAILURE stats with ${ localExecutionLogs.length } log entries and ${ statsForDB.calls?.length || 0 } API calls`);
 
         try {
             if (runId) {
@@ -2342,7 +2346,7 @@ app.post('/api/agents/run', requireAuth, async (req, res) => {
                 // Delete existing result if any, then insert (no unique constraint on run_id)
                 await query(`DELETE FROM agent_results WHERE run_id = $1`, [runId]);
                 await query(
-                    `INSERT INTO agent_results (run_id, output_data) VALUES ($1, $2)`,
+                    `INSERT INTO agent_results(run_id, output_data) VALUES($1, $2)`,
                     [runId, JSON.stringify(outputDataForStorage)]
                 );
 
@@ -2355,7 +2359,7 @@ app.post('/api/agents/run', requireAuth, async (req, res) => {
             console.error("DB update failed during error handling", dbErr);
         }
 
-        res.write(`event: error\ndata: {"message": "${error.message || 'Workflow execution failed'}"}\n\n`);
+        res.write(`event: error\ndata: { "message": "${error.message || 'Workflow execution failed'}" } \n\n`);
     } finally {
         res.end();
     }
@@ -2401,7 +2405,7 @@ app.post('/api/runs/:id/force-fail', requireAuth, async (req, res) => {
         }
 
         if (!['RUNNING', 'PENDING'].includes(run.status)) {
-            return res.status(400).json({ error: `Cannot force-fail run with status: ${run.status}` });
+            return res.status(400).json({ error: `Cannot force - fail run with status: ${ run.status } ` });
         }
 
         const errorMessage = reason || 'Manually stopped by user (force-fail)';
@@ -2411,7 +2415,7 @@ app.post('/api/runs/:id/force-fail', requireAuth, async (req, res) => {
             [id, errorMessage]
         );
 
-        console.log(`[Force-Fail] Run ${id} manually marked as FAILED: ${errorMessage}`);
+        console.log(`[Force - Fail] Run ${ id } manually marked as FAILED: ${ errorMessage } `);
         res.json({ status: 'success', message: 'Run marked as failed.' });
     } catch (e) {
         console.error('Force-fail error:', e);
@@ -2464,35 +2468,35 @@ app.get('/api/test-ghl', async (req, res) => {
 
         const response = await axios.get(
             `https://services.leadconnectorhq.com/locations/${locationId}/tags`,
-            {
-                headers: {
-                    'Authorization': `Bearer ${key?.trim()}`,
-                    'Content-Type': 'application/json',
-                    'Version': '2021-07-28'
-                }
-            }
+{
+    headers: {
+        'Authorization': `Bearer ${key?.trim()}`,
+            'Content-Type': 'application/json',
+                'Version': '2021-07-28'
+    }
+}
         );
 
-        res.json({
-            success: true,
-            tags: response.data.tags?.slice(0, 3),
-            total: response.data.tags?.length,
-            debug: {
-                headers: response.config.headers['Authorization'] ? 'Bearer [HIDDEN]' : 'Missing',
-                url: response.config.url
-            }
-        });
-    } catch (err) {
-        res.status(500).json({
-            error: err.message,
-            status: err.response?.status,
-            data: err.response?.data,
-            debug: {
-                hasKey: !!process.env.GHL_API_KEY,
-                locationId: process.env.GHL_LOCATION_ID
-            }
-        });
+res.json({
+    success: true,
+    tags: response.data.tags?.slice(0, 3),
+    total: response.data.tags?.length,
+    debug: {
+        headers: response.config.headers['Authorization'] ? 'Bearer [HIDDEN]' : 'Missing',
+        url: response.config.url
     }
+});
+    } catch (err) {
+    res.status(500).json({
+        error: err.message,
+        status: err.response?.status,
+        data: err.response?.data,
+        debug: {
+            hasKey: !!process.env.GHL_API_KEY,
+            locationId: process.env.GHL_LOCATION_ID
+        }
+    });
+}
 });
 
 // Create GoHighLevel Tag
