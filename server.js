@@ -1408,12 +1408,20 @@ app.get('/api/companies', requireAuth, async (req, res) => {
 
         const { rows } = await query(`
             SELECT 
-                c.*,
-                (SELECT COUNT(*) FROM leads l WHERE l.company_name = c.company_name AND l.user_id = c.user_id)::integer as lead_count,
-                (SELECT MAX(icp_id) FROM leads l WHERE l.company_name = c.company_name AND l.user_id = c.user_id) as icp_id
+                c.id,
+                c.company_name,
+                c.website,
+                c.company_profile,
+                c.fit_score,
+                c.last_updated,
+                c.created_at,
+                c.icp_id, -- Some rows might have it directly
+                COUNT(l.id)::int as lead_count,
+                MAX(l.icp_id) as lead_icp_id
             FROM companies c
+            LEFT JOIN leads l ON c.company_name = l.company_name AND c.user_id = l.user_id
             WHERE c.user_id = $1
-            AND c.company_name != 'Unknown'
+            GROUP BY c.id
             ORDER BY c.created_at DESC
         `, [req.userId]);
 
