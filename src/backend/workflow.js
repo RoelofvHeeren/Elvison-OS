@@ -1224,11 +1224,13 @@ const saveLeadsToDB = async (leads, userId, icpId, logStep, forceStatus = 'NEW',
         logStep('Database', `Saved ${savedCount} leads, Rejected ${rejectedCount} at gate (Status: ${forceStatus})`);
     }
 
-    // SYNC: Mark companies as researched to prevent discovery in future runs
+    // SYNC: Mark companies as researched to prevent discovery in future runs AND Sync to companies table
     if (savedCount > 0) {
         try {
-            const { markCompaniesAsResearched } = await import('./company-tracker.js');
             const savedLeads = leads.filter(l => validateLeadForCRM(l, forceStatus).pass);
+
+            // 1. Mark as Researched
+            const { markCompaniesAsResearched } = await import('./company-tracker.js');
             const companiesToMark = [...new Set(savedLeads.map(l => l.company_name))].map(name => {
                 const lead = savedLeads.find(l => l.company_name === name);
                 return {
@@ -1239,8 +1241,29 @@ const saveLeadsToDB = async (leads, userId, icpId, logStep, forceStatus = 'NEW',
                 };
             });
             await markCompaniesAsResearched(userId, companiesToMark);
+
+            // 2. Sync to Display Table (companies)
+            const uniqueCompanies = [...new Set(savedLeads.map(l => l.company_name))];
+            for (const name of uniqueCompanies) {
+                const lead = savedLeads.find(l => l.company_name === name);
+                const finalWebsite = lead.company_website || lead.company_domain || lead.domain;
+                let score = parseInt(lead.match_score);
+                if (isNaN(score)) score = null;
+
+                await query(`
+                    INSERT INTO companies (user_id, company_name, website, company_profile, fit_score, created_at, last_updated)
+                    VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+                    ON CONFLICT (user_id, company_name) 
+                    DO UPDATE SET
+                        website = COALESCE(companies.website, EXCLUDED.website),
+                        company_profile = COALESCE(companies.company_profile, EXCLUDED.company_profile),
+                        fit_score = COALESCE(companies.fit_score, EXCLUDED.fit_score),
+                        last_updated = NOW()
+                `, [userId, name, finalWebsite, lead.company_profile, score]);
+            }
+
         } catch (e) {
-            console.error('Failed to sync with researched_companies:', e.message);
+            console.error('Failed to sync with researched_companies/companies:', e.message);
         }
     }
 };
