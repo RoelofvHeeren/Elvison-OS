@@ -115,9 +115,13 @@ EVALUATION RULES:
 3. **Wealth Managers**: Standard wealth managers are usually disqualified, BUT if they mention specific "Alternative Investment" platforms, "Private Strategies", or "Direct Deals", **KEEP THEM** (Score 6-7).
 
 SCORING GUIDELINES:
-- **8-10 (Perfect Fit)**: Explicitly identifies as SFO/MFO with direct real estate/PE arm.
-- **6-7 (Likely Fit / Keep)**: "Private Wealth" or "Investment Management" firm that appears to have discretion or direct deals. **WHEN IN DOUBT, SCORE 6 TO KEEP.**
+- **8-10 (Perfect Fit)**: Explicitly identifies as SFO/MFO with direct real estate/PE arm AND confirms Canadian presence/focus.
+- **6-7 (Likely Fit / Keep)**: "Private Wealth" or "Investment Management" firm that appears to have discretion or direct deals. **WHEN IN DOUBT, BUT THEY ARE CANADIAN, SCORE 6 TO KEEP.**
 - **1-5 (Disqualify)**: Retail financial planners, pure brokers, insurance agents, tenants.
+- **1 (Major Disqualification)**: Non-Canadian Firm (e.g. US, UK, Middle East) unless they explicitly mention a "Toronto" or "Vancouver" office or "Canadian Investment Strategy".
+
+CRITICAL GEOGRAPHY RULE:
+IF the company is NOT based in Canada AND does not mention a Canadian office/strategy -> SCORE 1.
 
 OUTPUT JSON:
 {

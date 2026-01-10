@@ -679,8 +679,8 @@ export const runAgentWorkflow = async (input, config) => {
                         
                         CRITICAL GEOGRAPHY CHECK (CANADA):
                         The user STRICTLY requires companies based in CANADA or with a MAJOR CANADIAN PRESENCE.
-                        - IF the company is clearly based in the US, UK, India, Middle East, etc. WITHOUT a Canadian office -> DISQUALIFY IMMEDIATELY (Score 1).
-                        - IF the company is Global but mentions a "Toronto" or "Vancouver" or "Montreal" office -> PERMITTED.
+                        - IF the company is clearly based in the US, UK, India, Middle East, etc. WITHOUT a Canadian office or explicit mention of Canadian investments -> DISQUALIFY IMMEDIATELY (Score 1).
+                        - IF the company is Global, they are ONLY permitted if they mention a "Toronto" or "Vancouver" or "Montreal" office OR explicitly state they are "actively investing in Canada". Otherwise -> DISQUALIFY.
                         `;
                     }
 
