@@ -112,10 +112,14 @@ function Companies() {
 
         try {
             const response = await fetch(`/api/companies/${encodeURIComponent(researchTarget.company_name)}/regenerate-outreach`, {
-                method: 'POST'
+                method: 'POST',
+                credentials: 'include'
             });
 
-            if (!response.ok) throw new Error('Failed to regenerate outreach');
+            if (!response.ok) {
+                const errText = await response.text();
+                throw new Error(`Server error ${response.status}: ${errText}`);
+            }
 
             const data = await response.json();
             console.log('✅ Outreach regenerated:', data);
@@ -131,11 +135,17 @@ function Companies() {
         if (!researchTarget?.company_name || !researchResult) return;
 
         try {
-            await fetch(`/api/companies/${encodeURIComponent(researchTarget.company_name)}/profile`, {
+            const response = await fetch(`/api/companies/${encodeURIComponent(researchTarget.company_name)}/profile`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
                 body: JSON.stringify({ profile: researchResult })
             });
+
+            if (!response.ok) {
+                const errText = await response.text();
+                throw new Error(`Server error ${response.status}: ${errText}`);
+            }
 
             console.log('✅ Profile updated');
             alert('Company profile updated successfully!');
