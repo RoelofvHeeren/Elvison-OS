@@ -534,20 +534,23 @@ export const scrapeWebsiteSmart = async (domain) => {
 };
 
 /**
- * Scrape specific list of URLs
+ * Scrape specific list of URLs with concurrency limit and progress updates
  * @param {Array<string>} urls 
  * @param {string} token - Apify Token for robust fallback
+ * @param {Function} onProgress - Callback (msg) => void
  */
-export const scrapeSpecificPages = async (urls, token = null) => {
+export const scrapeSpecificPages = async (urls, token = null, onProgress = () => { }) => {
     if (!urls || urls.length === 0) return "No URLs provided.";
     console.log(`[Local Scraper] Targeted scraping of ${urls.length} pages...`);
 
     const results = [];
-    const cheerio = (await import('cheerio')).load;
+    const CONCURRENCY_LIMIT = 3; // Scrape 3 pages at a time
 
-    for (const url of urls) {
-        let content = "";
+    // Helper to process a single URL
+    const processUrl = async (url) => {
         try {
+            const cheerio = (await import('cheerio')).load;
+
             // Attempt 1: Fast local scrape with browser-like headers
             const response = await axios.get(url, {
                 timeout: 8000,
@@ -570,14 +573,14 @@ export const scrapeSpecificPages = async (urls, token = null) => {
 
             const $ = cheerio(response.data);
             $('script, style, noscript, nav, footer, header, svg, img').remove();
-            content = $('body').text().replace(/\s+/g, ' ').trim().substring(0, 10000);
+            let content = $('body').text().replace(/\s+/g, ' ').trim().substring(0, 10000);
 
             if (content.length < 200) {
                 throw new Error("Empty or very short content (likely SPA/blocked)");
             }
 
             console.log(`[Local Scraper] Successfully scraped ${url} (${content.length} chars)`);
-            results.push(`--- PAGE: ${url} ---\n${content}`);
+            return `--- PAGE: ${url} ---\n${content}`;
 
         } catch (err) {
             console.warn(`[Local Scraper] Failed to scrape ${url} locally (${err.message}).`);
@@ -617,12 +620,11 @@ export const scrapeSpecificPages = async (urls, token = null) => {
                         const items = await getApifyResults(token, datasetId);
                         if (items && items.length > 0) {
                             const item = items[0];
-                            content = (item.text || "").replace(/\s+/g, ' ').trim().substring(0, 20000);
+                            let content = (item.text || "").replace(/\s+/g, ' ').trim().substring(0, 20000);
 
                             if (content.length > 300) {
                                 console.log(`[Local Scraper] Apify fallback successful for ${url} (${content.length} chars)`);
-                                results.push(`--- PAGE (APIFY RENDER): ${url} ---\n${content}`);
-                                continue;
+                                return `--- PAGE (APIFY RENDER): ${url} ---\n${content}`;
                             } else {
                                 console.log(`[Local Scraper] Apify fallback returned too little content (${content.length} chars).`);
                             }
@@ -640,18 +642,35 @@ export const scrapeSpecificPages = async (urls, token = null) => {
                     const fallbackResults = await performGoogleSearch(`site:${url} team members bios`, token);
                     if (fallbackResults && fallbackResults.length > 0) {
                         const snippetText = fallbackResults.map(r => `${r.title}\n${r.snippet}`).join('\n\n');
-                        results.push(`--- PAGE (SEARCH FALLBACK): ${url} ---\n${snippetText}`);
-                        continue;
+                        return `--- PAGE (SEARCH FALLBACK): ${url} ---\n${snippetText}`;
                     }
                 } catch (searchErr) {
                     console.error(`[Local Scraper] Search fallback failed for ${url}`);
                 }
             }
 
-            results.push(`--- PAGE: ${url} ---\n(Error: ${err.message})`);
+            return `--- PAGE: ${url} ---\n(Error: ${err.message})`;
         }
-    }
+    };
 
+
+    // Process in Chunks (Sequentially process chunks, but items in chunk are concurrent)
+    let completedCount = 0;
+    const totalCount = urls.length;
+
+    for (let i = 0; i < urls.length; i += CONCURRENCY_LIMIT) {
+        const chunk = urls.slice(i, i + CONCURRENCY_LIMIT);
+
+        // Run chunk concurrently
+        const chunkResults = await Promise.all(chunk.map(async (url) => {
+            const res = await processUrl(url);
+            completedCount++;
+            onProgress(completedCount, totalCount); // Report progress
+            return res;
+        }));
+
+        results.push(...chunkResults);
+    }
 
     return results.join('\n\n');
 };

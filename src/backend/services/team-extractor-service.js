@@ -245,7 +245,9 @@ export async function researchCompanyTeam(url, onProgress = () => { }) {
     onProgress(`Scraping ${pagesToScrape.length} relevant pages...`);
 
     // 3. Scrape all selected pages
-    const pageContent = await scrapeSpecificPages(pagesToScrape, process.env.APIFY_API_TOKEN);
+    const pageContent = await scrapeSpecificPages(pagesToScrape, process.env.APIFY_API_TOKEN, (completed, total) => {
+        onProgress(`Scraping page ${completed}/${total}...`);
+    });
 
     // 4. Extract team members from combined content
     onProgress('Extracting team members...');
