@@ -1415,9 +1415,8 @@ app.get('/api/companies', requireAuth, async (req, res) => {
                 c.fit_score,
                 c.last_updated,
                 c.created_at,
-                c.icp_id, -- Some rows might have it directly
                 COUNT(l.id)::int as lead_count,
-                MAX(l.icp_id) as lead_icp_id
+                MAX(l.icp_id) as icp_id
             FROM companies c
             LEFT JOIN leads l ON c.company_name = l.company_name AND c.user_id = l.user_id
             WHERE c.user_id = $1

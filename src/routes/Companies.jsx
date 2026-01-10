@@ -261,7 +261,7 @@ function Companies() {
                 company_profile: c.company_profile,
                 leadCount: parseInt(c.lead_count || 0),
                 fitScore: c.fit_score || 0,
-                icpId: c.lead_icp_id || c.icp_id,
+                icpId: c.icp_id,
                 last_updated: c.last_updated,
                 leads: [] // Empty as we don't load them here anymore
             }));
