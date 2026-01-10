@@ -961,33 +961,21 @@ app.get('/api/leads', requireAuth, async (req, res) => {
         const offset = (pageNum - 1) * pageSizeNum;
 
         // Build base query
-        // Join with companies table to get the latest profile and score data
-        // We select companies.company_profile which will overwrite leads.company_profile if strict column matching depends on order, 
-        // but to be safe we alias it or rely on leads.* being first. 
-        // In node-postgres, duplicate column names in result: last one usually wins.
-        let queryStr = `
-            SELECT leads.*, 
-                   companies.company_profile, 
-                   companies.fit_reason, 
-                   companies.target_score
-            FROM leads 
-            LEFT JOIN companies ON leads.company_name = companies.company_name
-            WHERE leads.user_id = $1
-        `;
+        let queryStr = 'SELECT * FROM leads WHERE user_id = $1';
         const params = [req.userId];
-        const countParams = [req.userId];
+        let countParams = [req.userId];
 
         if (status) {
-            queryStr += ' AND leads.status = $' + (params.length + 1);
+            queryStr += ' AND status = $' + (params.length + 1);
             params.push(status);
             countParams.push(status);
         } else {
             // Default: Hide disqualified
-            queryStr += " AND leads.status != 'DISQUALIFIED'";
+            queryStr += " AND status != 'DISQUALIFIED'";
         }
 
         if (icpId) {
-            queryStr += ' AND leads.icp_id = $' + (params.length + 1);
+            queryStr += ' AND icp_id = $' + (params.length + 1);
             params.push(icpId);
             countParams.push(icpId);
         }
