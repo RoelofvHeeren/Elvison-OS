@@ -30,10 +30,23 @@ export class ResearchService {
 
             sitemapUrls.forEach(sitemapUrl => {
                 try {
-                    // Use the last part of the URL as the title/text
+                    // Start with basic path title
                     const path = new URL(sitemapUrl).pathname;
-                    const title = path.split('/').filter(Boolean).pop() || 'Page';
-                    allLinks.set(sitemapUrl, title.replace(/-/g, ' '));
+                    let title = path.split('/').filter(Boolean).pop() || 'Page';
+
+                    // Prettify: replace dashes/underscores, capitalize words
+                    title = title.replace(/[-_]/g, ' ')
+                        .replace(/\b\w/g, c => c.toUpperCase());
+
+                    // If title is too simple or numeric, try parent folder
+                    if (title.length < 3 || /^\d+$/.test(title)) {
+                        const parts = path.split('/').filter(Boolean);
+                        if (parts.length > 1) {
+                            title = parts[parts.length - 2].replace(/[-_]/g, ' ') + ' - ' + title;
+                        }
+                    }
+
+                    allLinks.set(sitemapUrl, title);
                 } catch (e) {
                     console.warn(`Skipping invalid sitemap URL: ${sitemapUrl}`);
                 }
@@ -46,13 +59,29 @@ export class ResearchService {
 
             $('a').each((i, el) => {
                 const href = $(el).attr('href');
-                const text = $(el).text().trim() || "";
+                let text = $(el).text().trim();
+                const titleAttr = $(el).attr('title');
+
+                // Keep image alt text if no text provided
+                if (!text) {
+                    const imgAlt = $(el).find('img').attr('alt');
+                    if (imgAlt) text = `Image: ${imgAlt}`;
+                }
+
+                // Prioritize title attribute if text is weak (e.g. "Read more")
+                if (titleAttr && (!text || text.toLowerCase() === 'read more')) {
+                    text = titleAttr;
+                }
 
                 if (href && !href.startsWith('#') && !href.startsWith('mailto')) {
                     try {
                         const fullUrl = new URL(href, rootUrl).href;
                         if (fullUrl.includes(domain)) {
-                            allLinks.set(fullUrl, text);
+                            // If we already have a link, keep the longer text as it's likely more descriptive
+                            const existing = allLinks.get(fullUrl);
+                            if (!existing || (text && text.length > existing.length && text.length < 100)) {
+                                allLinks.set(fullUrl, text || fullUrl); // Fallback to URL if still empty
+                            }
                         }
                     } catch (e) { }
                 }
@@ -86,12 +115,27 @@ export class ResearchService {
                     const $$ = cheerio.load(pageHtml);
                     $$('a').each((i, el) => {
                         const href = $$(el).attr('href');
-                        const text = $$(el).text().trim() || "";
+                        let text = $$(el).text().trim();
+                        const titleAttr = $$(el).attr('title');
+
+                        if (!text) {
+                            const imgAlt = $$(el).find('img').attr('alt');
+                            if (imgAlt) text = `Image: ${imgAlt}`;
+                        }
+
+                        if (titleAttr && (!text || text.toLowerCase() === 'read more')) {
+                            text = titleAttr;
+                        }
+
                         if (href && !href.startsWith('#') && !href.startsWith('mailto')) {
                             try {
                                 const fullUrl = new URL(href, pageUrl).href;
                                 if (fullUrl.includes(domain)) {
-                                    allLinks.set(fullUrl, text);
+                                    // If we already have a link, keep the longer text as it's likely more descriptive
+                                    const existing = allLinks.get(fullUrl);
+                                    if (!existing || (text && text.length > existing.length && text.length < 100)) {
+                                        allLinks.set(fullUrl, text || fullUrl);
+                                    }
                                 }
                             } catch (e) { }
                         }
@@ -122,7 +166,7 @@ export class ResearchService {
                 return portfolioPatterns.some(pattern => urlLower.includes(pattern));
             }).map(link => ({
                 url: link.url,
-                title: link.text || link.url.split('/').filter(Boolean).pop()?.replace(/-/g, ' ') || 'Portfolio Page',
+                title: link.text || link.url.split('/').filter(Boolean).pop()?.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) || 'Portfolio Page',
                 reason: 'Auto-selected: URL pattern indicates portfolio/project page',
                 score: 100
             }));

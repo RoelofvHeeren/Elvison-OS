@@ -658,16 +658,39 @@ export const runAgentWorkflow = async (input, config) => {
                         The user is looking for SINGLE FAMILY OFFICES (SFO) or MULTI-FAMILY OFFICES (MFO) that invest DIRECTLY.
                         
                         YOU MUST DISQUALIFY (Score 1-3) IF THEY ARE:
-                        - A Wealth Manager / Financial Advisor (unless they explicitly state a DIRECT Real Estate investment arm)
-                        - A Broker / Intermediary
-                        - An Investment Bank
-                        - A General Private Equity fund (unless specific to a family)
+                        - A Wealth Manager / Financial Advisor (unless they explicitly state a DIRECT Real Estate investment arm with PROPRIETARY CAPITAL).
+                        - A Broker / Intermediary / Capital Advisory.
+                        - An Investment Bank.
+                        - A General Private Equity fund (unless specific to a family or HNWIs).
+                        - A "Multi-Client Family Office" that just provides services (tax, legal, lifestyle) without a direct investment fund.
                         
                         ONLY SCORE 7+ IF:
                         - They explicitly identify as a Family Office.
-                        - OR they use language like "proprietary capital", "family capital", "private investment vehicle".
+                        - OR they use language like "proprietary capital", "family capital", "private investment vehicle", "evergreen capital".
                         - OR they allow direct deals (not just allocating to funds).`;
                     }
+
+                    // NEW: GEOGRAPHY CHECK
+                    const isCanadaRequired = (companyContext.icpDescription || "").toLowerCase().includes("canada") ||
+                        (companyContext.icpDescription || "").toLowerCase().includes("canadian");
+
+                    if (isCanadaRequired) {
+                        strictnessInstructions += `
+                        
+                        CRITICAL GEOGRAPHY CHECK (CANADA):
+                        The user STRICTLY requires companies based in CANADA or with a MAJOR CANADIAN PRESENCE.
+                        - IF the company is clearly based in the US, UK, India, Middle East, etc. WITHOUT a Canadian office -> DISQUALIFY IMMEDIATELY (Score 1).
+                        - IF the company is Global but mentions a "Toronto" or "Vancouver" or "Montreal" office -> PERMITTED.
+                        `;
+                    }
+
+                    // NEW: INFRASTRUCTURE / OPERATING CO EXCLUSION
+                    strictnessInstructions += `
+                    
+                    SECTOR EXCLUSIONS:
+                    - IF the company is primarily an "Infrastructure Fund", "Energy Investor", or "Operating Company" (non-real estate) -> DISQUALIFY (Score 2) unless Real Estate is explicitly a major vertical.
+                    `;
+
 
                     const profilePrompt = `
                         I have scraped the website of ${candidate.companyName || candidate.company_name} (${candidate.domain}).

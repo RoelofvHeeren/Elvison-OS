@@ -315,6 +315,19 @@ export class LeadScraperService {
                     return;
                 }
 
+                // NEW: STRICT WHITELIST ENFORCEMENT
+                // If specific job titles are requested, the lead MUST match at least one.
+                if (filters.job_titles && Array.isArray(filters.job_titles) && filters.job_titles.length > 0) {
+                    const normalizedWhitelist = filters.job_titles.map(t => t.toLowerCase().trim());
+                    const matchesWhitelist = normalizedWhitelist.some(allowed => title.includes(allowed));
+
+                    if (!matchesWhitelist) {
+                        // console.log(`[ApolloDomain] 🗑️ Disqualified (Title Mismatch): ${title}`);
+                        disqualifiedItems.push({ ...item, disqualification_reason: `Title Mismatch: ${title}` });
+                        return;
+                    }
+                }
+
                 // Check Exclusions
                 if (filters.excluded_functions && Array.isArray(filters.excluded_functions)) {
                     for (const exclusion of filters.excluded_functions) {

@@ -742,8 +742,11 @@ app.put('/api/companies/:companyName/profile', requireAuth, async (req, res) => 
         if (!profile) return res.status(400).json({ error: 'Profile content is required' });
 
         await query(
-            'UPDATE companies SET company_profile = $1, last_updated = NOW() WHERE company_name = $2',
-            [profile, companyName]
+            `INSERT INTO companies (user_id, company_name, company_profile, last_updated)
+             VALUES ($1, $2, $3, NOW())
+             ON CONFLICT (user_id, company_name) 
+             DO UPDATE SET company_profile = $3, last_updated = NOW()`,
+            [req.userId, companyName, profile]
         );
 
         res.json({ success: true });
@@ -1302,7 +1305,14 @@ app.get('/api/leads', requireAuth, async (req, res) => {
         const offset = (pageNum - 1) * pageSizeNum;
 
         // Build base query
-        let queryStr = 'SELECT * FROM leads WHERE user_id = $1';
+        let queryStr = `
+            SELECT leads.*, 
+                   companies.company_profile as company_profile_text, 
+                   companies.fit_score as company_fit_score
+            FROM leads 
+            LEFT JOIN companies ON leads.company_name = companies.company_name AND leads.user_id = companies.user_id
+            WHERE leads.user_id = $1
+        `;
         const params = [req.userId];
         let countParams = [req.userId];
 
@@ -1536,7 +1546,7 @@ app.get('/api/runs/:id', requireAuth, async (req, res) => {
             // Check last log timestamp
             const logRes = await query(`
                 SELECT MAX(created_at) as last_log_at 
-                FROM workflow_logs 
+                FROM workflow_step_logs 
                 WHERE run_id = $1
             `, [id]);
 

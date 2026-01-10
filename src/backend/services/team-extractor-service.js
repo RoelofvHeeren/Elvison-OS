@@ -153,7 +153,7 @@ export async function extractTeamMembers(pageContent, companyName) {
 You are an expert researcher. Your task is to extract the LEADERSHIP TEAM and KEY DECISION MAKERS for the company: "${companyName}".
 
 CONTEXT FROM WEBSITE:
-${pageContent.substring(0, 25000)}
+${pageContent.substring(0, 30000)}
 
 ---
 
@@ -164,12 +164,12 @@ For each person, provide:
 2. title - Exact job title/role as mentioned
 3. is_decision_maker - Boolean (true if they are Founder, CEO, Partner, Principal, or Director)
 
-RULES:
-- ONLY include people explicitly part of ${companyName}.
-- EXCLUDE external testimonials, consultants, or news mentions.
-- If you find multiple people, list them all.
-- If the title is missing, use "Unknown Role".
-- If the content mentions a "Founder" or "CEO" in the narrative (e.g., "Founded by John Doe"), extract them even if they aren't in a list.
+CRITICAL RULES:
+- ONLY include people who are actual employees/leaders of ${companyName}.
+- EXCLUDE partner companies, consultants, or service providers. (e.g. if you see "Our Partners: ACE Project Marketing", "ACE" is a company, NOT a person).
+- EXCLUDE names of lawyers, architects, or designers from other firms listed as "Partners" or "Consultants".
+- If the content mentions a "Founder" or "CEO" in the narrative (e.g., "Founded by John Doe"), extract them!
+- If you are extracting from search snippets, ENSURE they are actually about ${companyName} and not a similarly named company.
 
 OUTPUT FORMAT (JSON only):
 {
@@ -251,8 +251,9 @@ export async function researchCompanyTeam(url) {
         console.log(`[TeamExtractor] No members found via scraping. Trying site-constrained Search fallback...`);
         try {
             const { performGoogleSearch } = await import('./apify.js');
-            // STRICT SITE CONSTRAINT to prevent pulling in unrelated companies
-            const searchResults = await performGoogleSearch(`site:${domain} (team OR leadership OR founder OR principal)`, process.env.APIFY_API_TOKEN);
+            // FIX: Ensure domain is clean for site: operator
+            const cleanDomain = domain.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
+            const searchResults = await performGoogleSearch(`site:${cleanDomain} (team OR leadership OR founder OR principal)`, process.env.APIFY_API_TOKEN);
             const searchText = searchResults.map(r => `${r.title}\n${r.snippet}`).join('\n\n');
 
             if (searchText.length > 100) {

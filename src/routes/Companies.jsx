@@ -1018,8 +1018,8 @@ function Companies() {
                                                                         {selectedLinks.includes(link.url) && <div className="w-2 h-2 bg-black rounded-sm" />}
                                                                     </div>
                                                                     <div className="flex-1 min-w-0">
-                                                                        <div className="text-xs text-gray-300 truncate">{link.title || 'Untitled Link'}</div>
-                                                                        <div className="text-[10px] text-gray-600 truncate">{link.url}</div>
+                                                                        <div className="text-xs font-bold text-gray-200 truncate">{link.title || 'Untitled Link'}</div>
+                                                                        <div className="text-[10px] text-gray-400 truncate opacity-70">{link.url}</div>
                                                                     </div>
                                                                 </div>
                                                             ))}
