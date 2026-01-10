@@ -812,7 +812,7 @@ app.post('/api/companies/add-manual', requireAuth, async (req, res) => {
         console.log(`[Manual Research] Starting research for ${domain}...`);
 
         // 1. Research the company and extract team
-        const result = await researchCompanyTeam(domain);
+        const result = await researchCompanyTeam(url);
 
         if (result.error) {
             return res.status(400).json({ error: result.error });

@@ -116,7 +116,7 @@ export const addSearchTerms = async (icpId, newTerms) => {
         return;
     }
 
-    const updated = [...existing, ...toAdd];
+    const updated = [...toAdd, ...existing];
 
     await query(
         `UPDATE icps SET search_terms = $1::jsonb, updated_at = NOW() WHERE id = $2`,
@@ -175,6 +175,20 @@ export const reorderSearchTerms = async (icpId, orderedTerms) => {
     );
 
     console.log(`[SearchTermManager] Reordered terms for ICP ${icpId}`);
+};
+
+/**
+ * Clear all search terms for an ICP
+ * 
+ * @param {string} icpId - ICP UUID
+ * @returns {Promise<void>}
+ */
+export const clearSearchTerms = async (icpId) => {
+    await query(
+        `UPDATE icps SET search_terms = '[]'::jsonb, updated_at = NOW() WHERE id = $1`,
+        [icpId]
+    );
+    console.log(`[SearchTermManager] Cleared all search terms for ICP ${icpId}`);
 };
 
 /**
@@ -242,7 +256,7 @@ Remember: Variety is key. Use different angles, synonyms, and geographic focuses
 
 /**
  * Initialize search terms for an ICP if empty
- * Uses AI to generate initial terms based on ICP config
+ * Prioritizes user-provided keywords from research_framework, defaults to AI generation
  * 
  * @param {string} icpId - ICP UUID
  * @returns {Promise<void>}
@@ -252,14 +266,29 @@ export const initializeSearchTermsIfEmpty = async (icpId) => {
 
     if (existing.length > 0) {
         console.log(`[SearchTermManager] ICP ${icpId} already has ${existing.length} search terms`);
-        return;
+        // Even if not empty, we sync if config has keywords
+        const added = await syncSearchTermsFromConfig(icpId);
+        return { initialized: false, added };
     }
 
-    // Get ICP description from config
+    // Get ICP config
     const result = await query(`SELECT config FROM icps WHERE id = $1`, [icpId]);
     if (result.rows.length === 0) return;
 
     const config = result.rows[0].config || {};
+
+    // 1. Try to get user-provided keywords first
+    const userKeywords = config.surveys?.research_framework?.search_keywords;
+    if (userKeywords && typeof userKeywords === 'string' && userKeywords.trim()) {
+        const lines = userKeywords.split(/[\n,]/).map(l => l.trim()).filter(Boolean);
+        if (lines.length > 0) {
+            console.log(`[SearchTermManager] Initializing ICP ${icpId} with ${lines.length} user-provided keywords`);
+            await addSearchTerms(icpId, lines);
+            return { initialized: true, count: lines.length, source: 'user_keywords' };
+        }
+    }
+
+    // 2. Fallback to AI generation from description
     const icpDescription = config.surveys?.company_finder?.icp_description ||
         config.icp_description ||
         config.description ||
@@ -270,9 +299,46 @@ export const initializeSearchTermsIfEmpty = async (icpId) => {
         return;
     }
 
+    console.log(`[SearchTermManager] No user keywords found for ICP ${icpId}. Generating via AI...`);
     const terms = await generateSearchTerms(icpDescription, 20);
     if (terms.length > 0) {
         await addSearchTerms(icpId, terms);
+    }
+    return { initialized: true, count: terms.length, source: 'ai_generated' };
+};
+
+/**
+ * Sync search terms queue with keywords in config
+ * If config has keywords that aren't in the queue, add them.
+ * 
+ * @param {string} icpId - ICP UUID
+ * @returns {Promise<number>} - Number of terms added
+ */
+export const syncSearchTermsFromConfig = async (icpId) => {
+    try {
+        const result = await query(`SELECT config, search_terms FROM icps WHERE id = $1`, [icpId]);
+        if (result.rows.length === 0) return 0;
+
+        const { config, search_terms } = result.rows[0];
+        const userKeywords = config?.surveys?.research_framework?.search_keywords;
+
+        if (!userKeywords || typeof userKeywords !== 'string') return 0;
+
+        const lines = userKeywords.split(/[\n,]/).map(l => l.trim()).filter(Boolean);
+        if (lines.length === 0) return 0;
+
+        const existingTerms = new Set((search_terms || []).map(t => t.term.toLowerCase()));
+        const toAdd = lines.filter(l => !existingTerms.has(l.toLowerCase()));
+
+        if (toAdd.length > 0) {
+            console.log(`[SearchTermManager] Syncing ${toAdd.length} new keywords from config to queue for ICP ${icpId}`);
+            await addSearchTerms(icpId, toAdd);
+            return toAdd.length;
+        }
+        return 0;
+    } catch (err) {
+        console.error('[SearchTermManager] Sync failed:', err.message);
+        return 0;
     }
 };
 
@@ -283,6 +349,8 @@ export default {
     addSearchTerms,
     removeSearchTerm,
     reorderSearchTerms,
+    clearSearchTerms,
     generateSearchTerms,
-    initializeSearchTermsIfEmpty
+    initializeSearchTermsIfEmpty,
+    syncSearchTermsFromConfig
 };

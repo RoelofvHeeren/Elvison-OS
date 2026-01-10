@@ -510,9 +510,9 @@ export const scrapeWebsiteSmart = async (domain) => {
 /**
  * Scrape specific list of URLs
  * @param {Array<string>} urls 
- * @param {string} token 
+ * @param {string} token - Apify Token for robust fallback
  */
-export const scrapeSpecificPages = async (urls, token = null, checkCancellation = null) => {
+export const scrapeSpecificPages = async (urls, token = null) => {
     if (!urls || urls.length === 0) return "No URLs provided.";
     console.log(`[Local Scraper] Targeted scraping of ${urls.length} pages...`);
 
@@ -520,28 +520,112 @@ export const scrapeSpecificPages = async (urls, token = null, checkCancellation 
     const cheerio = (await import('cheerio')).load;
 
     for (const url of urls) {
-        if (checkCancellation && await checkCancellation()) break;
-
+        let content = "";
         try {
+            // Attempt 1: Fast local scrape with browser-like headers
             const response = await axios.get(url, {
-                timeout: 10000,
+                timeout: 8000,
                 headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache',
+                    'Sec-Ch-Ua': '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
+                    'Sec-Ch-Ua-Mobile': '?0',
+                    'Sec-Ch-Ua-Platform': '"macOS"',
+                    'Sec-Fetch-Dest': 'document',
+                    'Sec-Fetch-Mode': 'navigate',
+                    'Sec-Fetch-Site': 'none',
+                    'Sec-Fetch-User': '?1',
+                    'Upgrade-Insecure-Requests': '1'
                 }
             });
+
             const $ = cheerio(response.data);
-
-            // Remove noise
             $('script, style, noscript, nav, footer, header, svg, img').remove();
+            content = $('body').text().replace(/\s+/g, ' ').trim().substring(0, 10000);
 
-            const text = $('body').text().replace(/\s+/g, ' ').substring(0, 8000);
-            results.push(`--- PAGE: ${url} ---\n${text}`);
+            if (content.length < 200) {
+                throw new Error("Empty or very short content (likely SPA/blocked)");
+            }
+
+            console.log(`[Local Scraper] Successfully scraped ${url} (${content.length} chars)`);
+            results.push(`--- PAGE: ${url} ---\n${content}`);
 
         } catch (err) {
-            console.warn(`[Local Scraper] Failed to scrape ${url}: ${err.message}`);
+            console.warn(`[Local Scraper] Failed to scrape ${url} locally (${err.message}).`);
+
+            // Attempt 2: High-quality fallback using Apify's headless browser scraper
+            if (token) {
+                try {
+                    console.log(`[Local Scraper] Running Apify Render fallback for ${url}...`);
+                    const ACTOR_ID = 'apify~web-scraper';
+                    const runUrl = `${APIFY_API_URL}/acts/${ACTOR_ID}/runs?token=${token}`;
+
+                    const input = {
+                        startUrls: [{ url }],
+                        runMode: 'PRODUCTION',
+                        pageFunction: "async function pageFunction(context) { const { page, request } = context; await page.waitForTimeout(3000); return { url: request.url, text: await page.innerText('body') }; }",
+                        proxyConfiguration: { useApifyProxy: true }
+                    };
+
+                    const startRes = await axios.post(runUrl, input);
+                    const runId = startRes.data.data.id;
+
+                    // Poll for completion (Max 90s)
+                    let attempts = 0;
+                    let datasetId = null;
+                    while (attempts < 45) {
+                        await new Promise(r => setTimeout(r, 2000));
+                        const statusRes = await checkApifyRun(token, runId);
+                        if (statusRes.status === 'SUCCEEDED') {
+                            datasetId = statusRes.datasetId;
+                            break;
+                        }
+                        if (['FAILED', 'ABORTED', 'TIMED-OUT'].includes(statusRes.status)) break;
+                        attempts++;
+                    }
+
+                    if (datasetId) {
+                        const items = await getApifyResults(token, datasetId);
+                        if (items && items.length > 0) {
+                            const item = items[0];
+                            content = (item.text || "").replace(/\s+/g, ' ').trim().substring(0, 20000);
+
+                            if (content.length > 300) {
+                                console.log(`[Local Scraper] Apify fallback successful for ${url} (${content.length} chars)`);
+                                results.push(`--- PAGE (APIFY RENDER): ${url} ---\n${content}`);
+                                continue;
+                            } else {
+                                console.log(`[Local Scraper] Apify fallback returned too little content (${content.length} chars).`);
+                            }
+                        }
+                    }
+                } catch (fallbackErr) {
+                    console.error(`[Local Scraper] Apify Render fallback failed:`, fallbackErr.message);
+                }
+            }
+
+            // Attempt 3: Desperate Search Snippet fallback
+            if (token) {
+                try {
+                    console.log(`[Local Scraper] Trying Google Search fallback for ${url}...`);
+                    const fallbackResults = await performGoogleSearch(`site:${url} team members bios`, token);
+                    if (fallbackResults && fallbackResults.length > 0) {
+                        const snippetText = fallbackResults.map(r => `${r.title}\n${r.snippet}`).join('\n\n');
+                        results.push(`--- PAGE (SEARCH FALLBACK): ${url} ---\n${snippetText}`);
+                        continue;
+                    }
+                } catch (searchErr) {
+                    console.error(`[Local Scraper] Search fallback failed for ${url}`);
+                }
+            }
+
             results.push(`--- PAGE: ${url} ---\n(Error: ${err.message})`);
         }
     }
+
 
     return results.join('\n\n');
 };

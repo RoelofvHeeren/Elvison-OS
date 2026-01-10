@@ -316,7 +316,12 @@ export const runAgentWorkflow = async (input, config) => {
         // --- Phase 1: Discovery & Profiling with Rotating Search Terms ---
         // Initialize search terms if this ICP doesn't have any yet
         if (icpId) {
-            await initializeSearchTermsIfEmpty(icpId);
+            const initResult = await initializeSearchTermsIfEmpty(icpId);
+            if (initResult?.initialized) {
+                logStep('Company Finder', `📋 Initialized search queue with ${initResult.count} terms (${initResult.source})`);
+            } else if (initResult?.added > 0) {
+                logStep('Company Finder', `📋 Synced ${initResult.added} new keywords from your approved list to the search queue.`);
+            }
         }
 
         // Get ordered search terms (least recently used first)
