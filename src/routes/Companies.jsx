@@ -250,9 +250,11 @@ function Companies() {
     const loadCompanies = async () => {
         setLoading(true)
         try {
-            const response = await fetchCompanies();
+            // Pass ICP filter to server
+            const params = {};
+            if (filters.icpId) params.icpId = filters.icpId;
 
-            // Map to expected structure
+            const response = await fetchCompanies(params);
             const mappedCompanies = (response.companies || []).map(c => ({
                 id: c.id,
                 name: c.company_name,
@@ -536,10 +538,9 @@ function Companies() {
                     <div className="space-y-4">
                         {companies
                             .filter(company =>
-                                (!filters.icpId || company.icpId === filters.icpId) && // Filter by ICP
-                                (!searchQuery ||
-                                    company.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                                    company.website?.toLowerCase().includes(searchQuery.toLowerCase()))
+                            (!searchQuery ||
+                                company.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                                company.website?.toLowerCase().includes(searchQuery.toLowerCase()))
                             )
                             .map((company) => (
                                 <div key={company.name} className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl overflow-hidden">

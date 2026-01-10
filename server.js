@@ -1403,20 +1403,33 @@ app.post('/api/crm-columns', requireAuth, async (req, res) => {
 // Get ALL Companies (For Companies View)
 app.get('/api/companies', requireAuth, async (req, res) => {
     try {
-        // Log for debugging
-        console.log('[GET /api/companies] User:', req.userId);
+        const { icpId } = req.query;
+        console.log('[GET /api/companies] User:', req.userId, 'ICP Filter:', icpId || 'none');
 
-        const { rows } = await query(`
+        let queryText = `
             SELECT 
                 c.*,
                 COUNT(l.id) as lead_count
             FROM companies c
             LEFT JOIN leads l ON c.company_name = l.company_name AND c.user_id = l.user_id
             WHERE c.user_id = $1
-            GROUP BY c.id
-            ORDER BY c.created_at DESC
-        `, [req.userId]);
+        `;
+        const params = [req.userId];
 
+        // Add ICP filter using EXISTS (safer than modifying SELECT)
+        if (icpId) {
+            queryText += ` AND EXISTS (
+                SELECT 1 FROM leads 
+                WHERE company_name = c.company_name 
+                AND user_id = c.user_id 
+                AND icp_id = $2
+            )`;
+            params.push(icpId);
+        }
+
+        queryText += ` GROUP BY c.id ORDER BY c.created_at DESC`;
+
+        const { rows } = await query(queryText, params);
         console.log(`[GET /api/companies] Found ${rows.length} rows.`);
 
         res.json({ companies: rows });
