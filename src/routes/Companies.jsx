@@ -402,12 +402,32 @@ function Companies() {
                                 Review all companies with leads, view company profiles, and clean up bad data.
                             </p>
                         </div>
+
                         <button
                             onClick={() => setAddCompanyModalOpen(true)}
                             className="flex items-center gap-2 px-4 py-2 bg-teal-500/20 hover:bg-teal-500/30 text-teal-400 rounded-xl text-sm font-bold transition-all border border-teal-500/30"
                         >
                             <PlusCircle className="w-4 h-4" />
                             Add Company
+                        </button>
+                    </div>
+                    {/* Data Repair Button (Temporary) */}
+                    <div className="mt-4 flex justify-end">
+                        <button
+                            onClick={async () => {
+                                if (!confirm('This will verify all leads and restore any missing companies. Continue?')) return;
+                                try {
+                                    const res = await fetch('/api/admin/backfill-companies', { method: 'POST' });
+                                    const data = await res.json();
+                                    alert(data.message);
+                                    window.location.reload();
+                                } catch (e) {
+                                    alert('Failed: ' + e.message);
+                                }
+                            }}
+                            className="text-xs text-gray-500 hover:text-teal-400 underline decoration-dotted transition-colors"
+                        >
+                            Run Data Repair / Restore Missing Companies
                         </button>
                     </div>
                 </div>
