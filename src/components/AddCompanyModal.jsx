@@ -29,6 +29,7 @@ export default function AddCompanyModal({ isOpen, onClose, onComplete }) {
     const [showManualAdd, setShowManualAdd] = useState(false);
     const [manualName, setManualName] = useState('');
     const [manualTitle, setManualTitle] = useState('');
+    const [progress, setProgress] = useState(''); // New progress state
 
     const handleStartResearch = async () => {
         if (!url.trim()) {
@@ -52,17 +53,44 @@ export default function AddCompanyModal({ isOpen, onClose, onComplete }) {
                 throw new Error(errData.error || 'Research failed');
             }
 
-            const data = await response.json();
-            setCompany(data.company);
-            setTeamMembers(data.teamMembers || []);
+            // Stream reading
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
 
-            // Auto-select decision makers
-            const decisionMakers = (data.teamMembers || [])
-                .filter(m => m.is_decision_maker || m.isDecisionMaker)
-                .map(m => m.id || m.name);
-            setSelectedMembers(decisionMakers);
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
 
-            setStep('team');
+                const chunk = decoder.decode(value);
+                const lines = chunk.split('\n\n');
+
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        try {
+                            const data = JSON.parse(line.slice(6));
+
+                            if (data.type === 'progress') {
+                                setProgress(data.message);
+                            } else if (data.type === 'complete') {
+                                setCompany(data.data.company);
+                                setTeamMembers(data.data.teamMembers || []);
+
+                                // Auto-select decision makers
+                                const decisionMakers = (data.data.teamMembers || [])
+                                    .filter(m => m.is_decision_maker || m.isDecisionMaker)
+                                    .map(m => m.id || m.name);
+                                setSelectedMembers(decisionMakers);
+
+                                setStep('team');
+                            } else if (data.type === 'error') {
+                                throw new Error(data.error);
+                            }
+                        } catch (e) {
+                            console.warn('Parse error', e);
+                        }
+                    }
+                }
+            }
         } catch (e) {
             console.error('Research error:', e);
             setError(e.message);
@@ -275,7 +303,7 @@ export default function AddCompanyModal({ isOpen, onClose, onComplete }) {
                         <div className="py-12 text-center">
                             <Loader2 className="w-12 h-12 text-teal-400 mx-auto mb-4 animate-spin" />
                             <p className="text-white font-semibold mb-2">Researching Company...</p>
-                            <p className="text-sm text-gray-500">Scanning website and extracting team members</p>
+                            <p className="text-sm text-gray-500">{progress || 'Scanning website and extracting team members'}</p>
                         </div>
                     )}
 

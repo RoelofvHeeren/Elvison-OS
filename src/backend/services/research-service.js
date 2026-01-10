@@ -271,13 +271,16 @@ export class ResearchService {
      * @param {Array<string>} targetUrls - list of URLs to scrape
      * @param {string} topic - prompt from user
      */
-    static async researchCompany(targetUrls, topic) {
+    static async researchCompany(targetUrls, topic, onProgress = () => { }) {
         console.log(`🕵️‍♀️ Researching ${topic} on ${targetUrls.length} pages...`);
 
         try {
             // Scrape target pages and aggregate content
             let aggregatedContent = "";
+            let scrapedCount = 0;
             for (const target of targetUrls) {
+                onProgress(`Scraping page ${scrapedCount + 1}/${targetUrls.length}: ${new URL(target).hostname}...`);
+                scrapedCount++;
                 try {
                     const pageHtml = await this.fetchHtml(target);
                     // Simple text extraction - could be improved
@@ -292,6 +295,7 @@ export class ResearchService {
             }
 
             // Synthesize answer
+            onProgress('Synthesizing research report...');
             const synthesisPrompt = `
                 You are a real estate investment analyst.
                 

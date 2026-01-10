@@ -207,9 +207,10 @@ JSON OUTPUT:`;
 /**
  * Full pipeline: Find pages → Scrape → Extract team
  * @param {string} url - Company URL or domain (e.g., https://fifthavehomes.com/our-team/)
+ * @param {function} onProgress - Callback for progress updates
  * @returns {Promise<{companyProfile: string, teamMembers: Array}>}
  */
-export async function researchCompanyTeam(url) {
+export async function researchCompanyTeam(url, onProgress = () => { }) {
     const domain = url.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0].toLowerCase();
 
     // 0. Preliminary Company Name extraction
@@ -223,12 +224,14 @@ export async function researchCompanyTeam(url) {
     if (domain.includes('homes')) companyName += " Homes";
 
     console.log(`[TeamExtractor] Starting robust research for ${companyName} (${url})`);
+    onProgress('Scanning site structure...');
 
     // 1. Discovery: Homepage Scan + Sitemap
     const { teamPages: quickTeamPages, allLinks, homepageText, error } = await findTeamPages(url, companyName);
 
     // 2. Smart Selection: Let Gemini pick the best pages from the full site structure
     console.log(`[TeamExtractor] Discovered ${allLinks.length} total links. Selecting top pages...`);
+    onProgress(`Analyzing ${allLinks.length} discovered links...`);
     const smartPages = await selectRelevantPages(domain, allLinks);
 
     // Prioritize explicitly found team pages and smart pages
@@ -239,16 +242,19 @@ export async function researchCompanyTeam(url) {
     ])].slice(0, 15); // Increase limit to 15 pages as requested
 
     console.log(`[TeamExtractor] Scraping ${pagesToScrape.length} target pages:`, pagesToScrape);
+    onProgress(`Scraping ${pagesToScrape.length} relevant pages...`);
 
     // 3. Scrape all selected pages
     const pageContent = await scrapeSpecificPages(pagesToScrape, process.env.APIFY_API_TOKEN);
 
     // 4. Extract team members from combined content
+    onProgress('Extracting team members...');
     let rawMembers = await extractTeamMembers(pageContent, companyName);
 
     // 5. Fallback: If no members found, try specialized Search with site constraint
     if (rawMembers.length === 0) {
         console.log(`[TeamExtractor] No members found via scraping. Trying site-constrained Search fallback...`);
+        onProgress('Fallback: Searching Google for leadership...');
         try {
             const { performGoogleSearch } = await import('./apify.js');
             // FIX: Ensure domain is clean for site: operator

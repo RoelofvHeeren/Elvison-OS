@@ -694,11 +694,19 @@ app.post('/api/companies/research', async (req, res) => {
         const { urls, topic, companyName } = req.body;
         if (!urls || !Array.isArray(urls)) return res.status(400).json({ error: 'List of URLs is required' });
 
-        const result = await ResearchService.researchCompany(urls, topic);
+        // Set headers for streaming
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+
+        const result = await ResearchService.researchCompany(urls, topic, (msg) => sendProgress(res, msg));
 
         // Merge with existing profile if companyName provided
+        let finalResult = result;
+
         if (companyName) {
             try {
+                sendProgress(res, 'Merging with existing profile...');
                 // Get existing profile
                 const { rows } = await query(
                     'SELECT company_profile FROM companies WHERE company_name = $1',
@@ -709,6 +717,7 @@ app.post('/api/companies/research', async (req, res) => {
 
                 // Use AI to merge old + new research
                 const mergedProfile = await ResearchService.mergeProfiles(existingProfile, result);
+                finalResult = mergedProfile;
 
                 await query(
                     `UPDATE companies 
@@ -718,20 +727,27 @@ app.post('/api/companies/research', async (req, res) => {
                 );
                 console.log(`✅ Merged and saved deep research for ${companyName}`);
 
-                res.json({ result: mergedProfile });
             } catch (dbError) {
                 console.error('Failed to merge/save research:', dbError);
                 // Fallback: return the new research even if merge fails
-                res.json({ result });
             }
-        } else {
-            res.json({ result });
         }
+
+        // Send final result
+        res.write(`data: ${JSON.stringify({ type: 'complete', result: finalResult })}\n\n`);
+        res.end();
+
     } catch (e) {
-        console.error('Research API Error:', e);
-        res.status(500).json({ error: e.message });
+        console.error('Deep research failed:', e);
+        if (!res.headersSent) {
+            res.status(500).json({ error: e.message });
+        } else {
+            res.write(`data: ${JSON.stringify({ type: 'error', error: e.message })}\n\n`);
+            res.end();
+        }
     }
 });
+
 
 // Manually update company profile (from Deep Research Result)
 app.put('/api/companies/:companyName/profile', requireAuth, async (req, res) => {
@@ -809,19 +825,25 @@ app.post('/api/companies/add-manual', requireAuth, async (req, res) => {
         const { url, researchTopic } = req.body;
         if (!url) return res.status(400).json({ error: 'Company URL is required' });
 
+        // Set headers for streaming
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+
         // Extract domain from URL
         const domain = url.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0].toLowerCase();
 
         console.log(`[Manual Research] Starting research for ${domain}...`);
 
         // 1. Research the company and extract team
-        const result = await researchCompanyTeam(url);
+        const result = await researchCompanyTeam(url, (msg) => sendProgress(res, msg));
 
         if (result.error) {
-            return res.status(400).json({ error: result.error });
+            throw new Error(result.error);
         }
 
         // 2. Generate company profile using existing service
+        sendProgress(res, 'Generating company profile...');
         let companyProfile = '';
         try {
             const { ResearchService } = await import('./src/backend/services/research-service.js');
@@ -834,6 +856,7 @@ app.post('/api/companies/add-manual', requireAuth, async (req, res) => {
         }
 
         // 3. Save team members to database
+        sendProgress(res, `Saving ${result.teamMembers.length} team members...`);
         const savedMembers = [];
         for (const member of result.teamMembers) {
             const insertResult = await query(
@@ -852,7 +875,7 @@ app.post('/api/companies/add-manual', requireAuth, async (req, res) => {
 
         console.log(`[Manual Research] Saved ${savedMembers.length} team members for ${result.companyName}`);
 
-        res.json({
+        const responseData = {
             success: true,
             company: {
                 name: result.companyName,
@@ -865,11 +888,20 @@ app.post('/api/companies/add-manual', requireAuth, async (req, res) => {
                 status: 'discovered'
             })),
             pageCount: result.pageCount
-        });
+        };
+
+        // Send final data
+        res.write(`data: ${JSON.stringify({ type: 'complete', data: responseData })}\n\n`);
+        res.end();
 
     } catch (e) {
         console.error('[Manual Research] Error:', e);
-        res.status(500).json({ error: e.message });
+        if (!res.headersSent) {
+            res.status(500).json({ error: e.message });
+        } else {
+            res.write(`data: ${JSON.stringify({ type: 'error', error: e.message })}\n\n`);
+            res.end();
+        }
     }
 });
 
@@ -1579,6 +1611,11 @@ app.get('/api/runs/:id', requireAuth, async (req, res) => {
         res.status(500).json({ error: 'Database error' });
     }
 })
+
+// Helper to send SSE-like JSON chunks
+const sendProgress = (res, message) => {
+    res.write(`data: ${JSON.stringify({ type: 'progress', message })}\n\n`);
+};
 
 // Start Run
 app.post('/api/runs/start', requireAuth, async (req, res) => {

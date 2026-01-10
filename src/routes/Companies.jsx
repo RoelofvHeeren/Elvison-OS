@@ -26,6 +26,7 @@ function Companies() {
     const [recommendedLinks, setRecommendedLinks] = useState([]);
     const [selectedLinks, setSelectedLinks] = useState([]);
     const [linkSearch, setLinkSearch] = useState('');
+    const [researchProgress, setResearchProgress] = useState(''); // New progress state
 
     // Add Company Modal State
     const [addCompanyModalOpen, setAddCompanyModalOpen] = useState(false);
@@ -40,6 +41,7 @@ function Companies() {
         setRecommendedLinks([]);
         setSelectedLinks([]);
         setLinkSearch('');
+        setResearchProgress('');
         setResearchModalOpen(true);
     };
 
@@ -82,6 +84,8 @@ function Companies() {
     const handleAnalyze = async () => {
         if (selectedLinks.length === 0) return;
         setResearchStep('analyzing');
+        setResearchProgress('Identifying relevant data points...');
+
         try {
             const response = await fetch('/api/companies/research', {
                 method: 'POST',
@@ -98,12 +102,38 @@ function Companies() {
                 throw new Error(`Server returned ${response.status}: ${text.slice(0, 100)}...`);
             }
 
-            const data = await response.json();
-            setResearchResult(data.result || "No findings returned.");
-            setResearchStep('result');
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
 
-            // Refresh company data to show updated profile
-            await loadCompanies();
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value);
+                const lines = chunk.split('\n\n');
+
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        try {
+                            const data = JSON.parse(line.slice(6));
+
+                            if (data.type === 'progress') {
+                                setResearchProgress(data.message);
+                            } else if (data.type === 'complete') {
+                                setResearchResult(data.result || "No findings returned.");
+                                setResearchStep('result');
+                                setResearchProgress('');
+                                // Refresh company data to show updated profile
+                                await loadCompanies();
+                            } else if (data.type === 'error') {
+                                throw new Error(data.error);
+                            }
+                        } catch (e) {
+                            console.warn('Parse error', e);
+                        }
+                    }
+                }
+            }
         } catch (e) {
             console.error(e);
             setResearchResult("Error during analysis: " + e.message);
@@ -1033,6 +1063,7 @@ function Companies() {
                                             <div className="text-center py-12">
                                                 <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-teal-500 mb-4"></div>
                                                 <p className="text-teal-400 font-mono text-sm animate-pulse">Deeply analyzing {selectedLinks.length} pages...</p>
+                                                <p className="text-xs text-gray-500 mt-2">{researchProgress || 'Initializing...'}</p>
                                             </div>
                                         )}
                                     </div>
