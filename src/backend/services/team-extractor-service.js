@@ -11,7 +11,8 @@ const DECISION_MAKER_KEYWORDS = [
     'president', 'founder', 'co-founder', 'owner',
     'partner', 'principal', 'director', 'managing',
     'head of', 'vp', 'vice president',
-    'executive', 'chairman', 'chairwoman'
+    'executive', 'chairman', 'chairwoman',
+    'investor', 'associate', 'operations'
 ];
 
 // Keywords that likely indicate a team/about page
