@@ -546,18 +546,20 @@ app.post('/api/admin/deep-cleanup-v2', requireAuth, async (req, res) => {
                             cleanup_status = $1,
                             icp_type = $2,
                             capital_role = $3,
-                            data_quality_flags = $4,
-                            confidence_score = $5,
-                            fit_score = $6,
-                            fit_score_breakdown = $7,
-                            company_name_clean = $8,
-                            website_root_domain = $9,
+                            canada_relevance = $4,
+                            data_quality_flags = $5,
+                            confidence_score = $6,
+                            fit_score = $7,
+                            fit_score_breakdown = $8,
+                            company_name_clean = $9,
+                            website_root_domain = $10,
                             last_updated = NOW()
-                        WHERE id = $10
+                        WHERE id = $11
                     `, [
                         status,
                         icp_type,
                         capital_role,
+                        canada_relevance || 'CANADA_ACTIVE',
                         JSON.stringify(flags),
                         confidence,
                         fitResult.fit_score,
@@ -2134,16 +2136,16 @@ app.get('/api/leads', requireAuth, async (req, res) => {
         let countParams = [req.userId];
 
         if (status) {
-            queryStr += ' AND status = $' + (params.length + 1);
+            queryStr += ' AND leads.status = $' + (params.length + 1);
             params.push(status);
             countParams.push(status);
         } else {
             // Default: Hide disqualified
-            queryStr += " AND status != 'DISQUALIFIED'";
+            queryStr += " AND leads.status != 'DISQUALIFIED'";
         }
 
         if (icpId) {
-            queryStr += ' AND icp_id = $' + (params.length + 1);
+            queryStr += ' AND leads.icp_id = $' + (params.length + 1);
             params.push(icpId);
             countParams.push(icpId);
         }
