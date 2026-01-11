@@ -3650,6 +3650,10 @@ const initDB = async () => {
         await query(`ALTER TABLE workflow_runs ADD COLUMN IF NOT EXISTS search_stats JSONB DEFAULT '{}'::jsonb;`);
         await query(`CREATE INDEX IF NOT EXISTS idx_icps_search_terms ON icps USING gin(search_terms);`);
 
+        // Migration 09: Add market_intelligence and last_researched_at columns
+        await query(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS market_intelligence TEXT;`);
+        await query(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS last_researched_at TIMESTAMP WITH TIME ZONE;`);
+
         console.log('Database Schema Verified.')
     } catch (err) {
         console.error('Failed to initialize DB:', err)
