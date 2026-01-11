@@ -920,13 +920,13 @@ function Companies() {
                                             {company.fitScore !== 'N/A' && (
                                                 <div className="flex flex-col items-end gap-1">
                                                     <span className="text-[10px] uppercase tracking-widest font-black text-gray-500">Fit Score</span>
-                                                    <span className={`px-4 py-1.5 rounded-full text-xs font-black border-2 shadow-lg ${parseInt(company.fitScore) >= 80
+                                                    <span className={`px-4 py-1.5 rounded-full text-xs font-black border-2 shadow-lg ${parseInt(company.fitScore) >= 8
                                                         ? 'bg-green-500/20 text-green-400 border-green-500/30'
-                                                        : parseInt(company.fitScore) >= 60
+                                                        : parseInt(company.fitScore) >= 6
                                                             ? 'bg-blue-500/20 text-blue-400 border-blue-500/30'
                                                             : 'bg-white/10 text-gray-400 border-white/10'
                                                         }`}>
-                                                        {company.fitScore} / 100
+                                                        {company.fitScore} / 10
                                                     </span>
                                                 </div>
                                             )}
