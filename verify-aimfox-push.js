@@ -8,7 +8,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, '.env') });
 
 // FORCE KEY FOR VERIFICATION
-aimfoxService.apiKey = 'b36561c3-b06f-4461-b88c-945502e623d3';
+aimfoxService.apiKey = 'fff0ed6c-c41f-45ca-8d96-c28730c6361c';
 aimfoxService.baseUrl = 'https://api.aimfox.com/api/v2';
 
 async function verifyPush() {

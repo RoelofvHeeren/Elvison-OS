@@ -63,7 +63,7 @@ class AimfoxService {
 
             console.log(`[Aimfox] Adding lead to campaign ${campaignId}: ${lead.person_name} (${lead.linkedin_url})`);
 
-            const response = await axios.post(`${this.baseUrl}/campaigns/${campaignId}/leads`, payload, {
+            const response = await axios.post(`${this.baseUrl}/campaigns/${campaignId}/audience/custom-variables`, payload, {
                 headers: this._getHeaders()
             });
 

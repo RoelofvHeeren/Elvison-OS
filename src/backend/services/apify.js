@@ -744,9 +744,25 @@ export const scrapeFullSite = async (domain, token, maxCost = 5.00, onProgress =
 
             // Calculate Stats
             const statsObj = data.stats || {};
-            const pages = statsObj.requestsFinished || statsObj.crawlItemsCount || statsObj.storedItemsCount || statsObj.crawledPages || 0;
+            // Aggressive detection of page counts from various possible Apify fields
+            let pages = statsObj.requestsFinished ||
+                statsObj.crawlItemsCount ||
+                statsObj.storedItemsCount ||
+                statsObj.crawledPages ||
+                statsObj.requestCount || 0;
 
-            const duration = (Date.now() - new Date(data.startedAt).getTime()) / 1000; // seconds
+            // Fallback: Parse statusMessage (e.g., "Crawled 123/241 pages")
+            if (pages === 0 && data.statusMessage) {
+                const match = data.statusMessage.match(/(\d+)\//) || data.statusMessage.match(/(\d+)\s+pages/);
+                if (match) pages = parseInt(match[1]);
+            }
+
+            console.log(`[Apify] Run ${runId} stats:`, {
+                status,
+                pages,
+                cost: data.usageTotalUsd,
+                msg: data.statusMessage
+            });
 
             // Cost Estimation
             const cost = data.usageTotalUsd || 0;
