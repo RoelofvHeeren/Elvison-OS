@@ -18,6 +18,15 @@ import { runGeminiAgent } from "./services/direct-agent-runner.js";
 // --- Schema Definitions ---
 console.log("✅ WORKFLOW.JS - DIRECT SDK MODE (No OpenAI)");
 
+const normalizeCompanyName = (name) => {
+    if (!name) return "";
+    return name.toLowerCase()
+        .replace(/\b(inc|incorporated|ltd|limited|llc|corp|corporation|group|global|holdings|capital|partners|management|advisors|associates|sa|ag)\b/gi, "")
+        .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, "")
+        .replace(/\s{2,}/g, " ")
+        .trim();
+};
+
 const CompanyFinderSchema = z.object({
     results: z.array(z.object({
         company_name: z.string().optional(),
@@ -301,6 +310,8 @@ export const runAgentWorkflow = async (input, config) => {
         let globalLeads = [];
         let scrapedNamesSet = new Set();
         const excludedNames = await getExcludedCompanyNames(userId);
+        const excludedDomains = await getExcludedDomains(userId);
+        const normalizedExcludedNames = new Set(excludedNames.map(normalizeCompanyName).filter(Boolean));
         const leadScraper = new LeadScraperService();
         let masterQualifiedList = [];
         let totalDiscovered = 0;
@@ -447,8 +458,18 @@ export const runAgentWorkflow = async (input, config) => {
     SEARCH RESULTS (Batch ${Math.ceil(resultIndex / BATCH_SIZE)} of ${Math.ceil(searchResults.length / BATCH_SIZE)}):
     ${batch.map((r, i) => `${resultIndex - BATCH_SIZE + i + 1}. ${r.title}\n   URL: ${r.link}\n   Domain: ${r.domain}\n   Snippet: ${r.snippet}`).join('\n\n')}
 
-    COMPANIES TO SKIP (already processed):
-    ${[...scrapedNamesSet, ...excludedNames, ...masterQualifiedList.map(c => c.company_name), ...allCandidates.map(c => c.companyName || c.company_name)].slice(0, 50).join(', ') || 'none yet'}
+    COMPANIES TO SKIP (already processed or in database):
+    ${[
+                                ...excludedNames.slice(0, 75),
+                                ...masterQualifiedList.map(c => c.company_name).slice(0, 40),
+                                ...allCandidates.map(c => c.companyName || c.company_name).slice(0, 40)
+                            ].join(', ') || 'none yet'}
+
+    DOMAINS TO SKIP:
+    ${[...excludedDomains.slice(0, 50), ...allCandidates.map(c => c.domain).filter(Boolean).slice(0, 50)].join(', ')}
+
+    CRITICAL DEDUPLICATION RULE:
+    If a company name is a slight variation of one in the skip list (e.g., "Company Europe" vs "Company"), category it as "skip" unless it is explicitly a different entity type the user wants. We want to avoid noise.
 
     CATEGORIZE EACH RESULT INTO ONE OF THREE TYPES:
 
@@ -506,10 +527,24 @@ export const runAgentWorkflow = async (input, config) => {
                         }
 
                         const batchCompanies = (parsed.companies || parsed.results || [])
-                            .filter(c => !scrapedNamesSet.has(c.company_name || c.companyName))
-                            .filter(c => !excludedNames.includes(c.company_name || c.companyName))
-                            .filter(c => !allCandidates.some(existing =>
-                                (existing.domain || '').toLowerCase() === (c.domain || '').toLowerCase()));
+                            .filter(c => {
+                                const name = c.company_name || c.companyName;
+                                const normName = normalizeCompanyName(name);
+                                const domain = (c.domain || '').toLowerCase();
+
+                                const isDuplicateName = scrapedNamesSet.has(name) ||
+                                    excludedNames.includes(name) ||
+                                    normalizedExcludedNames.has(normName);
+
+                                const isDuplicateDomain = excludedDomains.includes(domain) ||
+                                    allCandidates.some(existing => (existing.domain || '').toLowerCase() === domain);
+
+                                if (isDuplicateName || isDuplicateDomain) {
+                                    // logStep('Discovery', `⏭️ Skipping potential duplicate: ${name} (${domain || 'no domain'})`);
+                                    return false;
+                                }
+                                return true;
+                            });
 
                         const batchLists = (parsed.lists || [])
                             .filter(l => l.listUrl && !listArticlesToScrape.some(existing => existing.listUrl === l.listUrl));
@@ -1228,7 +1263,8 @@ const saveLeadsToDB = async (leads, userId, icpId, logStep, forceStatus = 'NEW',
             // === CRM ADMISSION GATE ===
             const gateResult = validateLeadForCRM(lead, forceStatus);
             if (!gateResult.pass) {
-                console.log(`[CRM Gate] ❌ Rejected: ${lead.email || 'no-email'} - ${gateResult.reason}`);
+                // Log detailed rejection reason to internal console
+                console.log(`[CRM Gate] ❌ Rejected ${lead.first_name} ${lead.last_name} (${lead.email || 'no email'}): ${gateResult.reason}`);
                 rejectedCount++;
                 continue;
             }
@@ -1256,7 +1292,8 @@ const saveLeadsToDB = async (leads, userId, icpId, logStep, forceStatus = 'NEW',
     }
 
     if (savedCount > 0 || rejectedCount > 0) {
-        logStep('Database', `Saved ${savedCount} leads, Rejected ${rejectedCount} at gate (Status: ${forceStatus})`);
+        const typeLabel = (forceStatus === 'DISQUALIFIED') ? '❌ Disqualified' : '✅ Valid';
+        logStep('Database', `${typeLabel} Sync: Saved ${savedCount} leads to CRM. (Rejected ${rejectedCount} at admission gate)`);
     }
 
     // SYNC: Mark companies as researched to prevent discovery in future runs AND Sync to companies table
