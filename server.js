@@ -1460,22 +1460,58 @@ app.post('/api/companies/research/full-scan', requireAuth, async (req, res) => {
                 send({ type: 'error', error: 'Scrape failed internally.' });
             } else {
             }
-        }).then((result) => {
+        }).then(async (result) => {
             // Handle normal completion OR partial completion
             if (result.aborted && !result.content) {
-                // Aborted without content (e.g. error)
-                // Note: The error event might have already been sent in the callback, but ensuring closure here.
                 res.end();
-            } else {
-                // Success or Partial Success
-                let message = result.content;
-                const limit = maxCost ? parseFloat(maxCost) : 5.00;
+                return;
+            }
 
-                if (result.status === 'PARTIAL_LIMIT_REACHED') {
-                    message = `⚠️ **BUDGET LIMIT REACHED** ⚠️\n\nThe scan was stopped because it hit the cost cap of $${limit.toFixed(2)}.\n\n**Partial Results:**\nWe successfully scraped ${result.pages} pages before stopping.\n\n---\n\n` + (result.content || '');
+            // 2. SYNTHESIS STEP
+            send({ type: 'progress', stats: { ...result, status: 'SYNTHESIZING_PROFILE' } });
+
+            let finalReport = '';
+            try {
+                // If we have content, synthesize it
+                if (result.content) {
+                    finalReport = await ResearchService.synthesizeFullScanReport(result.content, url); // url acts as company name proxy if needed, or we can fetch name
+                } else {
+                    finalReport = "No content scraped to analyze.";
                 }
 
-                send({ type: 'complete', result: message, stats: result });
+                // Append the "Budget Reached" warning to the report if needed
+                const limit = maxCost ? parseFloat(maxCost) : 5.00;
+                if (result.status === 'PARTIAL_LIMIT_REACHED') {
+                    finalReport = `> [!WARNING]\n> **Scan Incomplete**: Budget limit ($${limit}) reached. Analysis is based on ${result.pages} scraped pages.\n\n` + finalReport;
+                }
+
+                // 3. SAVE TO DATABASE
+                send({ type: 'progress', stats: { ...result, status: 'SAVING_TO_DB' } });
+
+                // We need to upsert this into the companies table.
+                // We'll use the 'url' to match the company.
+                const { rows } = await pool.query(
+                    `UPDATE companies 
+                     SET market_intelligence = $1, 
+                         last_researched_at = NOW(),
+                         fit_score = CASE WHEN $1 ILIKE '%High fit%' THEN 85 WHEN $1 ILIKE '%Medium fit%' THEN 60 ELSE fit_score END
+                     WHERE website ILIKE $2 OR website ILIKE $3
+                     RETURNING *`,
+                    [finalReport, `%${url}%`, `%${new URL(url.startsWith('http') ? url : 'https://' + url).hostname}%`]
+                );
+
+                if (rows.length === 0) {
+                    console.warn(`[Deep Research] Could not find company to update for URL: ${url}`);
+                } else {
+                    console.log(`[Deep Research] Updated profile for ${rows[0].company_name}`);
+                }
+
+                send({ type: 'complete', result: finalReport, stats: result });
+                res.end();
+
+            } catch (err) {
+                console.error("Synthesis failed:", err);
+                send({ type: 'error', error: "Scrape successful, but analysis failed: " + err.message });
                 res.end();
             }
         });

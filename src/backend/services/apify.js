@@ -726,17 +726,20 @@ export const scrapeFullSite = async (domain, token, maxCost = 5.00, onProgress =
             const status = data.status;
 
             // Calculate Stats
-            // distinctVisitedUrlCount often lags, so we rely on what we can get
-            const pages = data.stats?.usage?.requestCount || 0;
+            // `website-content-crawler` usually puts request counts in stats.requestsFinished
+            const requestsFinished = data.stats?.requestsFinished || data.stats?.crawledPages || 0;
+            const requestCount = data.stats?.usage?.requestCount || 0;
+            const pages = requestsFinished || requestCount;
+
             const duration = (Date.now() - new Date(data.startedAt).getTime()) / 1000; // seconds
 
-            // Cost Estimation (Apify generic pricing: ~$5 per 10k pages for cheerio, or compute usage)
-            // Ideally we use data.stats.usage.actorComputeUnits and multiply by price
-            // Standard Rate: $0.25 per CU? Or Rental? 
-            // For now, let's trust Apify's `usageTotalUsd` if available, or estimate
+            // Cost Estimation
             const cost = data.usageTotalUsd || 0;
 
-            stats = { pages, cost, duration, status };
+            // Status Message (e.g. "Crawled 296/549 pages")
+            const statusMessage = data.statusMessage || status;
+
+            stats = { pages, cost, duration, status: statusMessage }; // Send specific message as status
             onProgress(stats);
 
             // Safety Checks

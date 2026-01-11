@@ -451,4 +451,65 @@ export class ResearchService {
 
         return await scrapeFullSite(domain, token, maxCost, onProgress);
     }
+
+    /**
+     * Synthesize a structured company profile from raw full-site markdown.
+     * @param {string} rawMarkdown - The massive text dump from Apify.
+     * @param {string} companyName - Name of the company.
+     */
+    static async synthesizeFullScanReport(rawMarkdown, companyName) {
+        console.log(`🧠 Synthesizing report for ${companyName} (${rawMarkdown.length} chars)...`);
+
+        // Truncate if ABSOLUTELY massive (Gemini 1.5 Pro takes 2M tokens, approx 8MB text). 
+        // 400 pages @ 5kb = 2MB. Should be safe.
+        // Safety cap: 4MB
+        const limit = 4 * 1024 * 1024;
+        const input = rawMarkdown.length > limit ? rawMarkdown.slice(0, limit) + "\n...(TRUNCATED)..." : rawMarkdown;
+
+        const prompt = `
+        You are an expert investment analyst working for a **Canadian Residential Real Estate Developer**.
+        Your task is to analyze the scraped website content of a target company ("${companyName}") and create a concise, high-value **Company Profile**.
+
+        **Context**:
+        We are looking for potential partners, investors, or land acquisition opportunities. We need to know if this company is a relevant fit.
+
+        **Input Data**:
+        The following is the combined text content of their ENTIRE website:
+        ---
+        ${input}
+        ---
+
+        **Instructions**:
+        1. **Analyze** the data to understand their core business, investment focus, and portfolio.
+        2. **Ignore** generic boilerplate (privacy policies, cookie notices, navigation menus).
+        3. **Generate** a structured report in Markdown format.
+
+        **Required Output Format**:
+        
+        # [Company Name]
+        
+        ## Summary
+        (A 2-3 sentence overview of who they are and what they do. Mention if they are Canadian or have Canadian operations.)
+
+        ## Investment Strategy & Focus
+        (What asset classes do they target? Residential? Commercial? Industrial? Do they develop, lend, or invest?)
+
+        ## Scale & Geographic Focus
+        (Where do they operate? How large is their portfolio? Mention specific cities/regions.)
+
+        ## Portfolio Observations
+        (Key examples of their projects. Do they align with residential development?)
+
+        ## Key Team Members
+        (List top executives or relevant contacts found.)
+
+        ## Fit Analysis
+        (CRITICAL: Assess relevance to a Canadian Residential Developer. High/Medium/Low fit and why.)
+
+        IMPORTANT: Be concise. Use bullet points. Do NOT hallucinate. If data is missing, state "Not available".
+        `;
+
+        const result = await this.model.generateContent(prompt);
+        return result.response.text();
+    }
 }
