@@ -1243,13 +1243,16 @@ function Companies() {
 
                                                 <div className="space-y-1">
                                                     <h4 className="text-purple-400 font-bold text-lg animate-pulse">
-                                                        {fullScanStats.status === 'SYNTHESIZING_PROFILE' && '✨ Synthesizing Profile...'}
-                                                        {fullScanStats.status === 'SAVING_TO_DB' && '💾 Saving to Database...'}
-                                                        {fullScanStats.status === 'DOWNLOADING' && '⬇️ Downloading Results...'}
-                                                        {fullScanStats.status === 'LIMIT REACHED - SAVING DATA...' && '⚠️ Budget Hit - Processing...'}
-                                                        {!['SYNTHESIZING_PROFILE', 'SAVING_TO_DB', 'DOWNLOADING', 'LIMIT REACHED - SAVING DATA...'].includes(fullScanStats.status) && 'Running Full Site Scrape...'}
+                                                        {fullScanStats.status.includes('Analyzing Batch') ? '✨ ' + fullScanStats.status :
+                                                            fullScanStats.status === 'SYNTHESIZING_PROFILE' ? '✨ Synthesizing Profile...' :
+                                                                fullScanStats.status === 'SAVING_TO_DB' ? '💾 Saving to Database...' :
+                                                                    fullScanStats.status === 'DOWNLOADING' ? '⬇️ Downloading Results...' :
+                                                                        fullScanStats.status === 'LIMIT REACHED - SAVING DATA...' ? '⚠️ Budget Hit - Processing...' :
+                                                                            fullScanStats.status.startsWith('Scraping:') ? '🔍 ' + fullScanStats.status :
+                                                                                fullScanStats.status.startsWith('Scrape Finished') ? '✅ ' + fullScanStats.status :
+                                                                                    'Running Full Site Scrape...'}
                                                     </h4>
-                                                    <p className="text-xs text-gray-500 font-mono">{fullScanStats.status}</p>
+                                                    <p className="text-[10px] text-gray-500 font-mono uppercase tracking-tighter opacity-50">{fullScanStats.status}</p>
                                                 </div>
 
                                                 <div className="grid grid-cols-3 gap-4 max-w-sm mx-auto bg-white/5 rounded-xl p-4 border border-white/10">

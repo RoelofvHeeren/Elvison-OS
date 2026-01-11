@@ -466,7 +466,9 @@ export class ResearchService {
         const partialSummaries = [];
 
         for (let i = 0; i < batches.length; i++) {
-            onProgress(`Analyzing Batch ${i + 1}/${batches.length}...`);
+            const batchMsg = `Analyzing Batch ${i + 1}/${batches.length}...`;
+            onProgress(batchMsg);
+            console.log(`🧠 ${batchMsg}`);
             const chunk = batches[i];
 
             // Limit each batch's text to stay under Gemini token limits (~3MB per batch is very safe for 1.5/2.0)

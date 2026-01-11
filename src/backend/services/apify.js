@@ -736,10 +736,9 @@ export const scrapeFullSite = async (domain, token, maxCost = 5.00, onProgress =
             // Cost Estimation
             const cost = data.usageTotalUsd || 0;
 
-            // Status Message (e.g. "Crawled 296/549 pages")
-            const statusMessage = data.statusMessage || status;
-
-            stats = { pages, cost, duration, status: statusMessage }; // Send specific message as status
+            // Construction of a human-readable status for the UI
+            const statusMessage = `Scraping: ${pages} pages found ($${cost.toFixed(2)})`;
+            stats = { pages, cost, duration, status: statusMessage };
             onProgress(stats);
 
             // Safety Checks

@@ -30,10 +30,22 @@ export async function getExcludedDomains(userId) {
             [userId]
         );
 
+        // NEW: Also check companies table (Deep Research)
+        const profiled = await query(
+            `SELECT DISTINCT website as domain
+             FROM companies
+             WHERE user_id = $1
+             AND website IS NOT NULL`,
+            [userId]
+        );
+
+        const cleanDomain = (d) => d?.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0].toLowerCase().trim();
+
         const allDomains = [...new Set([
-            ...researched.rows.map(row => row.domain),
-            ...leads.rows.map(row => row.domain)
-        ])];
+            ...researched.rows.map(row => cleanDomain(row.domain)),
+            ...leads.rows.map(row => cleanDomain(row.domain)),
+            ...profiled.rows.map(row => cleanDomain(row.domain))
+        ])].filter(Boolean);
 
         return allDomains;
     } catch (err) {
@@ -65,9 +77,18 @@ export async function getExcludedCompanyNames(userId) {
             [userId]
         );
 
+        // NEW: Also check companies table (Deep Research)
+        const profiled = await query(
+            `SELECT DISTINCT company_name
+             FROM companies
+             WHERE user_id = $1`,
+            [userId]
+        );
+
         const allNames = [...new Set([
             ...researched.rows.map(row => row.company_name),
-            ...leads.rows.map(row => row.company_name)
+            ...leads.rows.map(row => row.company_name),
+            ...profiled.rows.map(row => row.company_name)
         ])];
 
         return allNames;

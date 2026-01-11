@@ -407,11 +407,22 @@ export class LeadScraperService {
                 ? item.organizationWebsite.replace(/^https?:\/\//, '').replace(/^www\./, '')
                 : '';
 
-            // Match to our qualified companies
-            const originalCompany = qualifiedCompanies.find(c =>
-                (c.domain && companyDomain && companyDomain.includes(c.domain)) ||
-                (scrapedCompany && c.company_name && c.company_name.toLowerCase().includes(scrapedCompany.toLowerCase()))
-            ) || {};
+            // NEW: Aggressive Name Matching & Mapping
+            // Check domain first (strongest indicator)
+            // Check normalized name prefix (catches variants)
+            const originalCompany = qualifiedCompanies.find(c => {
+                const qDomain = (c.domain || '').toLowerCase().trim();
+                const qNameNorm = (c.company_name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                const sNameNorm = (scrapedCompany || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+                const domainMatch = qDomain && companyDomain && (companyDomain === qDomain || companyDomain.endsWith('.' + qDomain) || qDomain.endsWith('.' + companyDomain));
+                const fuzzyNameMatch = qNameNorm && sNameNorm && (sNameNorm.startsWith(qNameNorm) || qNameNorm.startsWith(sNameNorm));
+
+                return domainMatch || fuzzyNameMatch;
+            }) || {};
+
+            // CRITICAL: Map back to original name to fix Logbook count mismatches
+            const finalCompanyName = originalCompany.company_name || scrapedCompany || 'Unknown';
 
             // --- TIERING LOGIC ---
             let tier = 3; // Default: Valid Company Match
@@ -465,7 +476,7 @@ export class LeadScraperService {
                 personal_email: item.personal_email || '',
                 title: item.position || '',
                 linkedin_url: item.linkedinUrl || '',
-                company_name: scrapedCompany || originalCompany.company_name || 'Unknown',
+                company_name: finalCompanyName,
                 company_domain: companyDomain || originalCompany.domain || '',
                 company_website: item.organizationWebsite || originalCompany.website || '',
                 company_profile: originalCompany.company_profile || '',

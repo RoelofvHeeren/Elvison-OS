@@ -1494,6 +1494,7 @@ app.post('/api/companies/research/full-scan', requireAuth, async (req, res) => {
             }
 
             console.log(`[Full Scan] Scrape done (${result.items?.length || 0} pages). Starting batched synthesis for ${url}...`);
+            send({ type: 'progress', stats: { ...result, status: `Scrape Finished: ${result.items?.length || 0} pages collected.` } });
 
             let finalReport = '';
             try {

@@ -21,7 +21,7 @@ console.log("✅ WORKFLOW.JS - DIRECT SDK MODE (No OpenAI)");
 const normalizeCompanyName = (name) => {
     if (!name) return "";
     return name.toLowerCase()
-        .replace(/\b(inc|incorporated|ltd|limited|llc|corp|corporation|group|global|holdings|capital|partners|management|advisors|associates|sa|ag)\b/gi, "")
+        .replace(/\b(inc|incorporated|ltd|limited|llc|corp|corporation|group|global|holdings|capital|partners|management|advisors|associates|sa|ag|solutions|services|trust|equity|development|properties|reit|real estate|private equity|investment counsel|division of|division|investments|commercial real estate|capital corporation|bay area|midwest|the team)\b/gi, "")
         .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, "")
         .replace(/\s{2,}/g, " ")
         .trim();
@@ -530,17 +530,23 @@ export const runAgentWorkflow = async (input, config) => {
                             .filter(c => {
                                 const name = c.company_name || c.companyName;
                                 const normName = normalizeCompanyName(name);
-                                const domain = (c.domain || '').toLowerCase();
+                                const domain = (c.domain || '').toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0].trim();
 
+                                // Aggressive Skip Check
                                 const isDuplicateName = scrapedNamesSet.has(name) ||
                                     excludedNames.includes(name) ||
-                                    normalizedExcludedNames.has(normName);
+                                    [...normalizedExcludedNames].some(ex => normName.startsWith(ex) || ex.startsWith(normName));
 
-                                const isDuplicateDomain = excludedDomains.includes(domain) ||
-                                    allCandidates.some(existing => (existing.domain || '').toLowerCase() === domain);
+                                const isDuplicateDomain = excludedDomains.some(exDomain => {
+                                    const d = exDomain.toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0].trim();
+                                    return d && domain && (d === domain || d.endsWith('.' + domain) || domain.endsWith('.' + d));
+                                }) || allCandidates.some(existing => {
+                                    const d = (existing.domain || '').toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0].trim();
+                                    return d && domain && (d === domain || d.endsWith('.' + domain) || domain.endsWith('.' + d));
+                                });
 
                                 if (isDuplicateName || isDuplicateDomain) {
-                                    // logStep('Discovery', `⏭️ Skipping potential duplicate: ${name} (${domain || 'no domain'})`);
+                                    // console.log(`[Discovery] ⏭️ Skipping variant: ${name} (${domain || 'no domain'})`);
                                     return false;
                                 }
                                 return true;
