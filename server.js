@@ -1544,7 +1544,9 @@ app.post('/api/companies/research/full-scan', requireAuth, async (req, res) => {
                     console.log(`[Deep Research] Updated profile for ${rows[0].company_name}`);
                 }
 
+                console.log('[Full Scan] Sending COMPLETE event to frontend...');
                 send({ type: 'complete', result: finalReport, stats: result });
+                console.log('[Full Scan] COMPLETE event sent. Closing SSE connection.');
                 res.end();
 
             } catch (err) {
@@ -1552,6 +1554,11 @@ app.post('/api/companies/research/full-scan', requireAuth, async (req, res) => {
                 send({ type: 'error', error: "Scrape successful, but analysis failed: " + err.message });
                 res.end();
             }
+        }).catch((err) => {
+            clearInterval(heartbeat);
+            console.error("[Full Scan] Promise chain error:", err);
+            send({ type: 'error', error: err.message });
+            res.end();
         });
 
     } catch (e) {
