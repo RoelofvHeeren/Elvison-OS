@@ -1552,6 +1552,12 @@ app.post('/api/companies/research/full-scan', requireAuth, async (req, res) => {
                 console.log('[Full Scan] Sending COMPLETE event to frontend...');
                 send({ type: 'complete', result: finalReport, stats: result });
                 console.log('[Full Scan] COMPLETE event sent. Closing SSE connection.');
+
+                // Ensure the event is flushed before closing
+                if (res.flush) res.flush();
+
+                // Small delay to ensure client receives the complete event
+                await new Promise(resolve => setTimeout(resolve, 100));
                 res.end();
 
             } catch (err) {
