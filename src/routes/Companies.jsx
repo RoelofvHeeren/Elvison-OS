@@ -322,17 +322,81 @@ function Companies() {
     const parseProfileIntoSections = (profileText) => {
         if (!profileText) return {};
 
-        // Define mappings for normalization
-        const mappings = {
-            'Executive Summary': 'Summary',
-            'General Overview': 'Summary',
-            'Company Overview': 'Summary',
-            'Deal History': 'Portfolio Observations',
-            'Recent Transactions': 'Portfolio Observations',
-            'Key People': 'Key Highlights',
-            'Management Team': 'Key Highlights',
-            'Fit Analysis': 'Fit Analysis',
-            'Strategic Fit': 'Fit Analysis'
+        // Standard section names (what we want to display)
+        const STANDARD_SECTIONS = [
+            'Summary',
+            'Investment Strategy',
+            'Scale & Geographic Focus',
+            'Portfolio Observations',
+            'Key Highlights',
+            'Fit Analysis'
+        ];
+
+        // Map various header formats to standard section names
+        const normalizeHeader = (header) => {
+            const lower = header.toLowerCase().trim();
+
+            // Summary variations
+            if (lower.includes('summary') || lower.includes('overview') || lower === 'about') {
+                return 'Summary';
+            }
+            // Investment Strategy variations
+            if (lower.includes('investment strategy') || lower.includes('investment approach') ||
+                lower.includes('strategy') && !lower.includes('fit')) {
+                return 'Investment Strategy';
+            }
+            // Scale & Geographic Focus variations
+            if (lower.includes('scale') || lower.includes('geographic') || lower.includes('geography') ||
+                lower.includes('aum') || lower.includes('assets under management') || lower.includes('locations')) {
+                return 'Scale & Geographic Focus';
+            }
+            // Portfolio Observations variations
+            if (lower.includes('portfolio') || lower.includes('deal history') || lower.includes('deals') ||
+                lower.includes('transactions') || lower.includes('investments') || lower.includes('holdings')) {
+                return 'Portfolio Observations';
+            }
+            // Key Highlights variations
+            if (lower.includes('highlight') || lower.includes('key people') || lower.includes('management') ||
+                lower.includes('team') || lower.includes('leadership') || lower.includes('key facts')) {
+                return 'Key Highlights';
+            }
+            // Fit Analysis variations
+            if (lower.includes('fit') || lower.includes('analysis') || lower.includes('alignment') ||
+                lower.includes('match') || lower.includes('score')) {
+                return 'Fit Analysis';
+            }
+
+            return null; // Not a recognized section header
+        };
+
+        // Check if a line is a section header
+        const isHeaderLine = (line) => {
+            const trimmed = line.trim();
+
+            // Must start with # or ** (markdown header format)
+            const isMarkdownHeader = /^#+\s/.test(trimmed) || /^\*\*[^*]+\*\*:?$/.test(trimmed);
+
+            // Or be a short line (< 50 chars) ending with colon
+            const isColonHeader = trimmed.length < 50 && trimmed.endsWith(':');
+
+            // Or be entirely uppercase/title case short text
+            const isShortTitle = trimmed.length < 40 &&
+                !trimmed.includes('.') &&
+                /^[A-Z][a-zA-Z&\s]+$/.test(trimmed);
+
+            return isMarkdownHeader || isColonHeader || isShortTitle;
+        };
+
+        // Extract header text from a line
+        const extractHeaderText = (line) => {
+            return line
+                .replace(/^#+\s*/, '')     // Remove # 
+                .replace(/^\*\*/, '')       // Remove start **
+                .replace(/\*\*$/, '')       // Remove end **
+                .replace(/\*\*:$/, '')      // Remove **: 
+                .replace(/:$/, '')          // Remove trailing :
+                .replace(/^\d+\.\s*/, '')   // Remove "1. "
+                .trim();
         };
 
         const sections = {};
@@ -340,50 +404,54 @@ function Companies() {
         let currentSection = 'Summary'; // Default start
         let currentContent = [];
 
-        // Keywords that likely start a section (including colon optional)
-        const sectionKeywords = [
-            'Summary', 'Investment Strategy', 'Scale & Geographic Focus',
-            'Portfolio Observations', 'Key Highlights', 'Fit Analysis',
-            'Executive Summary', 'General Overview', 'Deal History', 'Key People'
-        ];
-
         lines.forEach(line => {
             const trimmed = line.trim();
             if (!trimmed) return;
 
-            // Remove common header markers for checking
-            // Remove leading #, **, digits like "1. ", "1.", and trailing **, :
-            const cleanLine = trimmed
-                .replace(/^#+\s*/, '') // Remove # 
-                .replace(/^\*\*/, '') // Remove start **
-                .replace(/\*\*$/, '') // Remove end **
-                .replace(/^(\d+\.)\s*/, '') // Remove "1. "
-                .replace(/:$/, '') // Remove trailing :
-                .trim();
+            // Check if this line is a section header
+            if (isHeaderLine(trimmed)) {
+                const headerText = extractHeaderText(trimmed);
+                const standardSection = normalizeHeader(headerText);
 
-            // Check if cleanLine is exactly one of our keywords (case insensitive)
-            const keywordMatch = sectionKeywords.find(k =>
-                cleanLine.toLowerCase() === k.toLowerCase()
-            );
+                if (standardSection) {
+                    // Save previous section content
+                    if (currentSection && currentContent.length > 0) {
+                        const content = currentContent.join('\n').trim();
+                        if (content) {
+                            sections[currentSection] = (sections[currentSection] || '') +
+                                (sections[currentSection] ? '\n' : '') + content;
+                        }
+                    }
 
-            if (keywordMatch) {
-                // Save previous section
-                if (currentSection && currentContent.length > 0) {
-                    sections[currentSection] = (sections[currentSection] || '') + '\n' + currentContent.join('\n').trim();
+                    currentSection = standardSection;
+                    currentContent = [];
+                    return; // Don't add header line to content
                 }
-
-                // Map to standard name
-                let standardName = mappings[keywordMatch] || keywordMatch;
-                currentSection = standardName;
-                currentContent = [];
-            } else {
-                currentContent.push(line);
             }
+
+            // Add non-header lines to current section content
+            // Clean up markdown formatting from content
+            const cleanedLine = trimmed
+                .replace(/^\*\*/, '')
+                .replace(/\*\*$/, '')
+                .replace(/^-\s*\*\*/, '• **') // Convert markdown bullets
+                .replace(/^-\s+/, '• ');       // Convert dashes to bullets
+
+            currentContent.push(cleanedLine);
         });
 
         // Save last section
         if (currentSection && currentContent.length > 0) {
-            sections[currentSection] = (sections[currentSection] || '') + '\n' + currentContent.join('\n').trim();
+            const content = currentContent.join('\n').trim();
+            if (content) {
+                sections[currentSection] = (sections[currentSection] || '') +
+                    (sections[currentSection] ? '\n' : '') + content;
+            }
+        }
+
+        // If no sections were properly parsed, put everything in Summary
+        if (Object.keys(sections).length === 0 && profileText.trim()) {
+            sections['Summary'] = profileText.trim();
         }
 
         return sections;
