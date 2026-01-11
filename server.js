@@ -3961,6 +3961,6 @@ initDB().then(async () => {
 
     app.listen(port, () => {
         console.log(`Server running on port ${port}`)
-        console.log("✅ SERVER.JS - LOG PERSISTENCE V2 & CLAUDE FIX ACTIVE");
+        console.log("✅ SERVER.JS - GIT DEPLOYMENT ACTIVE - LOGGING ENABLED");
     })
 })
