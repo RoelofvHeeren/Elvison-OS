@@ -3921,6 +3921,23 @@ const __dirname = path.dirname(__filename)
 // Serve static files from dist
 app.use(express.static(path.join(__dirname, 'dist')))
 
+// DEBUG: List files in dist
+app.get('/debug/files', async (req, res) => {
+    const fs = await import('fs/promises');
+    try {
+        const distFiles = await fs.readdir(path.join(__dirname, 'dist'));
+        const assetsFiles = await fs.readdir(path.join(__dirname, 'dist', 'assets')).catch(() => []);
+        res.json({
+            dist: distFiles,
+            assets: assetsFiles,
+            cwd: process.cwd(),
+            dirname: __dirname
+        });
+    } catch (e) {
+        res.json({ error: e.message, stack: e.stack });
+    }
+});
+
 // SPA catchall - return index.html for all non-API routes
 app.get(/(.*)/, (req, res) => {
     res.sendFile(path.join(__dirname, 'dist', 'index.html'))
