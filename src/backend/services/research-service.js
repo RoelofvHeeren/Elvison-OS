@@ -431,4 +431,23 @@ export class ResearchService {
             return `Unable to generate profile: ${e.message}`;
         }
     }
+    /**
+     * Run a Full Site Scan using Apify
+     * @param {string} url - Website URL
+     * @param {string} token - Apify API Token
+     * @param {Function} onProgress - Callback for progress updates
+     */
+    static async runFullSiteScan(url, token, onProgress) {
+        // Import here to avoid circular dependencies if any
+        const { scrapeFullSite } = await import('./apify.js');
+
+        let domain = url;
+        try {
+            domain = new URL(url.startsWith('http') ? url : `https://${url}`).hostname;
+        } catch (e) {
+            // keep as is
+        }
+
+        return await scrapeFullSite(domain, token, 5.00, onProgress);
+    }
 }

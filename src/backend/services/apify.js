@@ -674,3 +674,110 @@ export const scrapeSpecificPages = async (urls, token = null, onProgress = () =>
 
     return results.join('\n\n');
 };
+// =============================================================================
+// NEW: Full Site Deep Scraper (Cost & Time Tracked)
+// =============================================================================
+
+/**
+ * Scrape a FULL website deeply, with cost and time tracking.
+ * @param {string} domain - The company domain.
+ * @param {string} token - Apify API Token.
+ * @param {number} maxCost - Max cost in USD before auto-aborting (e.g. 5.00).
+ * @param {Function} onProgress - Callback(stats) => void. Stats: { pages, cost, duration, status }
+ */
+export const scrapeFullSite = async (domain, token, maxCost = 5.00, onProgress = () => { }) => {
+    const ACTOR_ID = 'apify~website-content-crawler';
+    if (!domain) throw new Error("No domain provided.");
+
+    const url = domain.startsWith('http') ? domain : `https://${domain}`;
+    console.log(`[Apify] FULL SITE SCRAPE started for ${domain} (Limit: $${maxCost})`);
+
+    // Deep Crawl Configuration
+    const input = {
+        startUrls: [{ url }],
+        maxPagesPerCrawl: 9999, // Effectively unlimited (capped by cost/time)
+        maxCrawlingDepth: 20,
+        maxConcurrency: 5, // Moderate speed
+        saveHtml: false,
+        saveMarkdown: true, // We want markdown for LLM
+        removeElementsCssSelector: 'nav, footer, script, style, noscript, svg, .ad, .popup, .cookie-banner',
+        crawlerType: 'cheerio', // Cheapest & Fastest
+    };
+
+    try {
+        const runUrl = `${APIFY_API_URL}/acts/${ACTOR_ID}/runs?token=${token}`;
+        const startRes = await axios.post(runUrl, input);
+        const runId = startRes.data.data.id;
+
+        console.log(`[Apify] Run ID: ${runId}`);
+        onProgress({ status: 'STARTING', pages: 0, cost: 0, duration: 0 });
+
+        // Poll Loop
+        let isComplete = false;
+        let datasetId = null;
+        let stats = { pages: 0, cost: 0, duration: 0, status: 'RUNNING' };
+
+        while (!isComplete) {
+            await new Promise(r => setTimeout(r, 5000)); // Poll every 5s
+
+            // Check Run
+            const checkRes = await axios.get(`${APIFY_API_URL}/actor-runs/${runId}?token=${token}`);
+            const data = checkRes.data.data;
+            const status = data.status;
+
+            // Calculate Stats
+            // distinctVisitedUrlCount often lags, so we rely on what we can get
+            const pages = data.stats?.usage?.requestCount || 0;
+            const duration = (Date.now() - new Date(data.startedAt).getTime()) / 1000; // seconds
+
+            // Cost Estimation (Apify generic pricing: ~$5 per 10k pages for cheerio, or compute usage)
+            // Ideally we use data.stats.usage.actorComputeUnits and multiply by price
+            // Standard Rate: $0.25 per CU? Or Rental? 
+            // For now, let's trust Apify's `usageTotalUsd` if available, or estimate
+            const cost = data.usageTotalUsd || 0;
+
+            stats = { pages, cost, duration, status };
+            onProgress(stats);
+
+            // Safety Checks
+            if (cost > maxCost) {
+                console.warn(`[Apify] Cost limit exceeded ($${cost} > $${maxCost}). Aborting...`);
+                await abortApifyRun(token, runId);
+                onProgress({ ...stats, status: 'ABORTED_COST_LIMIT' });
+                return { ...stats, aborted: true };
+            }
+
+            if (['SUCCEEDED', 'ABORTED', 'TIMED-OUT', 'FAILED'].includes(status)) {
+                isComplete = true;
+                datasetId = data.defaultDatasetId;
+                if (status === 'SUCCEEDED') stats.status = 'COMPLETED';
+                else stats.status = status;
+            }
+        }
+
+        console.log(`[Apify] Run finished. Status: ${stats.status}. Downloading results...`);
+        onProgress({ ...stats, status: 'DOWNLOADING' });
+
+        // Fetch Results (Markdown)
+        const results = await getApifyResults(token, datasetId);
+
+        // Combine (or return raw if too huge)
+        // With 900+ pages, this will be massive. We should probably filter or summarize?
+        // For now, return the full text joined.
+
+        const combinedMarkdown = results.map(r => {
+            return `--- URL: ${r.url} ---\n${r.markdown || r.text || ''}\n`;
+        }).join('\n\n');
+
+        return {
+            ...stats,
+            content: combinedMarkdown,
+            datasetId,
+            aborted: false
+        };
+
+    } catch (e) {
+        console.error(`[Apify] Full Scrape Error:`, e);
+        throw e;
+    }
+};

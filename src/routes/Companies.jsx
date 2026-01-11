@@ -27,6 +27,7 @@ function Companies() {
     const [selectedLinks, setSelectedLinks] = useState([]);
     const [linkSearch, setLinkSearch] = useState('');
     const [researchProgress, setResearchProgress] = useState(''); // New progress state
+    const [fullScanStats, setFullScanStats] = useState(null); // { pages, cost, duration, status }
 
     // Add Company Modal State
     const [addCompanyModalOpen, setAddCompanyModalOpen] = useState(false);
@@ -1171,6 +1172,37 @@ function Companies() {
                                             </div>
                                         )}
 
+                                        {/* Step 2b: Full Site Scanning Progress */}
+                                        {researchStep === 'full-scanning' && fullScanStats && (
+                                            <div className="text-center py-12 space-y-6">
+                                                <div className="inline-block animate-spin rounded-full h-12 w-12 border-t-4 border-b-4 border-purple-500 mb-4"></div>
+
+                                                <div className="space-y-1">
+                                                    <h4 className="text-purple-400 font-bold text-lg animate-pulse">Running Full Site Scrape...</h4>
+                                                    <p className="text-xs text-gray-500 font-mono">{fullScanStats.status}</p>
+                                                </div>
+
+                                                <div className="grid grid-cols-3 gap-4 max-w-sm mx-auto bg-white/5 rounded-xl p-4 border border-white/10">
+                                                    <div>
+                                                        <p className="text-[10px] uppercase tracking-wider text-gray-400">Pages</p>
+                                                        <p className="text-xl font-bold text-white">{fullScanStats.pages}</p>
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-[10px] uppercase tracking-wider text-gray-400">Cost</p>
+                                                        <p className="text-xl font-bold text-white">${(fullScanStats.cost || 0).toFixed(4)}</p>
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-[10px] uppercase tracking-wider text-gray-400">Time</p>
+                                                        <p className="text-xl font-bold text-white">{Math.round(fullScanStats.duration || 0)}s</p>
+                                                    </div>
+                                                </div>
+
+                                                <p className="text-xs text-orange-400/80 max-w-xs mx-auto text-center">
+                                                    Note: Scrape will auto-abort if cost exceeds $5.00.
+                                                </p>
+                                            </div>
+                                        )}
+
                                         {/* Step 3: Select Links */}
                                         {researchStep === 'selecting' && (
                                             <>
@@ -1282,13 +1314,23 @@ function Companies() {
 
                             <div className="p-6 border-t border-white/5 flex gap-3 justify-end bg-[#0f0f0f] rounded-b-2xl">
                                 {(researchStep === 'input') && (
-                                    <button
-                                        onClick={handleScan}
-                                        disabled={!researchTarget?.website}
-                                        className="px-6 py-2 bg-teal-500 text-black font-bold rounded-lg hover:bg-teal-400 transition-colors"
-                                    >
-                                        Scan Website
-                                    </button>
+                                    <>
+                                        <button
+                                            onClick={handleScan}
+                                            disabled={!researchTarget?.website}
+                                            className="px-6 py-2 bg-teal-500/10 text-teal-400 border border-teal-500/50 hover:bg-teal-500/20 font-bold rounded-lg transition-colors text-sm uppercase tracking-wider"
+                                        >
+                                            Quick Scan
+                                        </button>
+                                        <button
+                                            onClick={handleFullScan}
+                                            disabled={!researchTarget?.website}
+                                            className="px-6 py-2 bg-purple-500 text-black font-bold rounded-lg hover:bg-purple-400 transition-colors flex items-center gap-2"
+                                        >
+                                            <Globe className="w-4 h-4" />
+                                            Scan Full Site
+                                        </button>
+                                    </>
                                 )}
 
                                 {(researchStep === 'selecting') && (

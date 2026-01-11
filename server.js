@@ -1428,6 +1428,57 @@ app.post('/api/companies/research', async (req, res) => {
     }
 });
 
+// Full Site Scan Endpoint (Streaming)
+app.post('/api/companies/research/full-scan', requireAuth, async (req, res) => {
+    // Set headers for SSE
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    const send = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+    const { url } = req.body;
+
+    if (!url) {
+        send({ type: 'error', error: 'No URL provided' });
+        res.end();
+        return;
+    }
+
+    try {
+        const { ResearchService } = await import('./src/backend/services/research-service.js');
+        const token = process.env.APIFY_API_TOKEN;
+
+        await ResearchService.runFullSiteScan(url, token, (stats) => {
+            // Map Apify stats to our frontend event format
+            if (stats.status === 'ABORTED_COST_LIMIT') {
+                send({ type: 'error', error: `Cost limit exceeded ($${stats.cost.toFixed(2)})` });
+            } else if (stats.status === 'FAILED') {
+                send({ type: 'error', error: 'Scrape failed internally.' });
+            } else {
+                send({
+                    type: 'progress',
+                    stats: {
+                        pages: stats.pages,
+                        cost: stats.cost,
+                        duration: stats.duration,
+                        status: stats.status
+                    }
+                });
+            }
+        }).then((result) => {
+            if (!result.aborted) {
+                send({ type: 'complete', result: result.content, stats: result });
+            }
+            res.end();
+        });
+
+    } catch (e) {
+        console.error("Full scan failed:", e);
+        send({ type: 'error', error: e.message });
+        res.end();
+    }
+});
+
 
 // Manually update company profile (from Deep Research Result)
 app.put('/api/companies/:companyName/profile', requireAuth, async (req, res) => {
@@ -2084,7 +2135,7 @@ app.get('/api/companies', requireAuth, async (req, res) => {
                             AND icp_id = $2
                         )
                     )
-                    AND (COALESCE(c.fit_score, 0) >= 4 OR c.cleanup_status = 'KEPT')
+                    AND (COALESCE(c.fit_score, 0) >= 6 OR c.cleanup_status = 'KEPT')
                 )`;
                 params.push(icpId);
             } else {
