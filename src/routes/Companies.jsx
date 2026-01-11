@@ -369,90 +369,103 @@ function Companies() {
             return null; // Not a recognized section header
         };
 
-        // Check if a line is a section header
-        const isHeaderLine = (line) => {
-            const trimmed = line.trim();
-
-            // Must start with # or ** (markdown header format)
-            const isMarkdownHeader = /^#+\s/.test(trimmed) || /^\*\*[^*]+\*\*:?$/.test(trimmed);
-
-            // Or be a short line (< 50 chars) ending with colon
-            const isColonHeader = trimmed.length < 50 && trimmed.endsWith(':');
-
-            // Or be entirely uppercase/title case short text
-            const isShortTitle = trimmed.length < 40 &&
-                !trimmed.includes('.') &&
-                /^[A-Z][a-zA-Z&\s]+$/.test(trimmed);
-
-            return isMarkdownHeader || isColonHeader || isShortTitle;
-        };
-
-        // Extract header text from a line
-        const extractHeaderText = (line) => {
-            return line
-                .replace(/^#+\s*/, '')     // Remove # 
-                .replace(/^\*\*/, '')       // Remove start **
-                .replace(/\*\*$/, '')       // Remove end **
-                .replace(/\*\*:$/, '')      // Remove **: 
-                .replace(/:$/, '')          // Remove trailing :
-                .replace(/^\d+\.\s*/, '')   // Remove "1. "
-                .trim();
-        };
-
         const sections = {};
-        const lines = profileText.split('\n');
-        let currentSection = 'Summary'; // Default start
-        let currentContent = [];
 
-        lines.forEach(line => {
-            const trimmed = line.trim();
-            if (!trimmed) return;
+        // 1. Clean the text (normalize newlines, removing markdown artifacts that aren't headers)
+        let cleanText = profileText.replace(/\r\n/g, '\n');
 
-            // Check if this line is a section header
-            if (isHeaderLine(trimmed)) {
-                const headerText = extractHeaderText(trimmed);
-                const standardSection = normalizeHeader(headerText);
+        // 2. Identify all possible section start positions
+        const foundSections = [];
 
-                if (standardSection) {
-                    // Save previous section content
-                    if (currentSection && currentContent.length > 0) {
-                        const content = currentContent.join('\n').trim();
-                        if (content) {
-                            sections[currentSection] = (sections[currentSection] || '') +
-                                (sections[currentSection] ? '\n' : '') + content;
-                        }
-                    }
+        // Iterate through standard sections to find them in text
+        // We look for patterns like:
+        // **Summary**:
+        // # Summary
+        // Summary:
+        // And variations defined in normalizeHeader
 
-                    currentSection = standardSection;
-                    currentContent = [];
-                    return; // Don't add header line to content
+        const KEYWORDS = [
+            'Summary', 'Executive Summary', 'General Overview', 'Company Overview', 'Overview',
+            'Investment Strategy', 'Investment Approach', 'Strategy',
+            'Scale & Geographic Focus', 'Scale', 'Geography', 'Geographic Focus', 'AUM', 'Scale & Geography',
+            'Portfolio Observations', 'Portfolio', 'Deal History', 'Recent Transactions', 'Investments', 'Portfolio Highlights',
+            'Key Highlights', 'Highlights', 'Key People', 'Management Team', 'Team',
+            'Fit Analysis', 'Strategic Fit', 'Fit Score', 'Fit'
+        ];
+
+        // Create a giant regex to find any of these keywords that look like headers
+        // Matches:
+        // 1. Start of line or following newline: (^|\n)
+        // 2. Optional markdown bullets or hashes: [\s\-*#]*
+        // 3. The Keyword (case insensitive)
+        // 4. Header ending: \*\*|:| \- (marker that it's a header)
+
+        const headerRegex = new RegExp(
+            `(^|\\n|[\\s.*#])(${KEYWORDS.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})(\\*{2}|:)(\\s|$)`,
+            'gi'
+        );
+
+        let match;
+        while ((match = headerRegex.exec(cleanText)) !== null) {
+            const fullMatch = match[0];
+            const keyword = match[2];
+            const standardName = normalizeHeader(keyword);
+
+            if (standardName) {
+                foundSections.push({
+                    name: standardName,
+                    index: match.index,
+                    length: fullMatch.length
+                });
+            }
+        }
+
+        // Sort by position
+        foundSections.sort((a, b) => a.index - b.index);
+
+        // 3. Extract content between sections
+        if (foundSections.length === 0) {
+            // No headers found? 
+            // Check if it's the "inline" style: Summary**: Text... Investment Strategy**: Text
+            // The regex above might have missed strict formatting. Let's try a looser check for "Keyword**:"
+
+            const looserRegex = new RegExp(`(${KEYWORDS.join('|')})\\*\\*:`, 'gi');
+            while ((match = looserRegex.exec(cleanText)) !== null) {
+                const standardName = normalizeHeader(match[1]);
+                if (standardName) {
+                    foundSections.push({
+                        name: standardName,
+                        index: match.index,
+                        length: match[0].length
+                    });
                 }
             }
-
-            // Add non-header lines to current section content
-            // Clean up markdown formatting from content
-            const cleanedLine = trimmed
-                .replace(/^\*\*/, '')
-                .replace(/\*\*$/, '')
-                .replace(/^-\s*\*\*/, '• **') // Convert markdown bullets
-                .replace(/^-\s+/, '• ');       // Convert dashes to bullets
-
-            currentContent.push(cleanedLine);
-        });
-
-        // Save last section
-        if (currentSection && currentContent.length > 0) {
-            const content = currentContent.join('\n').trim();
-            if (content) {
-                sections[currentSection] = (sections[currentSection] || '') +
-                    (sections[currentSection] ? '\n' : '') + content;
-            }
+            foundSections.sort((a, b) => a.index - b.index);
         }
 
-        // If no sections were properly parsed, put everything in Summary
-        if (Object.keys(sections).length === 0 && profileText.trim()) {
-            sections['Summary'] = profileText.trim();
+        if (foundSections.length > 0) {
+            foundSections.forEach((section, i) => {
+                const nextSection = foundSections[i + 1];
+                const start = section.index + section.length;
+                const end = nextSection ? nextSection.index : cleanText.length;
+
+                let content = cleanText.substring(start, end).trim();
+
+                // Clean up any leading/trailing markdown that might have been captured
+                content = content.replace(/^[:\-\s]+/, '').replace(/[:\-\s]+$/, '');
+
+                if (sections[section.name]) {
+                    sections[section.name] += '\n\n' + content;
+                } else {
+                    sections[section.name] = content;
+                }
+            });
+        } else {
+            // Fallback: If absolutely no headers found, put it all in Summary
+            sections['Summary'] = cleanText.trim();
         }
+
+
 
         return sections;
     }
