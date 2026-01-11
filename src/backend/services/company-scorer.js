@@ -18,6 +18,22 @@ export class CompanyScorer {
             throw new Error(`Unsupported ICP type: ${icpName}. Only 'Family Offices' and 'Investment Firms/Funds' are supported.`);
         }
 
+        // Fetch ICP config to check for geography requirements
+        let requiresCanada = false;
+        try {
+            const icpRes = await query(`SELECT config FROM icps WHERE id = $1`, [icpId]);
+            if (icpRes.rows.length > 0 && icpRes.rows[0].config) {
+                const cfg = icpRes.rows[0].config;
+                const icpDescription = cfg.surveys?.company_finder?.icp_description || cfg.icp_description || '';
+                requiresCanada = icpDescription.toLowerCase().includes('canada') || icpDescription.toLowerCase().includes('canadian');
+                if (requiresCanada) {
+                    console.log(`🇨🇦 Canada geography requirement detected for ICP cleanup`);
+                }
+            }
+        } catch (e) {
+            console.warn('Failed to fetch ICP config for geography check:', e.message);
+        }
+
         // Get unique companies from leads for this ICP (with their profile data)
         const { rows: companies } = await query(`
             SELECT DISTINCT ON (l.company_name) 
@@ -50,7 +66,7 @@ export class CompanyScorer {
         // Helper to process a single company
         const processCompany = async (company) => {
             try {
-                const scoreData = await this.rescoreLead(company, typeStr);
+                const scoreData = await this.rescoreLead(company, typeStr, requiresCanada);
 
                 if (scoreData) {
                     if (scoreData.fit_score < SCORE_THRESHOLD) {
@@ -119,10 +135,18 @@ export class CompanyScorer {
         return results;
     }
 
-    static async rescoreLead(lead, type) {
+    static async rescoreLead(lead, type, requiresCanada = false) {
         const companyName = lead.company_name;
         const profile = lead.custom_data?.company_profile || lead.custom_data?.description || '';
         const website = lead.custom_data?.company_website || lead.custom_data?.website || '';
+
+        // Geography instruction to inject if Canada is required
+        const canadaInstruction = requiresCanada ? `
+**CRITICAL GEOGRAPHY CHECK (CANADA):**
+- The user STRICTLY requires Canadian companies or firms with explicit Canadian presence.
+- Non-Canadian firms without a Canadian office or Canadian investment strategy -> DISQUALIFY (Score 1-3).
+- Global firms are ONLY permitted if they mention Toronto, Vancouver, Montreal, or "investing in Canada".
+` : '';
 
         let prompt = '';
         if (type === 'FAMILY_OFFICE') {
@@ -161,7 +185,7 @@ OUTPUT JSON:
     "investor_type": "string (SFO/MFO/Wealth Manager/Broker/Other)"
 }`;
         } else {
-            // Investment Firm Prompt
+            // Investment Firm Prompt - NOW WITH OPTIONAL CANADA CHECK
             prompt = `You are an expert investment analyst evaluating if a company is a **Real Estate Investment Firm** or **Institutional Investor**.
 
 COMPANY: ${companyName}
@@ -174,10 +198,12 @@ EVALUATION RULES:
 3. **Multi-Strategy**: If a firm invests in Tech/Healthcare BUT also Real Estate/Infrastructure, **KEEP THEM** (Score 7-8).
 4. **Holdings**: "Group" or "Holdings" companies that invest are VALID.
 
+${canadaInstruction}
+
 SCORING GUIDELINES:
-- **8-10 (Perfect Fit)**: Dedicated REPE, REIT, or large institutional investor.
+- **8-10 (Perfect Fit)**: Dedicated REPE, REIT, or large institutional investor${requiresCanada ? ' + Canadian presence' : ''}.
 - **6-7 (Likely Fit / Keep)**: Generalist PE firm, Holdings company with RE assets. **WHEN IN DOUBT, SCORE 6 TO KEEP.**
-- **1-5 (Disqualify)**: Pure Service Providers (Law/Tax), Pure Brokers (Sales only), Lenders (Debt only), Tenants.
+- **1-5 (Disqualify)**: Pure Service Providers (Law/Tax), Pure Brokers (Sales only), Lenders (Debt only), Tenants${requiresCanada ? ', Non-Canadian without Canadian strategy' : ''}.
 
 OUTPUT JSON:
 {

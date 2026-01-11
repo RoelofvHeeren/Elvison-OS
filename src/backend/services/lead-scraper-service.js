@@ -315,11 +315,15 @@ export class LeadScraperService {
                     return;
                 }
 
-                // NEW: STRICT WHITELIST ENFORCEMENT
+                // NEW: STRICT WHITELIST ENFORCEMENT (with word-boundary regex)
                 // If specific job titles are requested, the lead MUST match at least one.
                 if (filters.job_titles && Array.isArray(filters.job_titles) && filters.job_titles.length > 0) {
                     const normalizedWhitelist = filters.job_titles.map(t => t.toLowerCase().trim());
-                    const matchesWhitelist = normalizedWhitelist.some(allowed => title.includes(allowed));
+                    // Use word-boundary regex to prevent "Principal AI Engineer" matching "principal"
+                    const matchesWhitelist = normalizedWhitelist.some(allowed => {
+                        const regex = new RegExp(`\\b${allowed}\\b`, 'i');
+                        return regex.test(title);
+                    });
 
                     if (!matchesWhitelist) {
                         // console.log(`[ApolloDomain] 🗑️ Disqualified (Title Mismatch): ${title}`);
@@ -346,10 +350,11 @@ export class LeadScraperService {
                                 isExcluded = false;
                             }
 
-                            // EXCEPTION: Protect "Founder" roles (Co-Founder, Founding Partner) from all exclusions
-                            // A Co-Founder of Sales/Marketing is still a decision-maker worth reaching out to
-                            if (isExcluded && (title.includes('founder') || title.includes('founding'))) {
-                                console.log(`[ApolloDomain] Protected "Founder" role from exclusion "${kw}": ${title}`);
+                            // EXCEPTION: Protect GENUINE Founder roles (must START with founder/co-founder)
+                            // "Founding Engineer" is NOT protected, but "Co-Founder" and "Founder & CEO" are.
+                            const isGenuineFounder = /^(co-?founder|founder)/i.test(title);
+                            if (isExcluded && isGenuineFounder) {
+                                console.log(`[ApolloDomain] Protected genuine Founder role from exclusion "${kw}": ${title}`);
                                 isExcluded = false;
                             }
 

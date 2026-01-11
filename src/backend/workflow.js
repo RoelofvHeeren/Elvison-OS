@@ -379,12 +379,23 @@ export const runAgentWorkflow = async (input, config) => {
                 searchTermIndex++;
                 termsUsedThisRun.push(currentTerm);
 
-                logStep('Company Finder', `🔍 Search Term ${searchTermIndex}/${Math.min(searchTermQueue.length, MAX_SEARCH_TERMS)}: "${currentTerm}"`);
+                // NEGATIVE KEYWORDS FOR FAMILY OFFICE RUNS
+                // Reduces noise at source by excluding common false positives
+                const isFamilyOfficeRun = (companyContext.icpDescription || "").toLowerCase().includes("family office") ||
+                    (companyContext.name || "").toLowerCase().includes("family office");
+
+                const negativeKeywords = isFamilyOfficeRun
+                    ? ' -"wealth manager" -"financial advisor" -"wealth advisory" -"financial planning"'
+                    : '';
+
+                const enhancedSearchTerm = currentTerm + negativeKeywords;
+
+                logStep('Company Finder', `🔍 Search Term ${searchTermIndex}/${Math.min(searchTermQueue.length, MAX_SEARCH_TERMS)}: "${currentTerm}"${negativeKeywords ? ' (with exclusions)' : ''}`);
 
                 // 1. Run Apify Google Search (up to 100 results per term)
                 let searchResults = [];
                 try {
-                    const { results, count } = await runGoogleSearch(currentTerm, {
+                    const { results, count } = await runGoogleSearch(enhancedSearchTerm, {
                         maxPagesPerQuery: 10, // 10 pages × 10 results = 100 max
                         countryCode: 'ca', // Default to Canada
                         checkCancellation
@@ -651,6 +662,13 @@ export const runAgentWorkflow = async (input, config) => {
                     const isFamilyOfficeSearch = (companyContext.icpDescription || "").toLowerCase().includes("family office") ||
                         (companyContext.name || "").toLowerCase().includes("family office");
 
+                    const isInvestmentFirmSearch = (companyContext.icpDescription || "").toLowerCase().includes("investment firm") ||
+                        (companyContext.icpDescription || "").toLowerCase().includes("investment fund") ||
+                        (companyContext.name || "").toLowerCase().includes("investment");
+
+                    // PARAMETERIZED SCORE THRESHOLD PER ICP TYPE
+                    const scoreThreshold = isFamilyOfficeSearch ? 8 : 6;
+
                     let strictnessInstructions = "";
                     if (isFamilyOfficeSearch) {
                         strictnessInstructions = `
@@ -664,10 +682,27 @@ export const runAgentWorkflow = async (input, config) => {
                         - A General Private Equity fund (unless specific to a family or HNWIs).
                         - A "Multi-Client Family Office" that just provides services (tax, legal, lifestyle) without a direct investment fund.
                         
-                        ONLY SCORE 7+ IF:
+                        ONLY SCORE 8+ IF:
                         - They explicitly identify as a Family Office.
                         - OR they use language like "proprietary capital", "family capital", "private investment vehicle", "evergreen capital".
                         - OR they allow direct deals (not just allocating to funds).`;
+                    } else if (isInvestmentFirmSearch) {
+                        strictnessInstructions = `
+                        CRITICAL INVESTMENT FIRM VALIDATION:
+                        The user is looking for REAL ESTATE INVESTMENT FIRMS, PRIVATE EQUITY FIRMS, or INSTITUTIONAL INVESTORS that INVEST in Real Estate.
+                        
+                        YOU MUST DISQUALIFY (Score 1-3) IF THEY ARE:
+                        - A Pure Broker / Sales-Only Firm (they don't invest, they just transact).
+                        - A Service Provider (Law, Tax, Consulting, HR, Marketing).
+                        - A Lender (Debt-only, no equity positions).
+                        - A Tenant / Occupier (they lease space, don't invest).
+                        - A Construction / Development Services Company (Builder, Contractor, Architect).
+                        
+                        SCORE 6+ IF:
+                        - They are a Private Equity / Venture firm with Real Estate as a vertical.
+                        - They are a REIT, Asset Manager, or Pension Fund with RE holdings.
+                        - They are a "Holdings" or "Group" company with investment mandates.
+                        - They mention "Acquisitions", "Capital Deployment", "AUM", "Portfolio Companies", "Equity Partner".`;
                     }
 
                     // NEW: GEOGRAPHY CHECK
@@ -756,16 +791,16 @@ export const runAgentWorkflow = async (input, config) => {
                         schema: CompanyProfilerSchema
                     }).results || [];
 
-                    // Filter by score
+                    // Filter by score (using parameterized threshold)
                     for (const company of analyzed) {
-                        const isHighQuality = (company.match_score || 0) >= 7;
+                        const isHighQuality = (company.match_score || 0) >= scoreThreshold;
                         if (isHighQuality) {
                             masterQualifiedList.push(company);
                             scrapedNamesSet.add(company.company_name);
-                            logStep('Company Profiler', `✅ Qualified: ${company.company_name} (Score: ${company.match_score}/10)`);
+                            logStep('Company Profiler', `✅ Qualified: ${company.company_name} (Score: ${company.match_score}/10, Threshold: ${scoreThreshold})`);
                         } else {
                             totalDisqualified++;
-                            logStep('Company Profiler', `🗑️ Dropped: ${company.company_name} (Score: ${company.match_score}/10)`);
+                            logStep('Company Profiler', `🗑️ Dropped: ${company.company_name} (Score: ${company.match_score}/10, Threshold: ${scoreThreshold})`);
                         }
                     }
 
