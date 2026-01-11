@@ -15,7 +15,7 @@ export class OutreachService {
     async generateOutreach(leads, agentConfig, logCallback = () => { }) {
         if (!leads || leads.length === 0) return [];
 
-        const BATCH_SIZE = 10;
+        const BATCH_SIZE = 1;
         const chunks = [];
         for (let i = 0; i < leads.length; i += BATCH_SIZE) {
             chunks.push(leads.slice(i, i + BATCH_SIZE));

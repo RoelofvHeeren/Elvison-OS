@@ -980,10 +980,10 @@ function Companies() {
                                                     </button>
                                                 </div>
 
-                                                {company.profile ? (
+                                                {company.market_intelligence || company.profile ? (
                                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                                                         {(() => {
-                                                            const sections = parseProfileIntoSections(company.profile);
+                                                            const sections = parseProfileIntoSections(company.market_intelligence || company.profile);
                                                             const DISPLAY_ORDER = [
                                                                 'Summary',
                                                                 'Investment Strategy',

@@ -112,12 +112,12 @@ async function repairProfiles() {
                 const markdown = await ResearchService.runFullSiteScan(
                     company.website,
                     token,
-                    0.20, // $0.20 Hard Limit per run (stricter safety)
+                    0.25, // Increased budget slightly for speed overhead
                     progressCallback,
                     {
-                        maxPages: 20,
-                        maxDepth: 3, // Shallow crawl to prevent rabbit holes
-                        maxConcurrency: 5, // Low concurrency to strictly respect page limit
+                        maxPages: 15, // Reduced page limit for budget
+                        maxDepth: 3, // Shallow crawl 
+                        maxConcurrency: 15, // Increased speed (was 5)
                         globs: companyGlobs
                     }
                 );
