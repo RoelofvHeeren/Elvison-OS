@@ -2863,93 +2863,79 @@ app.post('/api/icps/:id/search-terms/generate', requireAuth, async (req, res) =>
 
 
 // Trigger Analysis Run (SSE Streaming)
+// Trigger Analysis Run (SSE Streaming)
 app.post('/api/agents/run', requireAuth, async (req, res) => {
     let { prompt, vectorStoreId, agentConfigs, mode, filters, idempotencyKey, icpId, manualDomains } = req.body
     console.log(`Starting live workflow(Mode: ${mode || 'default'}) with prompt: `, prompt)
     if (idempotencyKey) console.log(`🔑 Idempotency Key received: ${idempotencyKey} `)
     if (icpId) console.log(`📋 Running for ICP ID: ${icpId} `)
-    if (manualDomains) console.log(`📋 Manual Domains provided: ${manualDomains.length} domains`)
 
-    // NEW: If icpId is provided, fetch latest optimized config from DB
-    if (icpId) {
-        try {
-            const { rows } = await query('SELECT agent_config FROM icps WHERE id = $1', [icpId]);
-            if (rows.length > 0) {
-                const storedConfig = rows[0].agent_config || {};
-                // Merge stored config if it has optimizations
-                // Priority: Stored Config (Optimized) > Frontend Config (User Input) > Defaults
-                if (storedConfig.optimized_instructions) {
-                    // We need to decide where to inject this. 
-                    // workflow.js uses agentConfigs['company_finder'] etc.
-                    // Let's assume we overwrite the 'company_finder' instructions or pass a global override.
-
-                    // For now, let's inject it into a specific key if defined, or just log it.
-                    // workflow.js looks for agentPrompts from DB.
-                    // Let's pass it as a special override in agentConfigs.
-                    if (!agentConfigs) agentConfigs = {};
-                    agentConfigs['company_finder'] = {
-                        ...agentConfigs['company_finder'],
-                        instructions: storedConfig.optimized_instructions
-                    };
-                    // Apply exclusions too
-                    if (storedConfig.exclusions && Array.isArray(storedConfig.exclusions)) {
-                        // We might need to pass this to filters?
-                        // filters = { ...filters, exclusions: storedConfig.exclusions };
-                        // Or append to prompt?
-                        prompt += `\n\n[OPTIMIZATION EXCLUSIONS]: \n${storedConfig.exclusions.join(', ')} `;
-                    }
-                    console.log("✅ Applied optimized instructions and exclusions from DB.");
-                }
-            }
-        } catch (e) {
-            console.warn("Failed to load ICP config", e);
-        }
-    }
-
-    // 1. Setup SSE Headers
+    // 1. Setup SSE Headers IMMEDIATE (Fixes latency)
     res.writeHead(200, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
         'Connection': 'keep-alive'
     })
+    res.write(`: connecting\n\n`) // Flush buffer immediately
 
-    // 2. Create Run Record
-    let runId = null
+    let runId = null;
     try {
-        // Determine Run Name & Number
+        // 2. Parallelize Setup Queries (Fixes latency)
+        const queries = [
+            // Q1: Get ICP Data if needed
+            icpId ? query('SELECT name, agent_config FROM icps WHERE id = $1', [icpId]) : Promise.resolve({ rows: [] }),
+            // Q2: Get Max Run Number
+            icpId
+                ? query('SELECT MAX(run_number) as max_num FROM workflow_runs WHERE icp_id = $1', [icpId])
+                : query('SELECT MAX(run_number) as max_num FROM workflow_runs WHERE user_id = $1 AND icp_id IS NULL', [req.userId])
+        ];
+
+        const [icpRes, countRes] = await Promise.all(queries);
+
+        // 3. Process ICP Config & Run Meta
         let runName = `Run ${new Date().toLocaleTimeString()} `; // Fallback
-        let runNumber = 1;
+        let runNumber = (countRes.rows[0]?.max_num || 0) + 1;
 
-        if (icpId) {
-            // Get ICP Name
-            const icpRes = await query('SELECT name FROM icps WHERE id = $1', [icpId]);
-            const icpName = icpRes.rows[0]?.name || 'Unknown ICP';
+        if (icpId && icpRes.rows.length > 0) {
+            const icpData = icpRes.rows[0];
+            runName = `${icpData.name || 'Unknown ICP'} #${runNumber} `;
 
-            // Get Max Run Number for this ICP
-            const countRes = await query('SELECT MAX(run_number) as max_num FROM workflow_runs WHERE icp_id = $1', [icpId]);
-            runNumber = (countRes.rows[0]?.max_num || 0) + 1;
-            runName = `${icpName} #${runNumber} `;
-        } else {
-            // Generic runs
-            const countRes = await query('SELECT MAX(run_number) as max_num FROM workflow_runs WHERE user_id = $1 AND icp_id IS NULL', [req.userId]);
-            runNumber = (countRes.rows[0]?.max_num || 0) + 1;
+            // Apply ICP Optimizations
+            const storedConfig = icpData.agent_config || {};
+            if (storedConfig.optimized_instructions) {
+                if (!agentConfigs) agentConfigs = {};
+                agentConfigs['company_finder'] = {
+                    ...agentConfigs['company_finder'],
+                    instructions: storedConfig.optimized_instructions
+                };
+                if (storedConfig.exclusions && Array.isArray(storedConfig.exclusions)) {
+                    prompt += `\n\n[OPTIMIZATION EXCLUSIONS]: \n${storedConfig.exclusions.join(', ')} `;
+                }
+                console.log("✅ Applied optimized instructions and exclusions from DB.");
+            }
+        } else if (!icpId) {
             runName = `Manual Run #${runNumber} `;
         }
 
+        // 4. Create Run Record
         const { rows } = await query(
             `INSERT INTO workflow_runs(agent_id, status, started_at, metadata, user_id, icp_id, run_name, run_number)
-VALUES('main_workflow', 'RUNNING', NOW(), $1, $2, $3, $4, $5) RETURNING id`,
+             VALUES('main_workflow', 'RUNNING', NOW(), $1, $2, $3, $4, $5) RETURNING id`,
             [JSON.stringify({ prompt, vectorStoreId, mode: mode || 'default', idempotencyKey }), req.userId, icpId, runName, runNumber]
         )
         runId = rows[0].id
-        // Send initial connection confirmation
+
+        // 5. Send Run ID (Client can now verify run started)
         res.write(`event: run_id\ndata: ${JSON.stringify({ runId })} \n\n`)
         res.write(`event: log\ndata: { "step": "System", "detail": "Workflow initialized. Run ID: ${runId}", "timestamp": "${new Date().toISOString()}" } \n\n`)
+
     } catch (err) {
         console.error('Failed to init run:', err)
-        res.write(`event: error\ndata: { "message": "Database initialization failed" } \n\n`)
+        res.write(`event: error\ndata: { "message": "Database initialization failed: ${err.message}" } \n\n`)
         return res.end()
     }
+
+    // 6. Execute Workflow... (rest of the function continues below)
 
     // 3. Execute Workflow with Streaming Listeners
     const localExecutionLogs = []; // Capture logs for persistence
