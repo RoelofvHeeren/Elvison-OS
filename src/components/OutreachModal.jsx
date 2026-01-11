@@ -48,14 +48,26 @@ export default function OutreachModal({ isOpen, onClose, selectedLeadsCount, sel
 
         const load = async () => {
             setLoadingAimfox(true)
+            setError('')
             try {
                 const data = await fetchAimfoxCampaigns()
                 console.log('🔍 Aimfox API Response:', data)
+                console.log('🔍 Response type:', typeof data)
+
+                // Check if we got HTML instead of JSON (auth redirect)
+                if (typeof data === 'string' || !data.campaigns) {
+                    console.error('❌ Invalid response - got HTML or missing campaigns array')
+                    setError('Authentication error. Please refresh the page and try again.')
+                    setAimfoxCampaigns([])
+                    return
+                }
+
                 console.log('🔍 Campaigns array:', data.campaigns)
                 console.log('🔍 Campaigns length:', data.campaigns?.length)
                 setAimfoxCampaigns(data.campaigns || [])
             } catch (err) {
                 console.error('Failed to load Aimfox campaigns:', err)
+                setError('Failed to load campaigns. Please try again.')
             } finally {
                 setLoadingAimfox(false)
             }
