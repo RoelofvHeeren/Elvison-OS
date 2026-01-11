@@ -1531,7 +1531,13 @@ app.post('/api/companies/research/full-scan', requireAuth, async (req, res) => {
                 const { rows } = await pool.query(
                     `UPDATE companies 
                      SET market_intelligence = $1, 
-                         last_researched_at = NOW()
+                         last_researched_at = NOW(),
+                         fit_score = CASE 
+                            WHEN $1 ILIKE '%High fit%' OR $1 ILIKE '%Excellent fit%' THEN 85 
+                            WHEN $1 ILIKE '%Medium fit%' OR $1 ILIKE '%Good fit%' THEN 65 
+                            WHEN $1 ILIKE '%Low fit%' OR $1 ILIKE '%Poor fit%' THEN 40
+                            ELSE fit_score 
+                         END
                      WHERE website ILIKE $2 OR website ILIKE $3
                      RETURNING *`,
                     [finalReport, `%${url}%`, `%${new URL(url.startsWith('http') ? url : 'https://' + url).hostname}%`]
