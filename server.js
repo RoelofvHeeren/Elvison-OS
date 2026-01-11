@@ -1533,9 +1533,9 @@ app.post('/api/companies/research/full-scan', requireAuth, async (req, res) => {
                      SET market_intelligence = $1, 
                          last_researched_at = NOW(),
                          fit_score = CASE 
-                            WHEN $1 ILIKE '%High fit%' OR $1 ILIKE '%Excellent fit%' THEN 8.5 
-                            WHEN $1 ILIKE '%Medium fit%' OR $1 ILIKE '%Good fit%' THEN 6.5 
-                            WHEN $1 ILIKE '%Low fit%' OR $1 ILIKE '%Poor fit%' THEN 4.0
+                            WHEN $1 ILIKE '%High fit%' OR $1 ILIKE '%Excellent fit%' THEN 9 
+                            WHEN $1 ILIKE '%Medium fit%' OR $1 ILIKE '%Good fit%' THEN 7 
+                            WHEN $1 ILIKE '%Low fit%' OR $1 ILIKE '%Poor fit%' THEN 4
                             ELSE fit_score 
                          END
                      WHERE website ILIKE $2 OR website ILIKE $3
