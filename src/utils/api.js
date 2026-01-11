@@ -143,6 +143,8 @@ export const fetchHealth = async () => {
 // --- INTEGRATIONS (Aimfox / GoHighLevel) ---
 
 export const fetchAimfoxCampaigns = async () => {
+  console.log('🔍 Fetching from baseURL:', client.defaults.baseURL)
+  console.log('🔍 Full URL will be:', client.defaults.baseURL + '/api/integrations/aimfox/campaigns')
   const { data } = await client.get('/api/integrations/aimfox/campaigns')
   return data
 }
