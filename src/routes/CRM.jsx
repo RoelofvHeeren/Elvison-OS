@@ -13,7 +13,7 @@ function CRM() {
   const [error, setError] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
-  const [filters, setFilters] = useState({ date: '', company: '', icpId: '' })
+  const [filters, setFilters] = useState({ date: '', company: '', name: '', icpId: '' })
   const [health, setHealth] = useState({ sheet: 'pending', agent: 'pending' })
   const [isImportOpen, setIsImportOpen] = useState(false)
   const [isOutreachOpen, setIsOutreachOpen] = useState(false)
@@ -248,8 +248,11 @@ function CRM() {
       const matchesCompany = filters.company
         ? row.company?.toLowerCase().includes(filters.company.toLowerCase())
         : true
+      const matchesName = filters.name
+        ? row.name?.toLowerCase().includes(filters.name.toLowerCase())
+        : true
       const matchesIcp = filters.icpId ? row.icpId === filters.icpId : true
-      return matchesDate && matchesCompany && matchesIcp
+      return matchesDate && matchesCompany && matchesName && matchesIcp
     })
   }, [rows, filters])
 
@@ -389,7 +392,22 @@ function CRM() {
               className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white placeholder-gray-500 outline-none transition-all duration-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20"
             />
           </div>
-          {/* ICP Filter */}
+          <div className="flex flex-col gap-2">
+            <label
+              htmlFor="name"
+              className="text-[11px] font-semibold uppercase tracking-wider text-gray-400"
+            >
+              Filter by Lead Name
+            </label>
+            <input
+              id="name"
+              type="text"
+              placeholder="Roelof van Heeren"
+              value={filters.name}
+              onChange={(e) => setFilters((prev) => ({ ...prev, name: e.target.value }))}
+              className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white placeholder-gray-500 outline-none transition-all duration-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20"
+            />
+          </div>
           <div className="flex flex-col gap-2">
             <label
               htmlFor="icp"
