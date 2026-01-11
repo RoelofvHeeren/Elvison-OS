@@ -737,76 +737,82 @@ export const scrapeFullSite = async (domain, token, maxCost = 5.00, onProgress =
         while (!isComplete) {
             await new Promise(r => setTimeout(r, 5000)); // Poll every 5s
 
-            // Check Run
-            const checkRes = await axios.get(`${APIFY_API_URL}/actor-runs/${runId}?token=${token}`);
-            const data = checkRes.data.data;
-            const status = data.status;
+            try {
+                // Check Run
+                const checkRes = await axios.get(`${APIFY_API_URL}/actor-runs/${runId}?token=${token}`);
+                const data = checkRes.data.data;
+                const status = data.status;
 
-            // Calculate Stats
-            const statsObj = data.stats || {};
-            // Aggressive detection of page counts from various possible Apify fields
-            let pages = statsObj.requestsFinished ||
-                statsObj.crawlItemsCount ||
-                statsObj.storedItemsCount ||
-                statsObj.crawledPages ||
-                statsObj.requestCount || 0;
+                // Calculate Stats
+                const statsObj = data.stats || {};
+                // Aggressive detection of page counts from various possible Apify fields
+                let pages = statsObj.requestsFinished ||
+                    statsObj.crawlItemsCount ||
+                    statsObj.storedItemsCount ||
+                    statsObj.crawledPages ||
+                    statsObj.requestCount || 0;
 
-            // Fallback: Parse statusMessage (e.g., "Crawled 123/241 pages" or "829 results")
-            if (pages === 0 && data.statusMessage) {
-                const match = data.statusMessage.match(/(\d+)\//) ||
-                    data.statusMessage.match(/(\d+)\s+pages/) ||
-                    data.statusMessage.match(/(\d+)\s+results/);
-                if (match) pages = parseInt(match[1]);
-            }
-
-            console.log(`[Apify] Run ${runId} stats:`, {
-                status,
-                pages,
-                cost: data.usageTotalUsd,
-                msg: data.statusMessage
-            });
-
-            const duration = (Date.now() - new Date(data.startedAt).getTime()) / 1000; // seconds
-
-            // Cost Estimation
-            const cost = data.usageTotalUsd || 0;
-
-            // Construction of a human-readable status for the UI
-            const statusMessage = `Scraping: ${pages} pages found ($${cost.toFixed(2)})`;
-            stats = { pages, cost, duration, status: statusMessage };
-            onProgress(stats);
-
-            // Safety Checks
-            if (cost > maxCost) {
-                console.warn(`[Apify] Cost limit exceeded ($${cost} > $${maxCost}). Aborting...`);
-                await abortApifyRun(token, runId);
-                const finalStatus = 'PARTIAL_LIMIT_REACHED';
-
-                onProgress({ ...stats, status: finalStatus });
-
-                // ATTEMPT TO SAVE PARTIAL DATA
-                console.log(`[Apify] Fetching partial results for run ${runId}...`);
-                try {
-                    const results = await getApifyResults(token, data.defaultDatasetId);
-
-                    return {
-                        ...stats,
-                        status: finalStatus,
-                        items: results, // Return raw items for chunked processing
-                        datasetId: data.defaultDatasetId,
-                        aborted: true
-                    };
-                } catch (e) {
-                    console.error("Failed to fetch partial results", e);
-                    return { ...stats, status: finalStatus, aborted: true, content: "Failed to retrieve partial content." };
+                // Fallback: Parse statusMessage (e.g., "Crawled 123/241 pages" or "829 results")
+                if (pages === 0 && data.statusMessage) {
+                    const match = data.statusMessage.match(/(\d+)\//) ||
+                        data.statusMessage.match(/(\d+)\s+pages/) ||
+                        data.statusMessage.match(/(\d+)\s+results/);
+                    if (match) pages = parseInt(match[1]);
                 }
-            }
 
-            if (['SUCCEEDED', 'ABORTED', 'TIMED-OUT', 'FAILED'].includes(status)) {
-                isComplete = true;
-                datasetId = data.defaultDatasetId;
-                if (status === 'SUCCEEDED') stats.status = 'COMPLETED';
-                else stats.status = status;
+                console.log(`[Apify] Run ${runId} stats:`, {
+                    status,
+                    pages,
+                    cost: data.usageTotalUsd,
+                    msg: data.statusMessage
+                });
+
+                const duration = (Date.now() - new Date(data.startedAt).getTime()) / 1000; // seconds
+
+                // Cost Estimation
+                const cost = data.usageTotalUsd || 0;
+
+                // Construction of a human-readable status for the UI
+                const statusMessage = `Scraping: ${pages} pages found ($${cost.toFixed(2)})`;
+                stats = { pages, cost, duration, status: statusMessage };
+                onProgress(stats);
+
+                // Safety Checks
+                if (cost > maxCost) {
+                    console.warn(`[Apify] Cost limit exceeded ($${cost} > $${maxCost}). Aborting...`);
+                    await abortApifyRun(token, runId);
+                    const finalStatus = 'PARTIAL_LIMIT_REACHED';
+
+                    onProgress({ ...stats, status: finalStatus });
+
+                    // ATTEMPT TO SAVE PARTIAL DATA
+                    console.log(`[Apify] Fetching partial results for run ${runId}...`);
+                    try {
+                        const results = await getApifyResults(token, data.defaultDatasetId);
+
+                        return {
+                            ...stats,
+                            status: finalStatus,
+                            items: results, // Return raw items for chunked processing
+                            datasetId: data.defaultDatasetId,
+                            aborted: true
+                        };
+                    } catch (e) {
+                        console.error("Failed to fetch partial results", e);
+                        return { ...stats, status: finalStatus, aborted: true, content: "Failed to retrieve partial content." };
+                    }
+                }
+
+                if (['SUCCEEDED', 'ABORTED', 'TIMED-OUT', 'FAILED'].includes(status)) {
+                    isComplete = true;
+                    datasetId = data.defaultDatasetId;
+                    if (status === 'SUCCEEDED') stats.status = 'COMPLETED';
+                    else stats.status = status;
+                }
+            } catch (pollError) {
+                console.error(`[Apify] Polling error for run ${runId}:`, pollError.message);
+                console.error(`[Apify] Full error:`, pollError);
+                // Continue polling despite errors - don't crash the entire loop
             }
         }
 

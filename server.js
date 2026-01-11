@@ -1468,13 +1468,19 @@ app.post('/api/companies/research/full-scan', requireAuth, async (req, res) => {
         const token = process.env.APIFY_API_TOKEN;
         const limit = maxCost ? parseFloat(maxCost) : 5.00;
 
-        // Keep SSE connection alive with heartbeats every 15s
+        // Keep SSE connection alive with heartbeats every 5s (Railway timeout protection)
         const heartbeat = setInterval(() => {
-            res.write(': heartbeat\n\n');
-        }, 15000);
+            try {
+                res.write(': heartbeat\n\n');
+            } catch (e) {
+                console.error('[SSE] Heartbeat write failed:', e.message);
+                clearInterval(heartbeat);
+            }
+        }, 5000);
 
         await ResearchService.runFullSiteScan(url, token, limit, (stats) => {
             // Map Apify stats to our frontend event format
+            console.log('[Full Scan] Progress callback:', stats);
             if (stats.status === 'PARTIAL_LIMIT_REACHED') {
                 send({ type: 'progress', stats: { ...stats, status: 'LIMIT REACHED - SAVING DATA...' } });
             } else if (stats.status === 'ABORTED_COST_LIMIT') {
