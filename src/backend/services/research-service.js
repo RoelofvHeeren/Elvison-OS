@@ -435,9 +435,10 @@ export class ResearchService {
      * Run a Full Site Scan using Apify
      * @param {string} url - Website URL
      * @param {string} token - Apify API Token
+     * @param {number} maxCost - Max cost in USD (default 5.00)
      * @param {Function} onProgress - Callback for progress updates
      */
-    static async runFullSiteScan(url, token, onProgress) {
+    static async runFullSiteScan(url, token, maxCost = 5.00, onProgress) {
         // Import here to avoid circular dependencies if any
         const { scrapeFullSite } = await import('./apify.js');
 
@@ -448,6 +449,6 @@ export class ResearchService {
             // keep as is
         }
 
-        return await scrapeFullSite(domain, token, 5.00, onProgress);
+        return await scrapeFullSite(domain, token, maxCost, onProgress);
     }
 }

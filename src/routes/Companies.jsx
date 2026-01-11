@@ -46,6 +46,69 @@ function Companies() {
         setResearchModalOpen(true);
     };
 
+    const handleFullScan = async () => {
+        if (!researchTarget?.website) return;
+
+        if (!confirm('This will scrape the ENTIRE website using Apify. Cost is tracked and capped at $5. This may take 5-20 minutes. Continue?')) return;
+
+        setResearchStep('full-scanning');
+        setFullScanStats({ pages: 0, cost: 0, duration: 0, status: 'STARTING' });
+
+        try {
+            const response = await fetch('/api/companies/research/full-scan', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    url: researchTarget.website,
+                    // maxCost defaults to 5.00 on server if omitted
+                    topic: researchTopic
+                })
+            });
+
+            if (!response.ok) throw new Error(await response.text());
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value);
+                const lines = chunk.split('\n\n');
+
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        try {
+                            const data = JSON.parse(line.slice(6));
+                            if (data.type === 'progress') {
+                                setFullScanStats(data.stats);
+                            } else if (data.type === 'complete') {
+                                setFullScanStats(data.stats);
+                                setAllLinks(data.all || []);
+                                setRecommendedLinks(data.recommended || []);
+                                // Default select highly relevant ones (score > 70)
+                                const highValueLinks = (data.recommended || []).filter(l => (l.score || 0) > 70).map(l => l.url);
+                                setSelectedLinks(highValueLinks.length > 0 ? highValueLinks : (data.recommended || []).map(l => l.url));
+                                setResearchStep('selecting');
+                                return; // Exit after complete
+                            } else if (data.type === 'error') {
+                                throw new Error(data.error);
+                            }
+                        } catch (e) {
+                            console.warn('Parse error in full scan SSE:', e);
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            console.error(e);
+            setResearchResult("Error during full scan: " + e.message);
+            setResearchStep('result'); // Fallback to showing error
+            setFullScanStats(prev => ({ ...prev, status: 'ERROR', error: e.message }));
+        }
+    };
+
     const handleScan = async () => {
         if (!researchTarget?.website) return;
         setResearchStep('scanning');

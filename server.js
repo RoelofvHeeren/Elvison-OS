@@ -1436,7 +1436,7 @@ app.post('/api/companies/research/full-scan', requireAuth, async (req, res) => {
     res.setHeader('Connection', 'keep-alive');
 
     const send = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`);
-    const { url } = req.body;
+    const { url, maxCost } = req.body;
 
     if (!url) {
         send({ type: 'error', error: 'No URL provided' });
@@ -1447,8 +1447,9 @@ app.post('/api/companies/research/full-scan', requireAuth, async (req, res) => {
     try {
         const { ResearchService } = await import('./src/backend/services/research-service.js');
         const token = process.env.APIFY_API_TOKEN;
+        const limit = maxCost ? parseFloat(maxCost) : 5.00;
 
-        await ResearchService.runFullSiteScan(url, token, (stats) => {
+        await ResearchService.runFullSiteScan(url, token, limit, (stats) => {
             // Map Apify stats to our frontend event format
             if (stats.status === 'ABORTED_COST_LIMIT') {
                 send({ type: 'error', error: `Cost limit exceeded ($${stats.cost.toFixed(2)})` });
