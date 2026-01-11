@@ -21,6 +21,8 @@ function CRM() {
   // Selection state
   const [selectedLeads, setSelectedLeads] = useState(new Set())
   const [selectAll, setSelectAll] = useState(false)
+  // New: Track if user explicitly selected "All X in DB", not just the loaded IDs
+  const [isAllDatabaseSelected, setIsAllDatabaseSelected] = useState(false)
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1)
@@ -165,17 +167,20 @@ function CRM() {
     }
     setSelectedLeads(newSelection)
     setSelectAll(newSelection.size === filteredRows.length && filteredRows.length > 0)
+    setIsAllDatabaseSelected(false) // Deselect "All DB" if manually toggling
   }
 
   const toggleSelectAll = () => {
     if (selectAll) {
       setSelectedLeads(new Set())
       setSelectAll(false)
+      setIsAllDatabaseSelected(false)
     } else {
       // Select only current page first
       const allIds = new Set(filteredRows.map(row => row.id))
       setSelectedLeads(allIds)
       setSelectAll(true)
+      setIsAllDatabaseSelected(false)
     }
   }
 
@@ -189,6 +194,7 @@ function CRM() {
       });
       setSelectedLeads(new Set(allIds))
       setSelectAll(true)
+      setIsAllDatabaseSelected(true)
     } catch (err) {
       console.error(err)
       setError('Failed to select all leads')
@@ -199,7 +205,29 @@ function CRM() {
 
   // CSV Export Function - Handles both "Selected Only" and "Export All"
   const exportToCSV = async () => {
-    // 1. Export Selected (Client-side)
+    // 1. Export All Database (Server-side) -- PRIORITY if flag is set
+    if (isAllDatabaseSelected) {
+      try {
+        setLoading(true);
+        const params = new URLSearchParams();
+        if (filters.icpId) params.append('icpId', filters.icpId);
+        if (filterStatus) params.append('status', filterStatus); // Keep status filter
+
+        // Direct link is easiest for file download
+        window.location.href = `/api/leads/export?${params.toString()}`;
+
+        // Reset loading shortly after trigger
+        setTimeout(() => setLoading(false), 2000);
+        return;
+      } catch (err) {
+        console.error(err)
+        setError('Failed to export leads')
+        setLoading(false)
+        return;
+      }
+    }
+
+    // 2. Export Selected (Client-side) -- Only if NOT all database
     if (selectedLeads.size > 0) {
       const leadsToExport = filteredRows.filter(row => selectedLeads.has(row.id))
       const timestamp = new Date().toISOString().split('T')[0];
@@ -249,6 +277,7 @@ function CRM() {
       // Clear selection after export
       setSelectedLeads(new Set())
       setSelectAll(false)
+      setIsAllDatabaseSelected(false)
       return;
     }
 
