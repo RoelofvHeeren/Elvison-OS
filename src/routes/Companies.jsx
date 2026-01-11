@@ -49,8 +49,8 @@ function Companies() {
     const handleFullScan = async () => {
         if (!researchTarget?.website) return;
 
-        // TEST MODE: Reduced limit to $0.20 as requested
-        if (!confirm('TEST MODE: This will scrape the website (max 50 concurrent pages) with a safety cap of $0.20. Continue?')) return;
+        // TEST MODE: Limit increased to $1.00
+        if (!confirm('TEST MODE: Scrape with $1.00 limit? This will perform a deep scan, synthesize a profile, and update the database. Continue?')) return;
 
         setResearchStep('full-scanning');
         setFullScanStats({ pages: 0, cost: 0, duration: 0, status: 'STARTING' });
@@ -61,7 +61,7 @@ function Companies() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     url: researchTarget.website,
-                    maxCost: 0.20, // Low limit for testing
+                    maxCost: 1.00, // Limit for Synthesis Test
                     topic: researchTopic
                 })
             });
@@ -1242,7 +1242,13 @@ function Companies() {
                                                 <div className="inline-block animate-spin rounded-full h-12 w-12 border-t-4 border-b-4 border-purple-500 mb-4"></div>
 
                                                 <div className="space-y-1">
-                                                    <h4 className="text-purple-400 font-bold text-lg animate-pulse">Running Full Site Scrape...</h4>
+                                                    <h4 className="text-purple-400 font-bold text-lg animate-pulse">
+                                                        {fullScanStats.status === 'SYNTHESIZING_PROFILE' && '✨ Synthesizing Profile...'}
+                                                        {fullScanStats.status === 'SAVING_TO_DB' && '💾 Saving to Database...'}
+                                                        {fullScanStats.status === 'DOWNLOADING' && '⬇️ Downloading Results...'}
+                                                        {fullScanStats.status === 'LIMIT REACHED - SAVING DATA...' && '⚠️ Budget Hit - Processing...'}
+                                                        {!['SYNTHESIZING_PROFILE', 'SAVING_TO_DB', 'DOWNLOADING', 'LIMIT REACHED - SAVING DATA...'].includes(fullScanStats.status) && 'Running Full Site Scrape...'}
+                                                    </h4>
                                                     <p className="text-xs text-gray-500 font-mono">{fullScanStats.status}</p>
                                                 </div>
 
