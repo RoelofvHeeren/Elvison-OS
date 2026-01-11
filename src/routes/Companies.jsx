@@ -393,29 +393,58 @@ function Companies() {
             'Fit Analysis', 'Strategic Fit', 'Fit Score', 'Fit'
         ];
 
-        // Create a giant regex to find any of these keywords that look like headers
-        // Matches:
-        // 1. Start of line or following newline: (^|\n)
-        // 2. Optional markdown bullets or hashes: [\s\-*#]*
-        // 3. The Keyword (case insensitive)
-        // 4. Header ending: \*\*|:| \- (marker that it's a header)
+        // Improved Regex to match:
+        // 1. Markdown headers: # Summary (at start of line)
+        // 2. Bold/Colon headers: **Summary**:, Summary:, Summary**:
+        // 3. Inline headers: ...text. Summary: ...
 
-        const headerRegex = new RegExp(
-            `(^|\\n|[\\s.*#])(${KEYWORDS.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})(\\*{2}|:)(\\s|$)`,
-            'gi'
-        );
+        // We construct a regex that looks for:
+        // (Start of line OR whitespace/punctuation) 
+        // (Optional # or **)
+        // KEYWORD
+        // (Optional **) 
+        // (Colon OR End of line OR just whitespace if it was a #-style header)
 
+        // To be safe, we match specifically two patterns:
+        // A) Strict Markdown Header (Start of line, #, Keyword, End of line/Newline)
+        // B) Labeled Header (Keyword followed by colon or bold-colon)
+
+        const escapedKeywords = KEYWORDS.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+
+        // Matches: # Keyword (at newline)
+        const markdownRegex = new RegExp(`(^|\\n)\\s*#+\\s*(${escapedKeywords})\\s*($|\\n)`, 'gi');
+
+        // Matches: Keyword: or **Keyword**: or Keyword**:
+        const labeledRegex = new RegExp(`(^|\\s|\\.|\\*)\\s*(${escapedKeywords})\\s*(\\*\\*)?:`, 'gi');
+
+        // Collect matches from both strategies
         let match;
-        while ((match = headerRegex.exec(cleanText)) !== null) {
-            const fullMatch = match[0];
+
+        while ((match = markdownRegex.exec(cleanText)) !== null) {
             const keyword = match[2];
             const standardName = normalizeHeader(keyword);
-
             if (standardName) {
                 foundSections.push({
                     name: standardName,
                     index: match.index,
-                    length: fullMatch.length
+                    length: match[0].length,
+                    priority: 1 // High priority (strict markdown)
+                });
+            }
+        }
+
+        while ((match = labeledRegex.exec(cleanText)) !== null) {
+            const keyword = match[2];
+            const standardName = normalizeHeader(keyword);
+            // Avoid duplicates if same range captured (e.g. # Summary: could match both)
+            const existing = foundSections.find(s => Math.abs(s.index - match.index) < 5);
+
+            if (standardName && !existing) {
+                foundSections.push({
+                    name: standardName,
+                    index: match.index,
+                    length: match[0].length,
+                    priority: 2
                 });
             }
         }
@@ -423,36 +452,43 @@ function Companies() {
         // Sort by position
         foundSections.sort((a, b) => a.index - b.index);
 
-        // 3. Extract content between sections
-        if (foundSections.length === 0) {
-            // No headers found? 
-            // Check if it's the "inline" style: Summary**: Text... Investment Strategy**: Text
-            // The regex above might have missed strict formatting. Let's try a looser check for "Keyword**:"
-
-            const looserRegex = new RegExp(`(${KEYWORDS.join('|')})\\*\\*:`, 'gi');
-            while ((match = looserRegex.exec(cleanText)) !== null) {
-                const standardName = normalizeHeader(match[1]);
-                if (standardName) {
-                    foundSections.push({
-                        name: standardName,
-                        index: match.index,
-                        length: match[0].length
-                    });
+        // Filter out overlapping sections (keep highest priority or first one)
+        const uniqueSections = [];
+        if (foundSections.length > 0) {
+            uniqueSections.push(foundSections[0]);
+            for (let i = 1; i < foundSections.length; i++) {
+                const prev = uniqueSections[uniqueSections.length - 1];
+                const curr = foundSections[i];
+                if (curr.index >= prev.index + prev.length) {
+                    uniqueSections.push(curr);
                 }
             }
-            foundSections.sort((a, b) => a.index - b.index);
         }
 
-        if (foundSections.length > 0) {
-            foundSections.forEach((section, i) => {
-                const nextSection = foundSections[i + 1];
+        // 3. Extract content
+        if (uniqueSections.length > 0) {
+            // Check for text BEFORE the first section (Headerless Summary)
+            if (uniqueSections[0].index > 0) {
+                const introText = cleanText.substring(0, uniqueSections[0].index).trim();
+                // Clean up any leading dashed lines causing markdown bullets
+                const cleanIntro = introText.replace(/^[-*]\s+/gm, '• ').trim();
+
+                if (cleanIntro && cleanIntro.length > 10) { // Ignore tiny noise
+                    sections['Summary'] = cleanIntro;
+                }
+            }
+
+            uniqueSections.forEach((section, i) => {
+                const nextSection = uniqueSections[i + 1];
                 const start = section.index + section.length;
                 const end = nextSection ? nextSection.index : cleanText.length;
 
                 let content = cleanText.substring(start, end).trim();
 
-                // Clean up any leading/trailing markdown that might have been captured
+                // Clean up leading/trailing artifacts
                 content = content.replace(/^[:\-\s]+/, '').replace(/[:\-\s]+$/, '');
+                // Fix bullets
+                content = content.replace(/^-\s*\*\*/gm, '• **').replace(/^-\s+/gm, '• ');
 
                 if (sections[section.name]) {
                     sections[section.name] += '\n\n' + content;
