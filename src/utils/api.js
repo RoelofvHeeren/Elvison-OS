@@ -36,6 +36,12 @@ export const fetchLeads = async (params = {}) => {
   return data
 }
 
+export const fetchAllLeadIds = async (params = {}) => {
+  const query = new URLSearchParams(params).toString()
+  const { data } = await client.get(`/api/leads/all-ids?${query}`)
+  return data.ids
+}
+
 export const fetchCompanies = async (params = {}) => {
   const query = new URLSearchParams(params).toString()
   const { data } = await client.get(`/api/companies?${query}`)

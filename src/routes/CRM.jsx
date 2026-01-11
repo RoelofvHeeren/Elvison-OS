@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { CalendarDays, Building2, RefreshCw, Trash2, Upload, Filter, Target, Loader, Check, Search, ChevronLeft, ChevronRight, Download, Users } from 'lucide-react'
 import SheetTable from '../components/SheetTable'
 import ImportModal from '../components/ImportModal'
-import { fetchLeads, deleteLead, approveLead } from '../utils/api'
+import { fetchLeads, deleteLead, approveLead, fetchAllLeadIds } from '../utils/api'
 import OutreachModal from '../components/OutreachModal'
 import { useIcp } from '../context/IcpContext'
 
@@ -172,9 +172,28 @@ function CRM() {
       setSelectedLeads(new Set())
       setSelectAll(false)
     } else {
+      // Select only current page first
       const allIds = new Set(filteredRows.map(row => row.id))
       setSelectedLeads(allIds)
       setSelectAll(true)
+    }
+  }
+
+  const handleSelectReallyAll = async () => {
+    try {
+      setLoading(true)
+      // Fetch ALL IDs matching current filters
+      const allIds = await fetchAllLeadIds({
+        status: filterStatus,
+        icpId: filters.icpId
+      });
+      setSelectedLeads(new Set(allIds))
+      setSelectAll(true)
+    } catch (err) {
+      console.error(err)
+      setError('Failed to select all leads')
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -314,7 +333,7 @@ function CRM() {
                 className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-gray-300 hover:text-white hover:bg-white/5 border border-white/10 rounded-xl transition-all"
               >
                 <Check className={`h-4 w-4 ${selectAll ? 'text-teal-400' : 'text-gray-500'}`} />
-                {selectAll ? 'Deselect All' : 'Select All'}
+                {selectAll ? 'Deselect All' : 'Select Page'}
               </button>
 
               <button
@@ -467,6 +486,21 @@ function CRM() {
             </select>
           </div>
         </div>
+
+        {/* Selection Banner */}
+        {selectedLeads.size > 0 && selectedLeads.size < pagination.total && selectAll && (
+          <div className="bg-teal-500/10 border border-teal-500/30 rounded-xl p-3 flex items-center justify-center gap-4 text-sm text-teal-300 animate-in fade-in slide-in-from-top-2">
+            <span>
+              All <strong>{rows.length}</strong> leads on this page are selected.
+            </span>
+            <button
+              onClick={handleSelectReallyAll}
+              className="font-bold underline underline-offset-4 hover:text-white"
+            >
+              Select all {pagination.total} leads in database
+            </button>
+          </div>
+        )}
 
         {/* Sheet Table */}
         <SheetTable

@@ -2299,6 +2299,36 @@ app.delete('/api/companies/:id', requireAuth, async (req, res) => {
     }
 });
 
+
+// Get All Lead IDs (for bulk selection)
+app.get('/api/leads/all-ids', requireAuth, async (req, res) => {
+    const { status, icpId } = req.query;
+
+    try {
+        let queryStr = `SELECT id FROM leads WHERE user_id = $1`;
+        const params = [req.userId];
+
+        if (status) {
+            queryStr += ' AND status = $' + (params.length + 1);
+            params.push(status);
+        } else {
+            queryStr += " AND status != 'DISQUALIFIED'";
+        }
+
+        if (icpId) {
+            queryStr += ' AND icp_id = $' + (params.length + 1);
+            params.push(icpId);
+        }
+
+        const { rows } = await query(queryStr, params);
+        const ids = rows.map(r => r.id);
+        res.json({ ids });
+    } catch (err) {
+        console.error('Failed to fetch lead IDs:', err);
+        res.status(500).json({ error: 'Database error' });
+    }
+});
+
 // Get Leads with Pagination
 app.get('/api/leads', requireAuth, async (req, res) => {
     const { status, icpId, page = 1, pageSize = 100 } = req.query;
