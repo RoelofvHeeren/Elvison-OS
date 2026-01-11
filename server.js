@@ -1606,7 +1606,7 @@ app.post('/api/companies/:companyName/regenerate-outreach', async (req, res) => 
 
         // Get company details
         const { rows } = await query(
-            'SELECT id, company_name, website, company_profile FROM companies WHERE company_name = $1',
+            'SELECT id, company_name, website, company_profile, fit_score, icp_type FROM companies WHERE company_name = $1',
             [companyName]
         );
 
@@ -1623,7 +1623,9 @@ app.post('/api/companies/:companyName/regenerate-outreach', async (req, res) => 
         const messages = await OutreachService.createLeadMessages({
             company_name: company.company_name,
             website: company.website,
-            company_profile: company.company_profile
+            company_profile: company.company_profile,
+            fit_score: company.fit_score,
+            icp_type: company.icp_type
         });
 
         // Update in database
