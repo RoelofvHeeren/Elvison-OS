@@ -315,13 +315,21 @@ function CRM() {
                 <Trash2 className="h-4 w-4" />
                 Clear All
               </button>
+
+              {selectedLeads.size > 0 && (
+                <div className="flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-sm font-bold text-white animated-pulse">
+                  <div className="h-2 w-2 rounded-full bg-teal-400"></div>
+                  {selectedLeads.size} selected
+                </div>
+              )}
+
               <button
                 type="button"
                 onClick={exportToCSV}
                 className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-teal-400 hover:text-teal-300 hover:bg-teal-500/10 border border-teal-500/20 rounded-xl transition-all"
               >
                 <Download className="h-4 w-4" />
-                Export CSV
+                {selectedLeads.size > 0 ? `Export (${selectedLeads.size})` : 'Export CSV'}
               </button>
               {selectedLeads.size > 0 && (
                 <button
@@ -330,7 +338,7 @@ function CRM() {
                   className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 border border-blue-500/20 rounded-xl transition-all"
                 >
                   <Upload className="h-4 w-4" />
-                  Push to Outreach
+                  Push to Outreach ({selectedLeads.size})
                 </button>
               )}
               <button
