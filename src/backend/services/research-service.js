@@ -404,7 +404,7 @@ export class ResearchService {
 
         try {
             const prompt = `
-                You are a business analyst generating a company profile.
+                You are a senior investment analyst for a Canadian Residential Developer.
                 
                 ${researchTopic ? `RESEARCH FOCUS: ${researchTopic}` : ''}
                 
@@ -412,16 +412,16 @@ export class ResearchService {
                 ${textContent.substring(0, 20000)}
                 
                 INSTRUCTIONS:
-                Generate a structured company profile with the following sections:
+                Generate a structured company profile with the following sections.
                 
-                **Summary** - Brief overview of what the company does
-                **Investment Strategy** - If applicable, their investment focus/thesis
-                **Scale & Geographic Focus** - Size, locations, markets they operate in
-                **Portfolio Observations** - Specific project highlights or deal types
-                **Key Highlights** - Notable facts, achievements, differentiators
-                **Fit Analysis** - Potential for partnership/outreach (if context is available)
+                **Summary** - Brief overview. EXPLICITLY state if they are a Brokerage/Advisor vs an Owner/Investor.
+                **Investment Strategy** - Their investment focus/thesis.
+                **Scale & Geographic Focus** - Size, locations, markets.
+                **Portfolio Observations** - Specific project highlights.
+                **Key Highlights** - Notable facts.
+                **Fit Analysis** - Assess fit for a Residential Developer partner. (Flag as LOW FIT if they are a Brokerage/Marketing Agency).
                 
-                Format as clean markdown. If a section lacks content, omit it.
+                Format as clean markdown.
                 Be concise but capture all key facts.
             `;
 
@@ -439,7 +439,7 @@ export class ResearchService {
      * @param {number} maxCost - Max cost in USD (default 5.00)
      * @param {Function} onProgress - Callback for progress updates
      */
-    static async runFullSiteScan(url, token, maxCost = 5.00, onProgress) {
+    static async runFullSiteScan(url, token, maxCost = 5.00, onProgress, options = {}) {
         // Import here to avoid circular dependencies if any
         const { scrapeFullSite } = await import('./apify.js');
 
@@ -450,7 +450,7 @@ export class ResearchService {
             // keep as is
         }
 
-        return await scrapeFullSite(domain, token, maxCost, onProgress);
+        return await scrapeFullSite(domain, token, maxCost, onProgress, options);
     }
 
     static async synthesizeFullScanReport(items, companyName, onProgress = () => { }) {
@@ -510,7 +510,8 @@ export class ResearchService {
             Your task is to synthesize the following batched evidence into a concise, high-value **Company Intelligence Report** for "${companyName}".
 
             **Context**:
-            We are looking for potential partners or acquisition opportunities in Canadian residential real estate.
+            We are looking for potential partners (LPs or Co-GPs) in Canadian residential real estate.
+            We want to AVOID Brokerages, Service Providers, and pure Commercial investors.
 
             **Extracted Evidence**:
             ---
@@ -525,7 +526,7 @@ export class ResearchService {
             # [Company Name]
             
             ## Summary
-            (2-3 sentences max)
+            (2-3 sentences max. State clearly if they are an Owner/Developer or a Service Provider/Broker.)
 
             ## Investment Strategy
             (Bullet points on asset classes, strategies, and development/lending mix)
@@ -540,7 +541,9 @@ export class ResearchService {
             (Notable facts, achievements, awards, or differentiators)
 
             ## Fit Analysis
-            (CRITICAL: Evaluate as High/Medium/Low fit for a Canadian Residential Developer. Explain why.)
+            (CRITICAL: Evaluate as High/Medium/Low fit for a Canadian Residential Developer.
+             - LOW FIT: Brokerages (Marcus & Millichap etc.), Sales Agencies, Service Providers.
+             - HIGH FIT: Active Residential Developers/Investors/Family Offices in Canada.)
 
             IMPORTANT: Be extremely concise. Use bullet points. If data is missing across all batches, state "Not available".
         `;

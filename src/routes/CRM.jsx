@@ -178,63 +178,84 @@ function CRM() {
     }
   }
 
-  // CSV Export Function - Updated to export only selected leads
-  const exportToCSV = () => {
-    if (selectedLeads.size === 0) {
-      alert('Please select at least one lead to export.')
-      return
+  // CSV Export Function - Handles both "Selected Only" and "Export All"
+  const exportToCSV = async () => {
+    // 1. Export Selected (Client-side)
+    if (selectedLeads.size > 0) {
+      const leadsToExport = filteredRows.filter(row => selectedLeads.has(row.id))
+      const timestamp = new Date().toISOString().split('T')[0];
+      const filename = `leads_export_selected_${timestamp}.csv`;
+
+      // Define CSV headers
+      const headers = ['Name', 'Email', 'Title', 'Company', 'LinkedIn', 'Phone Numbers', 'Connection Request', 'Date Added'];
+
+      // Convert rows to CSV format
+      const csvRows = leadsToExport.map(row => [
+        row.name,
+        row.email,
+        row.title,
+        row.company,
+        row.linkedin,
+        Array.isArray(row.phoneNumbers) ? row.phoneNumbers.join('; ') : '',
+        row.connectionRequest,
+        row.date
+      ]);
+
+      // Escape and quote CSV fields
+      const escapeCsvField = (field) => {
+        const str = String(field || '');
+        if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+          return `"${str.replace(/"/g, '""')}"`;
+        }
+        return str;
+      };
+
+      // Build CSV content
+      const csvContent = [
+        headers.map(escapeCsvField).join(','),
+        ...csvRows.map(row => row.map(escapeCsvField).join(','))
+      ].join('\n');
+
+      // Trigger download
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', filename);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      // Clear selection after export
+      setSelectedLeads(new Set())
+      setSelectAll(false)
+      return;
     }
 
-    // Filter to only selected leads
-    const leadsToExport = filteredRows.filter(row => selectedLeads.has(row.id))
+    // 2. Export All (Server-side)
+    if (!window.confirm(`Export ALL leads in the system${filters.icpId ? ' matching the current Strategy filter' : ''}?`)) return;
 
-    const timestamp = new Date().toISOString().split('T')[0];
-    const filename = `leads_export_${timestamp}.csv`;
+    try {
+      setLoading(true);
+      // Construct URL with auth is handled by browser cookie if we just window.open? 
+      // No, window.open might not handle errors gracefully or might need header if auth uses header (Auth uses Cookie 'token', so window.open works).
 
-    // Define CSV headers
-    const headers = ['Name', 'Email', 'Title', 'Company', 'LinkedIn', 'Phone Numbers', 'Connection Request', 'Date Added'];
+      const params = new URLSearchParams();
+      if (filters.icpId) params.append('icpId', filters.icpId);
 
-    // Convert rows to CSV format
-    const csvRows = leadsToExport.map(row => [
-      row.name,
-      row.email,
-      row.title,
-      row.company,
-      row.linkedin,
-      Array.isArray(row.phoneNumbers) ? row.phoneNumbers.join('; ') : '',
-      row.connectionRequest,
-      row.date
-    ]);
+      // Use fetch to handle errors better, or just direct link
+      // Direct link is easiest for file download
+      window.location.href = `/api/leads/export?${params.toString()}`;
 
-    // Escape and quote CSV fields
-    const escapeCsvField = (field) => {
-      const str = String(field || '');
-      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-        return `"${str.replace(/"/g, '""')}"`;
-      }
-      return str;
-    };
+      // Since we can't easily detect when window.location download finishes, just reset loading after a short delay
+      setTimeout(() => setLoading(false), 2000);
 
-    // Build CSV content
-    const csvContent = [
-      headers.map(escapeCsvField).join(','),
-      ...csvRows.map(row => row.map(escapeCsvField).join(','))
-    ].join('\n');
-
-    // Trigger download
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', filename);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-    // Clear selection after export
-    setSelectedLeads(new Set())
-    setSelectAll(false)
+    } catch (err) {
+      console.error(err)
+      setError('Failed to export leads')
+      setLoading(false)
+    }
   }
 
   useEffect(() => {

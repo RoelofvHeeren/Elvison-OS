@@ -2357,6 +2357,7 @@ app.get('/api/leads', requireAuth, async (req, res) => {
         const { rows: uniqueCompanyRows } = await query(uniqueCompanyQuery, [req.userId]);
         const uniqueCompanies = parseInt(uniqueCompanyRows[0]?.count || 0);
 
+
         // Return data with pagination metadata
         res.json({
             data: rows,
@@ -2373,6 +2374,105 @@ app.get('/api/leads', requireAuth, async (req, res) => {
     } catch (err) {
         console.error('Failed to fetch leads:', err)
         res.status(500).json({ error: 'Database error' })
+    }
+})
+
+// Export All Leads to CSV
+app.get('/api/leads/export', requireAuth, async (req, res) => {
+    const { status, icpId } = req.query;
+
+    try {
+        console.log('Exporting leads for user:', req.userId);
+
+        // Build base query - same as GET /leads but NO pagination
+        let queryStr = `
+            SELECT leads.*,
+            companies.company_profile as company_profile_text,
+            companies.fit_score as company_fit_score
+            FROM leads 
+            LEFT JOIN companies ON leads.company_name = companies.company_name AND leads.user_id = companies.user_id
+            WHERE leads.user_id = $1
+            `;
+        const params = [req.userId];
+
+        if (status) {
+            queryStr += ' AND leads.status = $' + (params.length + 1);
+            params.push(status);
+        } else {
+            queryStr += " AND leads.status != 'DISQUALIFIED'";
+        }
+
+        if (icpId) {
+            queryStr += ' AND leads.icp_id = $' + (params.length + 1);
+            params.push(icpId);
+        }
+
+        queryStr += ` ORDER BY leads.created_at DESC`;
+
+        const { rows } = await query(queryStr, params);
+
+        // Generate CSV
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename="leads_export_${new Date().toISOString().split('T')[0]}.csv"`);
+
+        // CSV Header
+        const headers = [
+            'ID', 'Date Added', 'Name', 'Title', 'Company', 'Email', 'LinkedIn', 'Website',
+            'Status', 'Fit Score', 'ICP Strategy', 'Phone Numbers', 'Personalized Line'
+        ];
+
+        res.write(headers.join(',') + '\n');
+
+        // CSV Rows
+        for (const row of rows) {
+            let details = {};
+            if (typeof row.custom_data === 'string') {
+                try { details = JSON.parse(row.custom_data) } catch (e) { }
+            } else {
+                details = row.custom_data || {};
+            }
+
+            // Format date
+            const dateStr = new Date(row.created_at).toISOString().split('T')[0];
+
+            // Format phone numbers
+            const phones = Array.isArray(row.phone_numbers)
+                ? row.phone_numbers.map(p => `${p.type}: ${p.number}`).join('; ')
+                : '';
+
+            const csvRow = [
+                row.id,
+                dateStr,
+                row.person_name || '',
+                row.job_title || '',
+                row.company_name || '',
+                row.email || '',
+                row.linkedin_url || '',
+                details.company_website || '',
+                row.status,
+                row.company_fit_score || details.fit_score || '',
+                row.icp_id || '',
+                phones,
+                (details.connection_request || '').replace(/[\n\r]/g, ' ') // Flatten newlines
+            ];
+
+            // Manual CSV stringify to handle commas/quotes
+            const csvLine = csvRow.map(field => {
+                const str = String(field || '');
+                if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+                    return `"${str.replace(/"/g, '""')}"`;
+                }
+                return str;
+            }).join(',');
+
+            res.write(csvLine + '\n');
+        }
+
+        res.end();
+
+    } catch (err) {
+        console.error('Failed to export leads:', err);
+        res.status(500).send('Export failed');
     }
 })
 

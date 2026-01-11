@@ -718,7 +718,8 @@ export const runAgentWorkflow = async (input, config) => {
                         
                         YOU MUST DISQUALIFY (Score 1-3) IF THEY ARE:
                         - A Wealth Manager / Financial Advisor (unless they explicitly state a DIRECT Real Estate investment arm with PROPRIETARY CAPITAL).
-                        - A Broker / Intermediary / Capital Advisory.
+                        - A Broker / Intermediary / Capital Advisory / Investment Sales Firm (e.g. Marcus & Millichap, CBRE, JLL, Colliers).
+                        - A Real Estate Agency (buying/selling individual homes, luxury estates, vineyards, yachts).
                         - An Investment Bank.
                         - A General Private Equity fund (unless specific to a family or HNWIs).
                         - A "Multi-Client Family Office" that just provides services (tax, legal, lifestyle) without a direct investment fund.
@@ -733,7 +734,8 @@ export const runAgentWorkflow = async (input, config) => {
                         The user is looking for REAL ESTATE INVESTMENT FIRMS, PRIVATE EQUITY FIRMS, or INSTITUTIONAL INVESTORS that INVEST in Real Estate.
                         
                         YOU MUST DISQUALIFY (Score 1-3) IF THEY ARE:
-                        - A Pure Broker / Sales-Only Firm (they don't invest, they just transact).
+                        - A Pure Broker / Sales-Only Firm (they don't invest, they just transact/advise).
+                        - Signals of Brokerage: "Investment Sales", "Capital Markets Advisory", "Debt Placement", "Structuring", "Closing $X in volume", "Representing sellers".
                         - A Service Provider (Law, Tax, Consulting, HR, Marketing).
                         - A Lender (Debt-only, no equity positions).
                         - A Tenant / Occupier (they lease space, don't invest).
@@ -743,7 +745,8 @@ export const runAgentWorkflow = async (input, config) => {
                         - They are a Private Equity / Venture firm with Real Estate as a vertical.
                         - They are a REIT, Asset Manager, or Pension Fund with RE holdings.
                         - They are a "Holdings" or "Group" company with investment mandates.
-                        - They mention "Acquisitions", "Capital Deployment", "AUM", "Portfolio Companies", "Equity Partner".`;
+                        - They mention "Acquisitions", "Capital Deployment", "Portfolio Companies", "Equity Partner". 
+                        - NOTE: Do NOT score high just for "AUM" if they are a pure manager/advisor. They must own/deploy equity.`;
                     }
 
                     // NEW: GEOGRAPHY CHECK
@@ -1057,8 +1060,13 @@ OUTPUT FORMAT: Return JSON array with email and match_score:
                     apiKey: googleKey,
                     modelName: 'gemini-2.0-flash',
                     agentName: 'Outreach Creator',
-                    instructions: `You are a peer-to-peer real estate operator at "Fifth Avenue Properties". 
-Your goal is to write direct, fact-based outreach messages.
+                    instructions: `You are Roelof van Heeren, a Principal at Fifth Avenue Properties, a Canadian residential real estate development firm.
+Your goal is to write direct, fact-based outreach messages to potential Investment Partners (LPs/Co-GPs) or Peers in the industry.
+
+CRITICAL: The user HATES generic messages. 
+- NEVER use "Assets Under Management" (AUM) as the hook.
+- NEVER use "Number of Offices" or "Transaction Volume" as the hook.
+- NEVER mention "Sales Volume" (that sounds like a brokerage).
 
 HARD LIMITS (CRITICAL):
 - LinkedIn Message Max Length: 300 characters (Strictly enforced).
@@ -1073,35 +1081,28 @@ MANDATORY PRIORITY ORDER (Stop at the FIRST match):
 
 1. SPECIFIC DEALS / NAMED PROJECTS (Highest Priority)
    - Fact: A specific project name, asset, or recent acquisition.
-   - Alignment Line: "We frequently develop similar projects at Fifth Avenue Properties."
+   - Alignment Line: "We frequently develop similar projects at Fifth Avenue Properties" OR "We develop similar residential projects at Fifth Avenue Properties"
    - Example: "Hi Sarah, I came across Alpine Start’s Alpine Village project in North Texas. We frequently develop similar projects at Fifth Avenue Properties and thought connecting could be worthwhile."
 
-2. INVESTMENT THESIS / STRATEGY
+2. INVESTMENT THESIS / STRATEGY (Focus on ASSET CLASS)
    - Fact: Specific strategy like "ground-up multifamily", "purpose-built rental", "residential-led mixed use".
-   - Alignment Line: "We work on similar residential strategies at Fifth Avenue Properties."
+   - Alignment Line: "We work on similar residential strategies at Fifth Avenue Properties"
    - Example: "Hi Michael, I came across Morguard’s long-standing focus on multi-suite residential across North America. We work on similar residential strategies at Fifth Avenue Properties and thought connecting could be worthwhile."
 
-3. PORTFOLIO OR SCALE FACTS
-   - Fact: AUM, portfolio size, geographic concentration.
-   - Alignment Line: "We work on similar residential strategies at Fifth Avenue Properties."
+3. RESIDENTIAL FOCUS / MARKET PRESENCE
+   - Fact: A clear statement of residential focus (e.g. "Owning 50,000 apartments", "Developing master-planned communities").
+   - DO NOT USE AUM or GENERIC SCALE ("$5B AUM"). Use unit count or specific market presence if available.
+   - Alignment Line: "We focus on similar residential markets at Fifth Avenue Properties"
+   - Example: "Hi John, I noticed Choice Properties' significant portfolio of residential assets in major Canadian markets. We focus on similar residential development strategies at Fifth Avenue Properties and thought connecting could be worthwhile."
 
-4. GENERAL FOCUS (Last Resort - Must be concrete)
-   - Alignment Line: "We work on similar residential strategies at Fifth Avenue Properties."
-
-BAD LINKEDIN MESSAGE EXAMPLES (AUTO-REJECT):
-- "Hi John, I was really impressed by your 20 years of experience..." (Reject: Personal compliment/Experience)
-- "Hi Sarah, as Head of Acquisitions at Alpine Start I wanted to reach out." (Reject: Title mention)
-- "Hi Michael, congratulations on your incredible career..." (Reject: Flattery)
-- "Hi David, your profile really stood out..." (Reject: Vague/Personal)
-- "Hi Emily, I saw you recently liked a post..." (Reject: Social media activity)
-- "Hi Andrew, I admire the vision and culture..." (Reject: Flattery/Culture)
-- "Hi Laura, we help companies like yours unlock synergies..." (Reject: Pitchy/Buzzwords)
-- "Hi Peter, I’d love to hop on a quick call..." (Reject: Call to action)
-- "Hi Daniel, Fifth Avenue Properties is disrupting..." (Reject: Buzzwords)
-- "Hi Rachel, I came across your profile..." (Reject: Generic)
+BAD FACTS (DO NOT USE THESE):
+- "Closed $700M in sales" -> REJECT (Brokerage signal).
+- "45 offices worldwide" -> REJECT (Generic).
+- "$4.1B AUM" -> REJECT (Unless tied to specific "residential assets").
+- "Advice on vineyards" -> REJECT (Irrelevant).
 
 LINKEDIN MESSAGE STRUCTURE (Fixed):
-Sentence 1: Greeting + Researched Company Fact (e.g. "Hi [Name], I came across [Company]'s [Fact].")
+Sentence 1: Greeting + Researched Company Fact (e.g. "Hi [Name], I came across [Company] and [Specific Fact].")
 Sentence 2: Fifth Avenue Properties alignment (Use mandatory alignment line from above) + Soft close ("and thought connecting could be worthwhile.")
 
 EMAIL STRUCTURE:

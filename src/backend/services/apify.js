@@ -702,7 +702,7 @@ export const scrapeSpecificPages = async (urls, token = null, onProgress = () =>
  * @param {number} maxCost - Max cost in USD before auto-aborting (e.g. 5.00).
  * @param {Function} onProgress - Callback(stats) => void. Stats: { pages, cost, duration, status }
  */
-export const scrapeFullSite = async (domain, token, maxCost = 5.00, onProgress = () => { }) => {
+export const scrapeFullSite = async (domain, token, maxCost = 5.00, onProgress = () => { }, options = {}) => {
     const ACTOR_ID = 'apify~website-content-crawler';
     if (!domain) throw new Error("No domain provided.");
 
@@ -712,16 +712,21 @@ export const scrapeFullSite = async (domain, token, maxCost = 5.00, onProgress =
     // Deep Crawl Configuration
     const input = {
         startUrls: [{ url }],
-        maxPagesPerCrawl: 9999, // Effectively unlimited (capped by cost/time)
-        maxCrawlingDepth: 20,
-        maxConcurrency: 50, // High concurrency for speed
+        maxPagesPerCrawl: options.maxPages || 9999, // Allow override
+        maxCrawlingDepth: options.maxDepth || 20,   // Allow override
+        maxConcurrency: options.maxConcurrency || 50, // Allow override (default 50)
         saveHtml: false,
         saveMarkdown: true, // We want markdown for LLM
         removeElementsCssSelector: 'nav, footer, script, style, noscript, svg, .ad, .popup, .cookie-banner',
         crawlerType: 'cheerio', // Cheapest & Fastest
     };
 
+    if (options.globs && options.globs.length > 0) {
+        input.globs = options.globs.map(g => ({ glob: g }));
+    }
+
     try {
+        console.log(`[Apify] Starting run with input:`, JSON.stringify(input, null, 2));
         const runUrl = `${APIFY_API_URL}/acts/${ACTOR_ID}/runs?token=${token}`;
         const startRes = await axios.post(runUrl, input);
         const runId = startRes.data.data.id;
