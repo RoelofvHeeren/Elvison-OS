@@ -1262,7 +1262,7 @@ const validateLeadForCRM = (lead, status) => {
 /**
  * DB Persistence with CRM Admission Gate
  */
-const saveLeadsToDB = async (leads, userId, icpId, logStep, forceStatus = 'NEW', runId = null) => {
+export const saveLeadsToDB = async (leads, userId, icpId, logStep, forceStatus = 'NEW', runId = null) => {
     if (!leads || leads.length === 0) return;
 
     let savedCount = 0;

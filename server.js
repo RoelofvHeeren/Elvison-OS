@@ -2181,6 +2181,63 @@ app.get('/api/debug/review-required', async (req, res) => {
 
 // --- LEADS & CRM ---
 
+// Company Enrichment Workflow
+app.post('/api/workflows/enrich-companies', requireAuth, async (req, res) => {
+    try {
+        const { companyIds, icpId } = req.body;
+
+        if (!companyIds || !Array.isArray(companyIds) || companyIds.length === 0) {
+            return res.status(400).json({ error: 'companyIds array is required' });
+        }
+
+        // Set up SSE
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+
+        const send = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+
+        // Keep connection alive
+        const heartbeat = setInterval(() => {
+            if (!res.writableEnded) res.write(': heartbeat\n\n');
+        }, 15000);
+
+        // Run Workflow
+        const { runEnrichmentWorkflow } = await import('./src/backend/enrichment-workflow.js');
+
+        const stats = await runEnrichmentWorkflow({
+            companyIds,
+            icpId, // Optional context
+            userId: req.userId,
+            listeners: {
+                onLog: (log) => {
+                    send({ type: 'log', message: `[${log.step}] ${log.detail}` });
+                }
+            }
+        });
+
+        clearInterval(heartbeat);
+
+        if (stats.errors.length > 0) {
+            send({ type: 'complete', status: 'partial_success', stats });
+        } else {
+            send({ type: 'complete', status: 'success', stats });
+        }
+
+        res.end();
+
+    } catch (e) {
+        console.error('Enrichment Workflow Error:', e);
+        if (!res.headersSent) {
+            res.status(500).json({ error: e.message });
+        } else {
+            res.write(`data: ${JSON.stringify({ type: 'error', error: e.message })}\n\n`);
+            res.end();
+        }
+    }
+});
+
+
 // Export Companies to CSV
 app.get('/api/companies/export', requireAuth, async (req, res) => {
     try {

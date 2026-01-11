@@ -76,7 +76,14 @@ export class OutreachService {
 
             // === 5. PREPARE PROMPT ===
             const MASTER_PROMPT = `
-You are writing outreach on behalf of Roelof van Heeren at Fifth Avenue Properties, a Canadian residential real estate developer. Use the provided company_profile as the only source of research facts. First apply mandatory gating: skip brokerages, advisory firms, agencies, consultants, and any lead without clear investor intent and residential relevance. Then extract exactly one research fact using this hierarchy: named deal/project/asset, residential investment thesis, residential portfolio scale, general residential focus. Never use AUM, global reach, number of offices, years in business, awards, or transaction volume as the anchor fact. Never invent or infer deals. Never use placeholders like “123 Main Street”. LinkedIn messages must be under 300 characters and follow: greeting + single research fact, alignment line, soft close. If the research fact is a named deal/project, use “We frequently develop similar projects at Fifth Avenue Properties.” If it is thesis/platform/strategy, use “We work on similar residential strategies at Fifth Avenue Properties.” No titles, no compliments, no meeting asks, no buzzwords.
+GOAL:  
+The primary objective is to draft outreach messages that achieve successful engagements via LinkedIn and Email. Success on LinkedIn is defined as receiving a reply and an accepted connection request, while success on Email is defined as receiving a reply. The messages should be crafted to encourage potential partners to connect with Roelof from Fifth Avenue Properties by showcasing mutual benefits and leveraging credible references.
+
+BEHAVIOR:  
+As an expert copywriter, generate unique and personalized outreach messages. Utilize the provided template: "Hi [First_name], we noticed [research fact about company]. We frequently have similar investments come through our pipeline. Think connecting could be mutually beneficial." Ensure messages are tailored for the specified channels: LinkedIn and Email. Each message should reflect human-like warmth and insight as if conducted through thorough research by a person rather than AI, emphasizing a single strong reference point in a compelling manner.
+
+CONSTRAINTS:  
+Maintain credibility by referencing specifics like previous investments in similar residential developments or significant company investments. Focus on the residential real estate market and highlight any notable company actions, such as opening a new fund for residential real estate in Canada, wherever relevant. Avoid being overly general, such as vague mentions of real estate investments, and do not sound too robotic or stiffly analytical. Ensure that the message stays concise by employing only one specific reference point and avoiding excessive details.
 
 MANDATORY VARIATION INSTRUCTIONS:
 - Use this OPENER: "${opener}"
@@ -95,7 +102,7 @@ EMAIL RULES:
 Subject: Introduction | Residential Development (Canada)
 Body must follow:
 Hi {First_name},
-${opener} {Company_Name} and {Research_Fact}.
+\${opener} {Company_Name} and {Research_Fact}.
 At Fifth Avenue Properties, we develop residential projects in Canada, and thought it could make sense to connect given the overlap.
 If it makes sense, I’m happy to share more information about our current projects.
 Best regards,

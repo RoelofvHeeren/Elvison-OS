@@ -12,6 +12,9 @@ function Companies() {
     const [cleaning, setCleaning] = useState(false)
     const [cleaningProgress, setCleaningProgress] = useState(null)
     const [searchQuery, setSearchQuery] = useState('')
+    const [selectedCompanies, setSelectedCompanies] = useState(new Set())
+    const [enrichmentModalOpen, setEnrichmentModalOpen] = useState(false)
+    const [enrichmentProgress, setEnrichmentProgress] = useState(null)
 
     // Research State
     const [researchModalOpen, setResearchModalOpen] = useState(false);
@@ -309,6 +312,93 @@ function Companies() {
             setCleaningProgress(null);
         }
     }
+
+    const handleEnrichSelected = async () => {
+        if (selectedCompanies.size === 0) return;
+        if (!confirm(`Find leads & draft outreach for ${selectedCompanies.size} companies? This will skip research and use existing profiles.`)) return;
+
+        setEnrichmentModalOpen(true);
+        setEnrichmentProgress({
+            status: 'STARTING',
+            logs: [],
+            stats: {
+                companiesProcessed: 0,
+                leadsFound: 0,
+                messagesGenerated: 0
+            }
+        });
+
+        try {
+            const response = await fetch('/api/workflows/enrich-companies', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    companyIds: Array.from(selectedCompanies),
+                    icpId: filters.icpId
+                })
+            });
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value);
+                const lines = chunk.split('\n\n');
+
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        try {
+                            const data = JSON.parse(line.slice(6));
+
+                            setEnrichmentProgress(prev => {
+                                const newLogs = prev.logs || [];
+                                if (data.type === 'log') {
+                                    newLogs.push(data.message);
+                                }
+
+                                let newStats = prev.stats;
+                                if (data.stats) newStats = { ...prev.stats, ...data.stats };
+
+                                return {
+                                    ...prev,
+                                    logs: newLogs,
+                                    stats: newStats,
+                                    status: data.type === 'complete' ? (data.status === 'success' ? 'COMPLETE' : 'PARTIAL') : 'RUNNING',
+                                    error: data.type === 'error' ? data.error : null
+                                };
+                            });
+
+                        } catch (e) { console.error('SSE Parse Error', e); }
+                    }
+                }
+            }
+        } catch (e) {
+            console.error(e);
+            setEnrichmentProgress(prev => ({ ...prev, status: 'ERROR', error: e.message }));
+        }
+    };
+
+    const toggleSelectAll = () => {
+        if (selectedCompanies.size === companies.length) {
+            setSelectedCompanies(new Set());
+        } else {
+            setSelectedCompanies(new Set(companies.map(c => c.id)));
+        }
+    };
+
+    const toggleSelectCompany = (id, e) => {
+        e.stopPropagation();
+        const newSelected = new Set(selectedCompanies);
+        if (newSelected.has(id)) {
+            newSelected.delete(id);
+        } else {
+            newSelected.add(id);
+        }
+        setSelectedCompanies(newSelected);
+    };
 
     useEffect(() => {
         loadCompanies()
@@ -610,6 +700,30 @@ function Companies() {
                             Add Company
                         </button>
                     </div>
+
+                    {/* Bulk Actions */}
+                    {selectedCompanies.size > 0 && (
+                        <div className="mt-4 p-3 bg-teal-500/10 border border-teal-500/20 rounded-xl flex items-center justify-between animate-in fade-in slide-in-from-top-4">
+                            <span className="text-teal-400 font-medium text-sm ml-2">
+                                {selectedCompanies.size} companies selected
+                            </span>
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={() => setSelectedCompanies(new Set())}
+                                    className="px-3 py-1.5 text-xs text-gray-400 hover:text-white transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleEnrichSelected}
+                                    className="flex items-center gap-2 px-4 py-1.5 bg-teal-500 hover:bg-teal-400 text-black rounded-lg text-sm font-bold transition-all shadow-lg shadow-teal-500/20"
+                                >
+                                    <Users className="w-4 h-4" />
+                                    Find Leads & Draft Outreach
+                                </button>
+                            </div>
+                        </div>
+                    )}
                     {/* Data Repair Button (Temporary) */}
                     <div className="mt-4 flex justify-end">
                         <button
@@ -908,10 +1022,21 @@ function Companies() {
                                 <div key={company.name} className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl overflow-hidden">
                                     {/* Company Header */}
                                     <div
-                                        className="p-6 cursor-pointer hover:bg-white/5 transition-colors flex items-center justify-between"
+                                        className={`p-6 cursor-pointer hover:bg-white/5 transition-colors flex items-center justify-between ${selectedCompanies.has(company.id) ? 'bg-teal-500/5' : ''}`}
                                         onClick={() => toggleCompanyExpand(company.name)}
                                     >
                                         <div className="flex items-center gap-4 flex-1">
+                                            <div
+                                                className="flex-shrink-0 flex items-center justify-center p-2"
+                                                onClick={(e) => toggleSelectCompany(company.id, e)}
+                                            >
+                                                <div className={`w-5 h-5 rounded border flex items-center justify-center transition-all ${selectedCompanies.has(company.id)
+                                                        ? 'bg-teal-500 border-teal-500'
+                                                        : 'border-white/20 hover:border-teal-500/50'
+                                                    }`}>
+                                                    {selectedCompanies.has(company.id) && <div className="w-2.5 h-2.5 bg-black rounded-sm" />}
+                                                </div>
+                                            </div>
                                             <div className="flex-shrink-0">
                                                 <div className="w-14 h-14 rounded-full bg-[#139187]/10 border border-[#139187]/20 flex items-center justify-center">
                                                     <Building2 className="w-7 h-7 text-[#139187]" />
@@ -1479,6 +1604,77 @@ function Companies() {
                     loadCompanies(); // Refresh companies list
                 }}
             />
+            {/* Enrichment Modal */}
+            {enrichmentModalOpen && enrichmentProgress && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+                    <div className="bg-gray-900 border border-white/10 rounded-2xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl">
+                        <div className="p-6 border-b border-white/10 flex items-center justify-between bg-black/20">
+                            <div>
+                                <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                                    <Users className="w-5 h-5 text-teal-400" />
+                                    Enrich Companies
+                                </h3>
+                                <p className="text-sm text-gray-400 mt-1">
+                                    Finding leads and generating outreach based on profiles.
+                                </p>
+                            </div>
+                            <div className={`px-3 py-1 rounded-full text-xs font-bold ${enrichmentProgress.status === 'COMPLETE' ? 'bg-green-500/20 text-green-400' :
+                                enrichmentProgress.status === 'ERROR' ? 'bg-red-500/20 text-red-400' :
+                                    'bg-teal-500/20 text-teal-400 animate-pulse'
+                                }`}>
+                                {enrichmentProgress.status}
+                            </div>
+                        </div>
+
+                        {/* Stats Grid */}
+                        <div className="grid grid-cols-3 gap-1 bg-white/5 p-4 border-b border-white/10">
+                            <div className="bg-black/40 p-3 rounded-lg text-center">
+                                <div className="text-2xl font-bold text-white">{enrichmentProgress.stats.companiesProcessed}</div>
+                                <div className="text-xs text-gray-500 uppercase tracking-wider">Processed</div>
+                            </div>
+                            <div className="bg-black/40 p-3 rounded-lg text-center">
+                                <div className="text-2xl font-bold text-teal-400">{enrichmentProgress.stats.leadsFound}</div>
+                                <div className="text-xs text-gray-500 uppercase tracking-wider">Leads Found</div>
+                            </div>
+                            <div className="bg-black/40 p-3 rounded-lg text-center">
+                                <div className="text-2xl font-bold text-purple-400">{enrichmentProgress.stats.messagesGenerated}</div>
+                                <div className="text-xs text-gray-500 uppercase tracking-wider">Messages Drafted</div>
+                            </div>
+                        </div>
+
+                        {/* Logs */}
+                        <div className="flex-1 overflow-auto p-4 font-mono text-xs space-y-1 bg-black/50 min-h-[300px]">
+                            {enrichmentProgress.logs.map((log, i) => (
+                                <div key={i} className="text-gray-300 border-l-2 border-white/10 pl-2 py-0.5">
+                                    {log}
+                                </div>
+                            ))}
+                            {enrichmentProgress.error && (
+                                <div className="text-red-400 bg-red-500/10 p-2 rounded border border-red-500/20 mt-2">
+                                    Error: {enrichmentProgress.error}
+                                </div>
+                            )}
+                            <div id="enrich-log-end" />
+                        </div>
+
+                        <div className="p-4 border-t border-white/10 bg-black/20 flex justify-end gap-3">
+                            {(enrichmentProgress.status === 'COMPLETE' || enrichmentProgress.status === 'ERROR' || enrichmentProgress.status === 'PARTIAL') && (
+                                <button
+                                    onClick={() => {
+                                        setEnrichmentModalOpen(false);
+                                        setSelectedCompanies(new Set()); // Clear selection
+                                        loadCompanies(); // Refresh
+                                        // Optional: Redirect to Leads view?
+                                    }}
+                                    className="px-4 py-2 bg-white text-black font-bold rounded-lg hover:bg-gray-200 transition-colors"
+                                >
+                                    Done
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }
