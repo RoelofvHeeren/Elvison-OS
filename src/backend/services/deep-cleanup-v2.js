@@ -139,6 +139,18 @@ export const COMPANY_ACTIONS = {
     'Claridge Inc': { status: 'KEEP', icp_type: 'FAMILY_OFFICE_SINGLE' },
     'White Owl Family Office Group': { status: 'KEEP', icp_type: 'FAMILY_OFFICE_MULTI' },
 
+    // === KEEP - Manual Review Whitelist ===
+    'Goldman Sachs': { status: 'KEEP', icp_type: 'ASSET_MANAGER_MULTI_STRATEGY' },
+    'Cardinal Capital Management, Inc': { status: 'KEEP', icp_type: 'ASSET_MANAGER_MULTI_STRATEGY' },
+    'Fidelity Canada': { status: 'KEEP', icp_type: 'ASSET_MANAGER_MULTI_STRATEGY' },
+    'McConnell Foundation': { status: 'KEEP', icp_type: 'FAMILY_OFFICE_SINGLE' },
+    'Montrusco Bolton Investments Inc': { status: 'KEEP', icp_type: 'ASSET_MANAGER_MULTI_STRATEGY' },
+    'RBC Global Asset Management': { status: 'KEEP', icp_type: 'ASSET_MANAGER_MULTI_STRATEGY' },
+    'Spotlight Development Inc': { status: 'KEEP', icp_type: 'RE_DEVELOPER_OPERATOR' },
+    'Starlight Capital': { status: 'KEEP', icp_type: 'ASSET_MANAGER_MULTI_STRATEGY' },
+    'Starlight Investments': { status: 'KEEP', icp_type: 'REAL_ESTATE_PRIVATE_EQUITY' },
+    'Viewpoint Investment Partners': { status: 'KEEP', icp_type: 'ASSET_MANAGER_MULTI_STRATEGY' },
+
     // === KEEP - Platform/Fractional ===
     'Fundrise': { status: 'KEEP', icp_type: 'PLATFORM_FRACTIONAL' },
     'Parvis': { status: 'KEEP', icp_type: 'PLATFORM_FRACTIONAL' },
