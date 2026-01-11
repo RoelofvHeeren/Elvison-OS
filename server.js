@@ -27,13 +27,7 @@ app.use(cors({
 app.use(express.json())
 app.use(cookieParser())
 
-// --- Static Files ---
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
-
-app.use(express.static(path.join(__dirname, 'dist')))
-
-// --- API Endpoints ---
+// --- API Endpoints (Static files served at the end) ---
 
 // Health Check
 app.get('/api/health', (req, res) => {
@@ -3919,6 +3913,19 @@ app.post('/api/integrations/push', requireAuth, async (req, res) => {
         if (!res.headersSent) res.status(500).json({ error: 'Integration push failed' })
     }
 })
+
+// --- Static Files \u0026 SPA Catchall (MUST be last, after all API routes) ---
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+
+// Serve static files from dist
+app.use(express.static(path.join(__dirname, 'dist')))
+
+// SPA catchall - return index.html for all non-API routes
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'dist', 'index.html'))
+})
+
 // Start Server
 initDB().then(async () => {
     // Schema Migrations
