@@ -417,6 +417,7 @@ export class ResearchService {
                 **Summary** - Brief overview of what the company does
                 **Investment Strategy** - If applicable, their investment focus/thesis
                 **Scale & Geographic Focus** - Size, locations, markets they operate in
+                **Portfolio Observations** - Specific project highlights or deal types
                 **Key Highlights** - Notable facts, achievements, differentiators
                 **Fit Analysis** - Potential for partnership/outreach (if context is available)
                 
@@ -526,7 +527,7 @@ export class ResearchService {
             ## Summary
             (2-3 sentences max)
 
-            ## Investment Strategy & Focus
+            ## Investment Strategy
             (Bullet points on asset classes, strategies, and development/lending mix)
 
             ## Scale & Geographic Focus
@@ -535,8 +536,8 @@ export class ResearchService {
             ## Portfolio Observations
             (Specific project highlights or deal types)
 
-            ## Key Team Members
-            (Names and titles if found)
+            ## Key Highlights
+            (Notable facts, achievements, awards, or differentiators)
 
             ## Fit Analysis
             (CRITICAL: Evaluate as High/Medium/Low fit for a Canadian Residential Developer. Explain why.)
