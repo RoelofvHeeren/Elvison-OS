@@ -321,6 +321,9 @@ export function checkDomainMatch(companyName, domain) {
 
 /**
  * Calculate fit score with breakdown (0-10)
+ * 
+ * IMPORTANT: Applies intelligent defaults for missing fields to ensure
+ * qualified Family Offices and Investment Funds score appropriately (7-10).
  */
 export function calculateFitScore(company) {
     const breakdown = {
@@ -332,8 +335,35 @@ export function calculateFitScore(company) {
     };
 
     const icpType = company.icp_type || '';
-    const capitalRole = company.capital_role || '';
-    const canadaRelevance = company.canada_relevance || '';
+
+    // Apply intelligent defaults for capital_role based on investor type
+    let capitalRole = company.capital_role || '';
+    if (!capitalRole && icpType) {
+        // Family Offices and RE developers typically invest directly
+        if (['FAMILY_OFFICE_SINGLE', 'FAMILY_OFFICE_MULTI', 'RE_DEVELOPER_OPERATOR', 'REAL_ESTATE_PRIVATE_EQUITY'].includes(icpType)) {
+            capitalRole = 'DIRECT_EQUITY';
+        }
+        // Pensions, REITs, and Insurance investors also deploy direct capital
+        else if (['PENSION', 'REIT_PUBLIC', 'INSURANCE_INVESTOR', 'SOVEREIGN_WEALTH_FUND'].includes(icpType)) {
+            capitalRole = 'DIRECT_EQUITY';
+        }
+        // Multi-strategy asset managers are typically fund managers
+        else if (['ASSET_MANAGER_MULTI_STRATEGY'].includes(icpType)) {
+            capitalRole = 'FUND_MANAGER';
+        }
+        // Debt funds provide direct debt
+        else if (['REAL_ESTATE_DEBT_FUND', 'BANK_LENDER'].includes(icpType)) {
+            capitalRole = 'DIRECT_DEBT';
+        }
+    }
+
+    // Apply intelligent default for canada_relevance
+    // Companies that passed our cleanup process are typically Canada-active
+    let canadaRelevance = company.canada_relevance || '';
+    if (!canadaRelevance && icpType) {
+        // If in our system, assume at least Canada-active (conservative default)
+        canadaRelevance = 'CANADA_ACTIVE';
+    }
 
     // Investor Type Relevance (0-2)
     const highValueTypes = ['PENSION', 'SOVEREIGN_WEALTH_FUND', 'REAL_ESTATE_PRIVATE_EQUITY', 'FAMILY_OFFICE_SINGLE', 'FAMILY_OFFICE_MULTI'];

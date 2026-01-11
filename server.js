@@ -511,8 +511,9 @@ app.post('/api/admin/deep-cleanup-v2', requireAuth, async (req, res) => {
                     }
                 }
 
-                // Calculate fit score
-                const fitResult = calculateFitScore({ icp_type, capital_role, canada_relevance: 'UNKNOWN' });
+                // Calculate fit score - let the function apply intelligent defaults for missing fields
+                const canada_relevance = action?.canada_relevance || '';  // Let calculateFitScore apply default
+                const fitResult = calculateFitScore({ icp_type, capital_role, canada_relevance });
 
                 // Apply action
                 if (status === 'DELETE') {
@@ -2032,18 +2033,29 @@ app.get('/api/companies', requireAuth, async (req, res) => {
                 queryText += ` AND c.icp_type IN ('FAMILY_OFFICE_SINGLE', 'FAMILY_OFFICE_MULTI')`;
             } else if (icpName.includes('fund') || icpName.includes('investment firm')) {
                 // Show investment-related types for Funds/Investment Firms strategy
-                queryText += ` AND c.icp_type IN (
-                    'REAL_ESTATE_PRIVATE_EQUITY', 
-                    'ASSET_MANAGER_MULTI_STRATEGY',
-                    'PENSION',
-                    'SOVEREIGN_WEALTH_FUND',
-                    'INSURANCE_INVESTOR',
-                    'REIT_PUBLIC',
-                    'RE_DEVELOPER_OPERATOR',
-                    'REAL_ESTATE_DEBT_FUND',
-                    'BANK_LENDER',
-                    'PLATFORM_FRACTIONAL'
+                // ALSO include companies with NULL icp_type (unclassified) OR those with leads under this ICP
+                queryText += ` AND (
+                    c.icp_type IN (
+                        'REAL_ESTATE_PRIVATE_EQUITY', 
+                        'ASSET_MANAGER_MULTI_STRATEGY',
+                        'PENSION',
+                        'SOVEREIGN_WEALTH_FUND',
+                        'INSURANCE_INVESTOR',
+                        'REIT_PUBLIC',
+                        'RE_DEVELOPER_OPERATOR',
+                        'REAL_ESTATE_DEBT_FUND',
+                        'BANK_LENDER',
+                        'PLATFORM_FRACTIONAL'
+                    )
+                    OR c.icp_type IS NULL
+                    OR EXISTS (
+                        SELECT 1 FROM leads 
+                        WHERE company_name = c.company_name 
+                        AND user_id = c.user_id 
+                        AND icp_id = $2
+                    )
                 )`;
+                params.push(icpId);
             } else {
                 // Fallback: filter by lead icp_id if icp_type not set
                 queryText += ` AND (
@@ -2965,11 +2977,11 @@ VALUES('main_workflow', 'RUNNING', NOW(), $1, $2, $3, $4, $5) RETURNING id`,
 
             // Build comprehensive stats object for DB storage
             const statsForDB = {
-                // Basic counts
-                companies_discovered: result.leads?.length || 0,
-                leads_returned: result.leads?.length || 0,
-                total: workflowStats.total || 0,
-                attempts: workflowStats.attempts || 0,
+                // CRITICAL: Spread all workflow stats first (includes qualified, leadsDisqualified, searchStats, companies_discovered)
+                ...workflowStats,
+
+                // Override with specific fields that need formatting
+                leads_returned: result.leads?.length || workflowStats.leads_returned || 0,
 
                 // Cost data (from CostTracker.getSummary())
                 cost: costData.cost || { total: 0, formatted: '$0.00' },
