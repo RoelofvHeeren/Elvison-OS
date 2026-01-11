@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS companies (
     
     -- Profile / Enrichment Data
     company_profile TEXT,
+    market_intelligence TEXT, -- Full-site research report from Deep Research
     industry VARCHAR(100),
     size_range VARCHAR(50),
     headquarters VARCHAR(100),
@@ -21,6 +22,7 @@ CREATE TABLE IF NOT EXISTS companies (
     -- Metadata
     fit_score INTEGER,
     status VARCHAR(50) DEFAULT 'active', -- active, disqualified
+    last_researched_at TIMESTAMP WITH TIME ZONE, -- Track when Deep Research was last run
     
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     last_updated TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
