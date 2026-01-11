@@ -2128,12 +2128,14 @@ app.get('/api/companies', requireAuth, async (req, res) => {
                             'BANK_LENDER',
                             'PLATFORM_FRACTIONAL'
                         )
-                        OR c.icp_type IS NULL
-                        OR EXISTS (
-                            SELECT 1 FROM leads 
-                            WHERE company_name = c.company_name 
-                            AND user_id = c.user_id 
-                            AND icp_id = $2
+                        OR (
+                            c.icp_type IS NULL
+                            AND EXISTS (
+                                SELECT 1 FROM leads 
+                                WHERE company_name = c.company_name 
+                                AND user_id = c.user_id 
+                                AND icp_id = $2
+                            )
                         )
                     )
                     AND (COALESCE(c.fit_score, 0) >= 6 OR c.cleanup_status = 'KEPT')
