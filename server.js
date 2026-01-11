@@ -2014,6 +2014,22 @@ app.post('/api/crm-columns', requireAuth, async (req, res) => {
     }
 })
 
+// Temporary Debug Endpoint - Review Required
+app.get('/api/debug/review-required', async (req, res) => {
+    try {
+        // Find companies with REVIEW_REQUIRED status
+        const { rows } = await query(`
+            SELECT id, company_name, website, icp_type, fit_score, status, cleanup_status, data_quality_flags
+            FROM companies 
+            WHERE cleanup_status = 'REVIEW_REQUIRED'
+            ORDER BY company_name ASC
+        `);
+        res.json(rows);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // --- LEADS & CRM ---
 
 // Get ALL Companies (For Companies View)
