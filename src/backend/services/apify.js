@@ -795,7 +795,7 @@ export const scrapeFullSite = async (domain, token, maxCost = 5.00, onProgress =
 
         return {
             ...stats,
-            content: combinedMarkdown,
+            items: results, // Return raw items for chunked processing
             datasetId,
             aborted: false
         };

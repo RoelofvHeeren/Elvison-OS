@@ -1213,8 +1213,11 @@ ${JSON.stringify(batch.map(l => ({
  * @returns {{ pass: boolean, reason?: string }}
  */
 const validateLeadForCRM = (lead, status) => {
-    // Rule 1: Must have email
+    // Rule 1: Must have email (Required for all leads to avoid DB chaos)
     if (!lead.email) return { pass: false, reason: 'Missing email' };
+
+    // DISQUALIFIED leads pass easily for review
+    if (status === 'DISQUALIFIED') return { pass: true };
 
     // Rule 2: Email domain must not be generic/fake
     const emailDomain = lead.email.split('@')[1]?.toLowerCase();
@@ -1256,17 +1259,28 @@ const saveLeadsToDB = async (leads, userId, icpId, logStep, forceStatus = 'NEW',
     if (!leads || leads.length === 0) return;
 
     let savedCount = 0;
+    let redirectedCount = 0;
     let rejectedCount = 0;
 
     for (const lead of leads) {
         try {
             // === CRM ADMISSION GATE ===
-            const gateResult = validateLeadForCRM(lead, forceStatus);
+            let currentStatus = forceStatus;
+            const gateResult = validateLeadForCRM(lead, currentStatus);
+
             if (!gateResult.pass) {
-                // Log detailed rejection reason to internal console
-                console.log(`[CRM Gate] ❌ Rejected ${lead.first_name} ${lead.last_name} (${lead.email || 'no email'}): ${gateResult.reason}`);
-                rejectedCount++;
-                continue;
+                // If this was meant to be a NEW lead, redirect to DISQUALIFIED for review
+                if (currentStatus === 'NEW') {
+                    currentStatus = 'DISQUALIFIED';
+                    lead.disqualification_reason = `REJECTED AT GATE: ${gateResult.reason}`;
+                    redirectedCount++;
+                    // Fall through to save... 
+                } else {
+                    // If it's already meant to be disqualified and still fails (no email), drop it
+                    console.log(`[CRM Gate] ❌ Dropped ${lead.first_name} ${lead.last_name} (${lead.email || 'no email'}): ${gateResult.reason}`);
+                    rejectedCount++;
+                    continue;
+                }
             }
 
             const exists = await query("SELECT id FROM leads WHERE email = $1 AND user_id = $2", [lead.email, userId]);
@@ -1274,7 +1288,7 @@ const saveLeadsToDB = async (leads, userId, icpId, logStep, forceStatus = 'NEW',
 
             await query(`INSERT INTO leads(company_name, person_name, email, job_title, linkedin_url, status, source, user_id, icp_id, custom_data, run_id)
                         VALUES($1, $2, $3, $4, $5, $6, 'Outbound Agent', $7, $8, $9, $10)`,
-                [lead.company_name, `${lead.first_name} ${lead.last_name} `, lead.email, lead.title, lead.linkedin_url, forceStatus, userId, icpId, {
+                [lead.company_name, `${lead.first_name} ${lead.last_name} `, lead.email, lead.title, lead.linkedin_url, currentStatus, userId, icpId, {
                     icp_id: icpId,
                     score: lead.match_score,
                     company_profile: lead.company_profile,
@@ -1291,9 +1305,13 @@ const saveLeadsToDB = async (leads, userId, icpId, logStep, forceStatus = 'NEW',
         }
     }
 
-    if (savedCount > 0 || rejectedCount > 0) {
+    if (savedCount > 0 || redirectedCount > 0 || rejectedCount > 0) {
         const typeLabel = (forceStatus === 'DISQUALIFIED') ? '❌ Disqualified' : '✅ Valid';
-        logStep('Database', `${typeLabel} Sync: Saved ${savedCount} leads to CRM. (Rejected ${rejectedCount} at admission gate)`);
+        let detailMsg = `Saved ${savedCount} leads.`;
+        if (redirectedCount > 0) detailMsg += ` Redirected ${redirectedCount} to disqualified for review.`;
+        if (rejectedCount > 0) detailMsg += ` Dropped ${rejectedCount} (dead data).`;
+
+        logStep('Database', `${typeLabel} Sync: ${detailMsg}`);
     }
 
     // SYNC: Mark companies as researched to prevent discovery in future runs AND Sync to companies table
