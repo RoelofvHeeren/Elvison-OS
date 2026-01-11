@@ -3959,6 +3959,25 @@ initDB().then(async () => {
         console.error("Values migration warning:", err.message);
     }
 
+    // STARTUP DEBUG: Check dist files
+    try {
+        const fs = await import('fs/promises');
+        console.log("📂 Startup FS Check:");
+        console.log("   __dirname:", __dirname);
+        console.log("   cwd:", process.cwd());
+        const distPath = path.join(__dirname, 'dist');
+        console.log("   dist path:", distPath);
+
+        const distFiles = await fs.readdir(distPath).catch(err => `Error: ${err.message}`);
+        console.log("   dist contents:", distFiles);
+
+        const assetsPath = path.join(distPath, 'assets');
+        const assetsFiles = await fs.readdir(assetsPath).catch(err => `Error: ${err.message}`);
+        console.log("   assets contents:", assetsFiles);
+    } catch (e) {
+        console.error("Startup FS Check Failed:", e);
+    }
+
     app.listen(port, () => {
         console.log(`Server running on port ${port}`)
         console.log("✅ SERVER.JS - GIT DEPLOYMENT ACTIVE - LOGGING ENABLED");
