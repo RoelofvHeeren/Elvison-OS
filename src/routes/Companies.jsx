@@ -49,7 +49,8 @@ function Companies() {
     const handleFullScan = async () => {
         if (!researchTarget?.website) return;
 
-        if (!confirm('This will scrape the ENTIRE website using Apify. Cost is tracked and capped at $5. This may take 5-20 minutes. Continue?')) return;
+        // TEST MODE: Reduced limit to $0.20 as requested
+        if (!confirm('TEST MODE: This will scrape the website (max 50 concurrent pages) with a safety cap of $0.20. Continue?')) return;
 
         setResearchStep('full-scanning');
         setFullScanStats({ pages: 0, cost: 0, duration: 0, status: 'STARTING' });
@@ -60,7 +61,7 @@ function Companies() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     url: researchTarget.website,
-                    // maxCost defaults to 5.00 on server if omitted
+                    maxCost: 0.20, // Low limit for testing
                     topic: researchTopic
                 })
             });

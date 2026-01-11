@@ -1451,26 +1451,33 @@ app.post('/api/companies/research/full-scan', requireAuth, async (req, res) => {
 
         await ResearchService.runFullSiteScan(url, token, limit, (stats) => {
             // Map Apify stats to our frontend event format
-            if (stats.status === 'ABORTED_COST_LIMIT') {
+            if (stats.status === 'PARTIAL_LIMIT_REACHED') {
+                send({ type: 'progress', stats: { ...stats, status: 'LIMIT REACHED - SAVING DATA...' } });
+            } else if (stats.status === 'ABORTED_COST_LIMIT') {
+                // Fallback for old status code
                 send({ type: 'error', error: `Cost limit exceeded ($${stats.cost.toFixed(2)})` });
             } else if (stats.status === 'FAILED') {
                 send({ type: 'error', error: 'Scrape failed internally.' });
             } else {
-                send({
-                    type: 'progress',
-                    stats: {
-                        pages: stats.pages,
-                        cost: stats.cost,
-                        duration: stats.duration,
-                        status: stats.status
-                    }
-                });
             }
         }).then((result) => {
-            if (!result.aborted) {
-                send({ type: 'complete', result: result.content, stats: result });
+            // Handle normal completion OR partial completion
+            if (result.aborted && !result.content) {
+                // Aborted without content (e.g. error)
+                // Note: The error event might have already been sent in the callback, but ensuring closure here.
+                res.end();
+            } else {
+                // Success or Partial Success
+                let message = result.content;
+                const limit = maxCost ? parseFloat(maxCost) : 5.00;
+
+                if (result.status === 'PARTIAL_LIMIT_REACHED') {
+                    message = `⚠️ **BUDGET LIMIT REACHED** ⚠️\n\nThe scan was stopped because it hit the cost cap of $${limit.toFixed(2)}.\n\n**Partial Results:**\nWe successfully scraped ${result.pages} pages before stopping.\n\n---\n\n` + (result.content || '');
+                }
+
+                send({ type: 'complete', result: message, stats: result });
+                res.end();
             }
-            res.end();
         });
 
     } catch (e) {

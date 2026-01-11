@@ -697,7 +697,7 @@ export const scrapeFullSite = async (domain, token, maxCost = 5.00, onProgress =
         startUrls: [{ url }],
         maxPagesPerCrawl: 9999, // Effectively unlimited (capped by cost/time)
         maxCrawlingDepth: 20,
-        maxConcurrency: 5, // Moderate speed
+        maxConcurrency: 50, // High concurrency for speed
         saveHtml: false,
         saveMarkdown: true, // We want markdown for LLM
         removeElementsCssSelector: 'nav, footer, script, style, noscript, svg, .ad, .popup, .cookie-banner',
@@ -743,8 +743,29 @@ export const scrapeFullSite = async (domain, token, maxCost = 5.00, onProgress =
             if (cost > maxCost) {
                 console.warn(`[Apify] Cost limit exceeded ($${cost} > $${maxCost}). Aborting...`);
                 await abortApifyRun(token, runId);
-                onProgress({ ...stats, status: 'ABORTED_COST_LIMIT' });
-                return { ...stats, aborted: true };
+                const finalStatus = 'PARTIAL_LIMIT_REACHED';
+
+                onProgress({ ...stats, status: finalStatus });
+
+                // ATTEMPT TO SAVE PARTIAL DATA
+                console.log(`[Apify] Fetching partial results for run ${runId}...`);
+                try {
+                    const results = await getApifyResults(token, data.defaultDatasetId);
+                    const combinedMarkdown = results.map(r => {
+                        return `--- URL: ${r.url} ---\n${r.markdown || r.text || 'No content'}\n`;
+                    }).join('\n\n');
+
+                    return {
+                        ...stats,
+                        status: finalStatus,
+                        content: combinedMarkdown,
+                        datasetId: data.defaultDatasetId,
+                        aborted: true
+                    };
+                } catch (e) {
+                    console.error("Failed to fetch partial results", e);
+                    return { ...stats, status: finalStatus, aborted: true, content: "Failed to retrieve partial content." };
+                }
             }
 
             if (['SUCCEEDED', 'ABORTED', 'TIMED-OUT', 'FAILED'].includes(status)) {
