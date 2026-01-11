@@ -82,16 +82,14 @@ function Companies() {
                     if (line.startsWith('data: ')) {
                         try {
                             const data = JSON.parse(line.slice(6));
+                            console.log('[Full Scan] SSE Event:', data.type, data);
                             if (data.type === 'progress') {
                                 setFullScanStats(data.stats);
                             } else if (data.type === 'complete') {
-                                setFullScanStats(data.stats);
-                                setAllLinks(data.all || []);
-                                setRecommendedLinks(data.recommended || []);
-                                // Default select highly relevant ones (score > 70)
-                                const highValueLinks = (data.recommended || []).filter(l => (l.score || 0) > 70).map(l => l.url);
-                                setSelectedLinks(highValueLinks.length > 0 ? highValueLinks : (data.recommended || []).map(l => l.url));
-                                setResearchStep('selecting');
+                                console.log('[Full Scan] Received COMPLETE event');
+                                setFullScanStats({ ...data.stats, status: 'COMPLETE' });
+                                setResearchResult(data.result || 'Research completed successfully.');
+                                setResearchStep('result'); // Show the final research report
                                 return; // Exit after complete
                             } else if (data.type === 'error') {
                                 throw new Error(data.error);
