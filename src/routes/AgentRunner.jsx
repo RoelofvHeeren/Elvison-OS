@@ -14,7 +14,7 @@ const STEPS = [
 
 const AgentRunner = () => {
     const navigate = useNavigate()
-    const { icps, selectedIcp, setSelectedIcp } = useIcp()
+    const { icps, selectedIcp, selectIcp } = useIcp()
     const [prompt, setPrompt] = useState('Find 3 law firms in Toronto, Canada and identify 1 Partner per firm.')
     const [runMode, setRunMode] = useState('search') // 'search' or 'manual'
     const [manualDomains, setManualDomains] = useState('')
@@ -344,8 +344,8 @@ const AgentRunner = () => {
                         <select
                             value={selectedIcp?.id || ''}
                             onChange={(e) => {
-                                const icp = icps.find(i => i.id === e.target.value)
-                                if (icp) setSelectedIcp(icp)
+                                const icp = icps.find(i => i.id == e.target.value)
+                                if (icp) selectIcp(icp)
                             }}
                             className="w-full rounded bg-black/20 border border-white/10 p-2 text-sm text-white focus:border-[#139187] focus:outline-none"
                         >

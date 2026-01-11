@@ -31,6 +31,7 @@ function CRM() {
     hasNext: false,
     hasPrevious: false
   })
+  const [totalUniqueCompanies, setTotalUniqueCompanies] = useState(0)
 
   const { icps, fetchIcps } = useIcp()
 
@@ -53,6 +54,7 @@ function CRM() {
         // New paginated format
         leadsData = response.data;
         paginationData = response.pagination;
+        setTotalUniqueCompanies(response.uniqueCompanies || 0); // Set total companies stats
       }
 
       // Data is an array of objects: { person_name, company_name, job_title, email, linkedin_url, custom_data, ... }
@@ -339,7 +341,7 @@ function CRM() {
             <div>
               <p className="text-xs uppercase tracking-wider font-semibold text-gray-400">Total companies</p>
               <p className="font-serif text-2xl font-bold text-white">
-                {new Set((rows || []).map((r) => r.company).filter(Boolean)).size}
+                {totalUniqueCompanies || new Set((rows || []).map((r) => r.company).filter(Boolean)).size}
               </p>
             </div>
           </div>

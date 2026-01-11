@@ -233,20 +233,35 @@ Analyze and extract:
 - Any red flags? (just advisory, brokerage only, non-investor)
 
 ## TASK 2: STRICT CATEGORIZATION
-Pick ONE:
-- "FAMILY_OFFICE": Explicit SFO/MFO that makes DIRECT investments. Must have evidence of proprietary capital deployed.
-- "INVESTMENT_FUND": PE Fund, REIT, Asset Manager, Holdings Company with DIRECT investments
-- "NEITHER": Wealth managers, advisors, brokers, service providers, lenders-only, unclear entities
+Assign the precise 'icp_type' Enum:
+
+FAMILY OFFICES:
+- "FAMILY_OFFICE_SINGLE": Investing for one family
+- "FAMILY_OFFICE_MULTI": Investing for multiple families
+
+FUNDS / INSTITUTIONS:
+- "REAL_ESTATE_PRIVATE_EQUITY": Dedicated PE Fund
+- "ASSET_MANAGER_MULTI_STRATEGY": Large manager (e.g. Blackstone, Brookfield)
+- "REIT_PUBLIC": Publicly traded REIT
+- "PENSION": Pension fund
+- "SOVEREIGN_WEALTH_FUND": SWF
+- "INSURANCE_INVESTOR": Insurance company
+- "RE_DEVELOPER_OPERATOR": Develops/Operates assets directly
+- "REAL_ESTATE_DEBT_FUND": Debt fund
+- "BANK_LENDER": Bank
+
+OTHERS (DISQUALIFY):
+- "NEITHER": Broker, Advisor, Service Provider, Unclear
 
 ## TASK 3: STRICT SCORING (1-10)
-For FAMILY_OFFICE (must score 8+ to keep):
-- 9-10: Explicit SFO/MFO + names specific RE deals/projects + Canadian + clear direct investment mandate
-- 8: Clear SFO/MFO + evidence of direct investing + Canadian presence
-- 1-7: Not clearly SFO/MFO OR no evidence of direct investing OR non-Canadian
+For FAMILY OFFICES (must score 8+ to keep):
+- 9-10: Explicit SFO/MFO + names deals + Canadian + direct
+- 8: Clear SFO/MFO + direct + Canadian
+- 1-7: Not clearly SFO/MFO OR no direct investing
 
-For INVESTMENT_FUND (must score 6+ to keep):
-- 8-10: Dedicated REPE, REIT, institutional with specific deals/portfolio
-- 6-7: PE firm or holdings with RE assets, clear investment activity
+For FUNDS (must score 6+ to keep):
+- 8-10: Dedicated REPE, REIT, institutional with deals
+- 6-7: PE firm or holdings with RE assets
 - 1-5: Pure service providers, brokers, lenders-only, unclear
 
 For NEITHER: Score 1-3
@@ -254,24 +269,16 @@ For NEITHER: Score 1-3
 BE STRICT. When in doubt, score LOW.
 
 ## TASK 4: GENERATE COMPREHENSIVE PROFILE
-If keeping this company (meets score threshold), write a structured profile:
-
-**Summary**: 1-2 sentences on who they are
-**Investment Strategy**: What they invest in, deal types, check sizes
-**Scale & Geography**: AUM, deal sizes, geographic focus  
-**Portfolio Highlights**: Specific deals/projects if known
-**Key Highlights**: 2-3 bullet points on why they're a good fit
-**Fit Analysis**: Why they match our criteria
-
-If NOT keeping, just write "DISQUALIFIED: [reason]"
+If keeping, write structured profile (Summary, Strategy, Scale/Geography, Highlights, Fit Analysis).
+If NOT keeping, write "DISQUALIFIED: [reason]"
 
 ## OUTPUT JSON:
 {
-    "category": "FAMILY_OFFICE" | "INVESTMENT_FUND" | "NEITHER",
+    "icp_type": "string (Enum Value from above)",
     "score": number (1-10),
-    "reason": "string (1 sentence why this score)",
-    "needs_more_research": boolean (true if you couldn't find enough info to be confident),
-    "company_profile": "string (the full structured profile OR disqualification reason)"
+    "reason": "string (1 sentence)",
+    "needs_more_research": boolean,
+    "company_profile": "string"
 }`;
 
                 let scoreData = null;
@@ -314,13 +321,15 @@ If NOT keeping, just write "DISQUALIFIED: [reason]"
                 }
 
                 // Determine threshold based on category
-                const threshold = scoreData.category === 'FAMILY_OFFICE' ? 8 : 6;
-                const shouldDelete = scoreData.category === 'NEITHER' || scoreData.score < threshold;
+                const icpType = scoreData.icp_type || 'NEITHER';
+                const isFamilyOffice = icpType.includes('FAMILY_OFFICE');
+                const threshold = isFamilyOffice ? 8 : 6;
+                const shouldDelete = icpType === 'NEITHER' || scoreData.score < threshold;
 
                 send({
                     type: 'scored',
                     company: companyName,
-                    category: scoreData.category,
+                    category: icpType,
                     score: scoreData.score,
                     threshold,
                     action: shouldDelete ? 'DELETE' : 'KEEP',
@@ -336,12 +345,12 @@ If NOT keeping, just write "DISQUALIFIED: [reason]"
                     results.deleted++;
                     results.deletedCompanies.push({ name: companyName, score: scoreData.score, reason: scoreData.reason });
                 } else {
-                    // Update company with new score and comprehensive profile
+                    // Update company with new score and comprehensive profile AND ICP TYPE
                     await query(`
                         UPDATE companies 
-                        SET fit_score = $1, company_profile = $2, last_updated = NOW()
-                        WHERE id = $3
-                    `, [scoreData.score, scoreData.company_profile || profile, company.id]);
+                        SET fit_score = $1, company_profile = $2, icp_type = $3, last_updated = NOW()
+                        WHERE id = $4
+                    `, [scoreData.score, scoreData.company_profile || profile, icpType, company.id]);
 
                     // Also update leads with new score
                     await query(`
@@ -352,7 +361,7 @@ If NOT keeping, just write "DISQUALIFIED: [reason]"
 
                     results.kept++;
                     results.rescored++;
-                    results.keptCompanies.push({ name: companyName, score: scoreData.score, category: scoreData.category });
+                    results.keptCompanies.push({ name: companyName, score: scoreData.score, category: icpType });
                 }
 
                 results.processed++;
@@ -2036,26 +2045,30 @@ app.get('/api/companies', requireAuth, async (req, res) => {
             } else if (icpName.includes('fund') || icpName.includes('investment firm')) {
                 // Show investment-related types for Funds/Investment Firms strategy
                 // ALSO include companies with NULL icp_type (unclassified) OR those with leads under this ICP
+                // FILTER OUT low-quality matches (score < 4) unless explicitly KEPT
                 queryText += ` AND (
-                    c.icp_type IN (
-                        'REAL_ESTATE_PRIVATE_EQUITY', 
-                        'ASSET_MANAGER_MULTI_STRATEGY',
-                        'PENSION',
-                        'SOVEREIGN_WEALTH_FUND',
-                        'INSURANCE_INVESTOR',
-                        'REIT_PUBLIC',
-                        'RE_DEVELOPER_OPERATOR',
-                        'REAL_ESTATE_DEBT_FUND',
-                        'BANK_LENDER',
-                        'PLATFORM_FRACTIONAL'
+                    (
+                        c.icp_type IN (
+                            'REAL_ESTATE_PRIVATE_EQUITY', 
+                            'ASSET_MANAGER_MULTI_STRATEGY',
+                            'PENSION',
+                            'SOVEREIGN_WEALTH_FUND',
+                            'INSURANCE_INVESTOR',
+                            'REIT_PUBLIC',
+                            'RE_DEVELOPER_OPERATOR',
+                            'REAL_ESTATE_DEBT_FUND',
+                            'BANK_LENDER',
+                            'PLATFORM_FRACTIONAL'
+                        )
+                        OR c.icp_type IS NULL
+                        OR EXISTS (
+                            SELECT 1 FROM leads 
+                            WHERE company_name = c.company_name 
+                            AND user_id = c.user_id 
+                            AND icp_id = $2
+                        )
                     )
-                    OR c.icp_type IS NULL
-                    OR EXISTS (
-                        SELECT 1 FROM leads 
-                        WHERE company_name = c.company_name 
-                        AND user_id = c.user_id 
-                        AND icp_id = $2
-                    )
+                    AND (COALESCE(c.fit_score, 0) >= 4 OR c.cleanup_status = 'KEPT')
                 )`;
                 params.push(icpId);
             } else {
@@ -2073,7 +2086,8 @@ app.get('/api/companies', requireAuth, async (req, res) => {
             }
         }
 
-        queryText += ` GROUP BY c.id ORDER BY c.created_at DESC`;
+        // Sort by FIT score (High to Low), then by creation date
+        queryText += ` GROUP BY c.id ORDER BY c.fit_score DESC NULLS LAST, c.created_at DESC`;
 
         const { rows } = await query(queryText, params);
         console.log(`[GET /api/companies] Found ${rows.length} rows.`);
@@ -2166,6 +2180,11 @@ app.get('/api/leads', requireAuth, async (req, res) => {
 
         const { rows } = await query(queryStr, params);
 
+        // Get total unique companies count (for dashboard stats)
+        const uniqueCompanyQuery = `SELECT COUNT(DISTINCT company_name) as count FROM leads WHERE user_id = $1`;
+        const { rows: uniqueCompanyRows } = await query(uniqueCompanyQuery, [req.userId]);
+        const uniqueCompanies = parseInt(uniqueCompanyRows[0]?.count || 0);
+
         // Return data with pagination metadata
         res.json({
             data: rows,
@@ -2176,7 +2195,8 @@ app.get('/api/leads', requireAuth, async (req, res) => {
                 totalPages: totalPages,
                 hasNext: pageNum < totalPages,
                 hasPrevious: pageNum > 1
-            }
+            },
+            uniqueCompanies // Added for CRM stats
         });
     } catch (err) {
         console.error('Failed to fetch leads:', err)
