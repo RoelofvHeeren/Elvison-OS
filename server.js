@@ -3,7 +3,7 @@ import cors from 'cors'
 import dotenv from 'dotenv'
 import cookieParser from 'cookie-parser'
 import bcrypt from 'bcryptjs'
-import { query } from './db/index.js'
+import { query, pool } from './db/index.js'
 import { runAgentWorkflow } from './src/backend/workflow.js'
 import { generateToken } from './src/backend/session-utils.js'
 import { requireAuth, optionalAuth } from './src/backend/auth-middleware.js'
@@ -1503,7 +1503,10 @@ app.post('/api/companies/research/full-scan', requireAuth, async (req, res) => {
                     finalReport = await ResearchService.synthesizeFullScanReport(
                         result.items,
                         url,
-                        (msg) => send({ type: 'progress', stats: { ...result, status: msg } })
+                        (msg) => {
+                            console.log(`[Full Scan] Analysis Progress: ${msg}`);
+                            send({ type: 'progress', stats: { ...result, status: msg } });
+                        }
                     );
                 } else {
                     finalReport = "No content scraped to analyze.";

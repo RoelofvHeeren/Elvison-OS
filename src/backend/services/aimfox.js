@@ -41,29 +41,29 @@ class AimfoxService {
         }
 
         try {
-            // Map Elvison lead to Aimfox payload
-            // Using standard fields + custom variables
+            // Map Elvison lead to Aimfox V2 multiple profiles payload
             const customData = lead.custom_data || {};
 
             const payload = {
-                linkedin_url: lead.linkedin_url,
-                first_name: lead.person_name?.split(' ')[0] || '',
-                last_name: lead.person_name?.split(' ').slice(1).join(' ') || '',
-                company_name: lead.company_name || '',
-                job_title: lead.job_title || '',
-                email: lead.email || '',
-                // Custom variables array for Aimfox V2
-                // Structure typically: [ { name: "var1", value: "val1" } ] or object key-value
-                custom_variables: {
-                    companyProfile: customData.company_profile || '',
-                    connectionRequest: customData.connection_request || '',
-                    emailMessage: customData.email_message || ''
-                }
+                type: 'profile_url',
+                profiles: [{
+                    profile_url: lead.linkedin_url,
+                    custom_variables: {
+                        firstName: lead.person_name?.split(' ')[0] || '',
+                        lastName: lead.person_name?.split(' ').slice(1).join(' ') || '',
+                        companyName: lead.company_name || '',
+                        jobTitle: lead.job_title || '',
+                        email: lead.email || '',
+                        companyProfile: customData.company_profile || '',
+                        connectionRequest: customData.connection_request || '',
+                        emailMessage: customData.email_message || ''
+                    }
+                }]
             };
 
             console.log(`[Aimfox] Adding lead to campaign ${campaignId}: ${lead.person_name} (${lead.linkedin_url})`);
 
-            const response = await axios.post(`${this.baseUrl}/campaigns/${campaignId}/audience/custom-variables`, payload, {
+            const response = await axios.post(`${this.baseUrl}/campaigns/${campaignId}/audience/multiple`, payload, {
                 headers: this._getHeaders()
             });
 

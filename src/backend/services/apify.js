@@ -751,9 +751,11 @@ export const scrapeFullSite = async (domain, token, maxCost = 5.00, onProgress =
                 statsObj.crawledPages ||
                 statsObj.requestCount || 0;
 
-            // Fallback: Parse statusMessage (e.g., "Crawled 123/241 pages")
+            // Fallback: Parse statusMessage (e.g., "Crawled 123/241 pages" or "829 results")
             if (pages === 0 && data.statusMessage) {
-                const match = data.statusMessage.match(/(\d+)\//) || data.statusMessage.match(/(\d+)\s+pages/);
+                const match = data.statusMessage.match(/(\d+)\//) ||
+                    data.statusMessage.match(/(\d+)\s+pages/) ||
+                    data.statusMessage.match(/(\d+)\s+results/);
                 if (match) pages = parseInt(match[1]);
             }
 
@@ -811,24 +813,42 @@ export const scrapeFullSite = async (domain, token, maxCost = 5.00, onProgress =
         // Fetch Results in Chunks
         const datasetInfo = await getDatasetInfo(token, datasetId);
         const totalItems = datasetInfo?.itemCount || stats.pages || 0;
+
+        console.log(`[Apify] Dataset Info:`, { datasetId, itemCount: datasetInfo?.itemCount, statsPages: stats.pages });
+
         const results = [];
         const CHUNK_SIZE = 500;
 
-        for (let offset = 0; offset < totalItems; offset += CHUNK_SIZE) {
-            const currentCount = Math.min(offset + CHUNK_SIZE, totalItems);
-            // Size estimation: approximate 5KB per page average
-            const approxSizeKB = (currentCount * 5).toFixed(0);
-            onProgress({
-                ...stats,
-                status: `Downloading: ${currentCount}/${totalItems} pages (~${approxSizeKB} KB)...`
-            });
-            const chunk = await getApifyResults(token, datasetId, offset, CHUNK_SIZE);
-            results.push(...chunk);
+        // If totalItems is 0 but we know the run succeeded, try to fetch at least first batch
+        const fetchLimit = totalItems > 0 ? totalItems : 1000;
+
+        if (totalItems === 0) {
+            console.log(`[Apify] Item count reported as 0. Attempting one-off fetch as fallback...`);
+            const chunk = await getApifyResults(token, datasetId, 0, 1000);
+            if (chunk && chunk.length > 0) {
+                console.log(`[Apify] Fallback fetch found ${chunk.length} items.`);
+                results.push(...chunk);
+            }
+        } else {
+            for (let offset = 0; offset < totalItems; offset += CHUNK_SIZE) {
+                const currentCount = Math.min(offset + CHUNK_SIZE, totalItems);
+                const approxSizeKB = (currentCount * 5).toFixed(0);
+
+                onProgress({
+                    ...stats,
+                    status: `Downloading: ${currentCount}/${totalItems} pages (~${approxSizeKB} KB)...`
+                });
+
+                const chunk = await getApifyResults(token, datasetId, offset, CHUNK_SIZE);
+                results.push(...chunk);
+            }
         }
+
+        console.log(`[Apify] Download complete. Total items: ${results.length}`);
 
         return {
             ...stats,
-            items: results, // Return raw items for chunked processing
+            items: results,
             datasetId,
             aborted: false
         };
