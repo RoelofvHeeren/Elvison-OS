@@ -3500,11 +3500,7 @@ app.post('/api/integrations/push', requireAuth, async (req, res) => {
     }
 })
 
-// --- Catch-All for Frontend ---
-// Express 5 requires regex for global wildcard since '*' string is reserved
-app.get(/.*/, (req, res) => {
-    res.sendFile(path.join(__dirname, 'dist', 'index.html'))
-})
+
 
 // --- Database Initialization ---
 const initDB = async () => {
