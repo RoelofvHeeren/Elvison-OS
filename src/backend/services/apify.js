@@ -766,6 +766,8 @@ export const scrapeFullSite = async (domain, token, maxCost = 5.00, onProgress =
                 msg: data.statusMessage
             });
 
+            const duration = (Date.now() - new Date(data.startedAt).getTime()) / 1000; // seconds
+
             // Cost Estimation
             const cost = data.usageTotalUsd || 0;
 
