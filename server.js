@@ -524,6 +524,12 @@ app.post('/api/admin/deep-cleanup-v2', requireAuth, async (req, res) => {
                 const canada_relevance = action?.canada_relevance || '';  // Let calculateFitScore apply default
                 const fitResult = calculateFitScore({ icp_type, capital_role, canada_relevance });
 
+                // Check for auto-duplicates if not already handled by hardcoded action
+                if (!action && rootDomain && domainMap.has(rootDomain)) {
+                    status = 'MERGE';
+                    action = { merge_into: domainMap.get(rootDomain) };
+                }
+
                 // Apply action
                 if (status === 'DELETE') {
                     // Delete company and leads
@@ -536,18 +542,31 @@ app.post('/api/admin/deep-cleanup-v2', requireAuth, async (req, res) => {
 
                     send({ type: 'action', company: company.company_name, status: 'DELETED', reason: flags.join(', ') || icp_type });
                 } else if (status === 'MERGE') {
-                    // Mark as merged but don't delete yet (for review)
-                    await query(`
-                        UPDATE companies SET 
-                            cleanup_status = 'MERGED',
-                            data_quality_flags = $1,
-                            company_name_clean = $2,
-                            website_root_domain = $3
-                        WHERE id = $4
-                    `, [JSON.stringify(flags), nameClean, rootDomain, company.id]);
+                    // Truly MERGE: Reassign leads and delete
+                    const target = action?.merge_into;
+                    if (target) {
+                        const leadRes = await query(
+                            'UPDATE leads SET company_name = $1 WHERE company_name = $2 AND user_id = $3',
+                            [target, company.company_name, userId]
+                        );
+                        results.leads_updated += leadRes.rowCount;
+                    }
 
+                    await query('DELETE FROM companies WHERE id = $1', [company.id]);
+                    await query('DELETE FROM researched_companies WHERE company_name = $1 AND user_id = $2', [company.company_name, userId]);
+
+                    results.deleted++;
                     results.merged++;
-                    send({ type: 'action', company: company.company_name, status: 'MERGED', merge_into: action?.merge_into });
+                    send({ type: 'action', company: company.company_name, status: 'MERGED & DELETED', merge_into: target });
+                } else if (fitResult.fit_score < 6 && status !== 'KEEP') {
+                    // Low score + no whitelist = DELETE
+                    const leadsDeleted = await query('DELETE FROM leads WHERE company_name = $1 AND user_id = $2 RETURNING id', [company.company_name, userId]);
+                    await query('DELETE FROM companies WHERE id = $1', [company.id]);
+                    await query('DELETE FROM researched_companies WHERE company_name = $1 AND user_id = $2', [company.company_name, userId]);
+
+                    results.deleted++;
+                    results.leads_deleted += leadsDeleted.rowCount;
+                    send({ type: 'action', company: company.company_name, status: 'DELETED (AUTO)', reason: 'Score < 6' });
                 } else {
                     // KEEP or REVIEW_REQUIRED - update the record
                     await query(`
