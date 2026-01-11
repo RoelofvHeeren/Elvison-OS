@@ -1258,6 +1258,15 @@ function Companies() {
                                                                                         'Running Full Site Scrape...'}
                                                     </h4>
                                                     <p className="text-[10px] text-gray-500 font-mono uppercase tracking-tighter opacity-50">{fullScanStats.status}</p>
+
+                                                    {fullScanStats.percent !== undefined && (
+                                                        <div className="w-full h-1 bg-white/10 rounded-full mt-3 overflow-hidden">
+                                                            <div
+                                                                className="h-full bg-teal-400 transition-all duration-300"
+                                                                style={{ width: `${fullScanStats.percent}%` }}
+                                                            />
+                                                        </div>
+                                                    )}
                                                 </div>
 
                                                 <div className="grid grid-cols-3 gap-4 max-w-sm mx-auto bg-white/5 rounded-xl p-4 border border-white/10">

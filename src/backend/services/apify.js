@@ -842,9 +842,11 @@ export const scrapeFullSite = async (domain, token, maxCost = 5.00, onProgress =
                 const currentCount = Math.min(offset + CHUNK_SIZE, totalItems);
                 const approxSizeKB = (currentCount * 5).toFixed(0);
 
+                const percent = Math.round((currentCount / totalItems) * 100);
                 onProgress({
                     ...stats,
-                    status: `Downloading: ${currentCount}/${totalItems} pages (~${approxSizeKB} KB)...`
+                    status: `Downloading: ${currentCount}/${totalItems} pages (~${approxSizeKB} KB)...`,
+                    percent
                 });
 
                 const chunk = await getApifyResults(token, datasetId, offset, CHUNK_SIZE);
