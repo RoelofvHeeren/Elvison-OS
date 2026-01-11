@@ -452,64 +452,97 @@ export class ResearchService {
         return await scrapeFullSite(domain, token, maxCost, onProgress);
     }
 
-    /**
-     * Synthesize a structured company profile from raw full-site markdown.
-     * @param {string} rawMarkdown - The massive text dump from Apify.
-     * @param {string} companyName - Name of the company.
-     */
-    static async synthesizeFullScanReport(rawMarkdown, companyName) {
-        console.log(`🧠 Synthesizing report for ${companyName} (${rawMarkdown.length} chars)...`);
+    static async synthesizeFullScanReport(items, companyName, onProgress = () => { }) {
+        if (!items || items.length === 0) return "No content scraped to analyze.";
 
-        // Truncate if ABSOLUTELY massive (Gemini 1.5 Pro takes 2M tokens, approx 8MB text). 
-        // 400 pages @ 5kb = 2MB. Should be safe.
-        // Safety cap: 4MB
-        const limit = 4 * 1024 * 1024;
-        const input = rawMarkdown.length > limit ? rawMarkdown.slice(0, limit) + "\n...(TRUNCATED)..." : rawMarkdown;
+        // --- BATCHED ANALYSIS PHASE ---
+        const BATCH_SIZE = 200; // 200 pages at a time
+        const batches = [];
+        for (let i = 0; i < items.length; i += BATCH_SIZE) {
+            batches.push(items.slice(i, i + BATCH_SIZE));
+        }
 
-        const prompt = `
-        You are an expert investment analyst working for a **Canadian Residential Real Estate Developer**.
-        Your task is to analyze the scraped website content of a target company ("${companyName}") and create a concise, high-value **Company Profile**.
+        console.log(`🧠 Batched Analysis: Processing ${items.length} pages in ${batches.length} batches...`);
+        const partialSummaries = [];
 
-        **Context**:
-        We are looking for potential partners, investors, or land acquisition opportunities. We need to know if this company is a relevant fit.
+        for (let i = 0; i < batches.length; i++) {
+            onProgress(`Analyzing Batch ${i + 1}/${batches.length}...`);
+            const chunk = batches[i];
 
-        **Input Data**:
-        The following is the combined text content of their ENTIRE website:
-        ---
-        ${input}
-        ---
+            // Limit each batch's text to stay under Gemini token limits (~3MB per batch is very safe for 1.5/2.0)
+            const chunkText = chunk.map(p => `--- URL: ${p.url} ---\n${p.markdown || p.text || ''}`).join('\n\n').substring(0, 3000000);
 
-        **Instructions**:
-        1. **Analyze** the data to understand their core business, investment focus, and portfolio.
-        2. **Ignore** generic boilerplate (privacy policies, cookie notices, navigation menus).
-        3. **Generate** a structured report in Markdown format.
+            const extractionPrompt = `
+                ACT AS: Expert Investment Analyst
+                TARGET: ${companyName}
+                
+                I am providing a batch of ${chunk.length} pages from their website.
+                EXTRACT all key facts regarding:
+                - Business Model & Core Services
+                - Target Asset Classes (Residential, Commercial, etc.)
+                - Geographic footprint (specifically Canada/Ontario)
+                - Notable projects or recent deals
+                - Key Executives mentioned
+                - Any explicit mention of "Real Estate Development" or "Investment"
 
-        **Required Output Format**:
-        
-        # [Company Name]
-        
-        ## Summary
-        (A 2-3 sentence overview of who they are and what they do. Mention if they are Canadian or have Canadian operations.)
+                Be as dense and factual as possible. Do NOT write the final report yet, just extract the evidence.
+                --- WEBSITE DATA (BATCH ${i + 1}) ---
+                ${chunkText}
+            `;
 
-        ## Investment Strategy & Focus
-        (What asset classes do they target? Residential? Commercial? Industrial? Do they develop, lend, or invest?)
+            try {
+                const response = await model.generateContent(extractionPrompt);
+                partialSummaries.push(response.response.text());
+                console.log(`✅ Batch ${i + 1}/${batches.length} complete.`);
+            } catch (e) {
+                console.error(`❌ Batch ${i + 1} failed:`, e.message);
+                partialSummaries.push(`[Batch ${i + 1} Error: Failed to extract data due to ${e.message}]`);
+            }
+        }
 
-        ## Scale & Geographic Focus
-        (Where do they operate? How large is their portfolio? Mention specific cities/regions.)
+        // --- FINAL MASTER SYNTHESIS ---
+        onProgress(`Finalizing Intelligence Report...`);
+        const finalPrompt = `
+            You are an expert investment analyst working for a **Canadian Residential Real Estate Developer**.
+            Your task is to synthesize the following batched evidence into a concise, high-value **Company Intelligence Report** for "${companyName}".
 
-        ## Portfolio Observations
-        (Key examples of their projects. Do they align with residential development?)
+            **Context**:
+            We are looking for potential partners or acquisition opportunities in Canadian residential real estate.
 
-        ## Key Team Members
-        (List top executives or relevant contacts found.)
+            **Extracted Evidence**:
+            ---
+            ${partialSummaries.join('\n\n---\n\n')}
+            ---
 
-        ## Fit Analysis
-        (CRITICAL: Assess relevance to a Canadian Residential Developer. High/Medium/Low fit and why.)
+            **Instructions**:
+            1. Consolidate facts. Remove redundancy.
+            2. Prioritize evidence related to Canada and Residential Development.
+            3. Use the following structure:
 
-        IMPORTANT: Be concise. Use bullet points. Do NOT hallucinate. If data is missing, state "Not available".
+            # [Company Name]
+            
+            ## Summary
+            (2-3 sentences max)
+
+            ## Investment Strategy & Focus
+            (Bullet points on asset classes, strategies, and development/lending mix)
+
+            ## Scale & Geographic Focus
+            (Where they operate and current estimated portfolio size/reach)
+
+            ## Portfolio Observations
+            (Specific project highlights or deal types)
+
+            ## Key Team Members
+            (Names and titles if found)
+
+            ## Fit Analysis
+            (CRITICAL: Evaluate as High/Medium/Low fit for a Canadian Residential Developer. Explain why.)
+
+            IMPORTANT: Be extremely concise. Use bullet points. If data is missing across all batches, state "Not available".
         `;
 
-        const result = await this.model.generateContent(prompt);
-        return result.response.text();
+        const finalResult = await model.generateContent(finalPrompt);
+        return finalResult.response.text();
     }
 }

@@ -754,14 +754,11 @@ export const scrapeFullSite = async (domain, token, maxCost = 5.00, onProgress =
                 console.log(`[Apify] Fetching partial results for run ${runId}...`);
                 try {
                     const results = await getApifyResults(token, data.defaultDatasetId);
-                    const combinedMarkdown = results.map(r => {
-                        return `--- URL: ${r.url} ---\n${r.markdown || r.text || 'No content'}\n`;
-                    }).join('\n\n');
 
                     return {
                         ...stats,
                         status: finalStatus,
-                        content: combinedMarkdown,
+                        items: results, // Return raw items for chunked processing
                         datasetId: data.defaultDatasetId,
                         aborted: true
                     };

@@ -1468,47 +1468,56 @@ app.post('/api/companies/research/full-scan', requireAuth, async (req, res) => {
         const token = process.env.APIFY_API_TOKEN;
         const limit = maxCost ? parseFloat(maxCost) : 5.00;
 
+        // Keep SSE connection alive with heartbeats every 15s
+        const heartbeat = setInterval(() => {
+            res.write(': heartbeat\n\n');
+        }, 15000);
+
         await ResearchService.runFullSiteScan(url, token, limit, (stats) => {
             // Map Apify stats to our frontend event format
             if (stats.status === 'PARTIAL_LIMIT_REACHED') {
                 send({ type: 'progress', stats: { ...stats, status: 'LIMIT REACHED - SAVING DATA...' } });
             } else if (stats.status === 'ABORTED_COST_LIMIT') {
-                // Fallback for old status code
                 send({ type: 'error', error: `Cost limit exceeded ($${stats.cost.toFixed(2)})` });
             } else if (stats.status === 'FAILED') {
                 send({ type: 'error', error: 'Scrape failed internally.' });
             } else {
+                send({ type: 'progress', stats });
             }
         }).then(async (result) => {
+            clearInterval(heartbeat);
+
             // Handle normal completion OR partial completion
-            if (result.aborted && !result.content) {
+            if (result.aborted && !result.items) {
                 res.end();
                 return;
             }
 
-            // 2. SYNTHESIS STEP
-            send({ type: 'progress', stats: { ...result, status: 'SYNTHESIZING_PROFILE' } });
+            console.log(`[Full Scan] Scrape done (${result.items?.length || 0} pages). Starting batched synthesis for ${url}...`);
 
             let finalReport = '';
             try {
-                // If we have content, synthesize it
-                if (result.content) {
-                    finalReport = await ResearchService.synthesizeFullScanReport(result.content, url); // url acts as company name proxy if needed, or we can fetch name
+                // If we have items (even partial), synthesize it using batched logic
+                if (result.items && result.items.length > 0) {
+                    finalReport = await ResearchService.synthesizeFullScanReport(
+                        result.items,
+                        url,
+                        (msg) => send({ type: 'progress', stats: { ...result, status: msg } })
+                    );
                 } else {
                     finalReport = "No content scraped to analyze.";
                 }
 
                 // Append the "Budget Reached" warning to the report if needed
-                const limit = maxCost ? parseFloat(maxCost) : 5.00;
+                const limitStr = maxCost ? parseFloat(maxCost) : 5.00;
                 if (result.status === 'PARTIAL_LIMIT_REACHED') {
-                    finalReport = `> [!WARNING]\n> **Scan Incomplete**: Budget limit ($${limit}) reached. Analysis is based on ${result.pages} scraped pages.\n\n` + finalReport;
+                    finalReport = `> [!WARNING]\n> **Scan Incomplete**: Budget limit ($${limitStr}) reached. Analysis is based on ${result.pages} scraped pages.\n\n` + finalReport;
                 }
 
                 // 3. SAVE TO DATABASE
                 send({ type: 'progress', stats: { ...result, status: 'SAVING_TO_DB' } });
 
-                // We need to upsert this into the companies table.
-                // We'll use the 'url' to match the company.
+                // Update company profile
                 const { rows } = await pool.query(
                     `UPDATE companies 
                      SET market_intelligence = $1, 
