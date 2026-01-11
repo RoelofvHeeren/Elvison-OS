@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Building2, ChevronDown, ChevronUp, Trash2, Users, Search, PlusCircle } from 'lucide-react'
+import { Building2, ChevronDown, ChevronUp, Trash2, Users, Search, PlusCircle, Star, Globe } from 'lucide-react'
 import { fetchLeads, deleteLead, fetchCompanies, deleteCompany } from '../utils/api'
 import { useIcp } from '../context/IcpContext'
 import AddCompanyModal from '../components/AddCompanyModal'
@@ -878,16 +878,16 @@ function Companies() {
                                                             const defaultIcons = {
                                                                 'Summary': <Building2 className="w-4 h-4 text-teal-400" />,
                                                                 'Investment Strategy': <Users className="w-4 h-4 text-purple-400" />,
-                                                                'Scale & Geographic Focus': <Users className="w-4 h-4 text-orange-400" />,
+                                                                'Scale & Geographic Focus': <Globe className="w-4 h-4 text-orange-400" />,
                                                                 'Portfolio Observations': <Building2 className="w-4 h-4 text-blue-400" />,
-                                                                'Key Highlights': <ChevronDown className="w-4 h-4 text-yellow-400" />,
+                                                                'Key Highlights': <Star className="w-4 h-4 text-yellow-400" />,
                                                                 'Fit Analysis': <div className="w-4 h-4 rounded-full border-2 border-green-500/50 flex items-center justify-center text-[10px] font-bold text-green-400">✓</div>
                                                             };
 
                                                             return DISPLAY_ORDER.map(title => {
                                                                 if (!sections[title]) return null;
                                                                 return (
-                                                                    <div key={title} className={title === 'Summary' || title === 'Key Highlights' || title === 'Fit Analysis' ? 'col-span-1 md:col-span-2' : ''}>
+                                                                    <div key={title} className={title === 'Summary' || title === 'Fit Analysis' ? 'col-span-1 md:col-span-2' : ''}>
                                                                         {renderReportSection(title, sections[title], defaultIcons[title] || <Building2 className="w-4 h-4 text-teal-400" />)}
                                                                     </div>
                                                                 );
