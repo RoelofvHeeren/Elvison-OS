@@ -1246,11 +1246,12 @@ function Companies() {
                                                         {fullScanStats.status.includes('Analyzing Batch') ? '✨ ' + fullScanStats.status :
                                                             fullScanStats.status === 'SYNTHESIZING_PROFILE' ? '✨ Synthesizing Profile...' :
                                                                 fullScanStats.status === 'SAVING_TO_DB' ? '💾 Saving to Database...' :
-                                                                    fullScanStats.status === 'DOWNLOADING' ? '⬇️ Downloading Results...' :
-                                                                        fullScanStats.status === 'LIMIT REACHED - SAVING DATA...' ? '⚠️ Budget Hit - Processing...' :
-                                                                            fullScanStats.status.startsWith('Scraping:') ? '🔍 ' + fullScanStats.status :
-                                                                                fullScanStats.status.startsWith('Scrape Finished') ? '✅ ' + fullScanStats.status :
-                                                                                    'Running Full Site Scrape...'}
+                                                                    fullScanStats.status.includes('Downloading:') ? '⬇️ ' + fullScanStats.status :
+                                                                        fullScanStats.status === 'DOWNLOADING' ? '⬇️ Downloading Results...' :
+                                                                            fullScanStats.status === 'LIMIT REACHED - SAVING DATA...' ? '⚠️ Budget Hit - Processing...' :
+                                                                                fullScanStats.status.startsWith('Scraping:') ? '🔍 ' + fullScanStats.status :
+                                                                                    fullScanStats.status.startsWith('Scrape Finished') ? '✅ ' + fullScanStats.status :
+                                                                                        'Running Full Site Scrape...'}
                                                     </h4>
                                                     <p className="text-[10px] text-gray-500 font-mono uppercase tracking-tighter opacity-50">{fullScanStats.status}</p>
                                                 </div>

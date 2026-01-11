@@ -52,20 +52,37 @@ export const abortApifyRun = async (token, runId) => {
 };
 
 /**
- * Fetches results from the dataset
+ * Fetches results from the dataset with pagination support
  * @param {string} token 
  * @param {string} datasetId 
+ * @param {number} offset - starting position
+ * @param {number} limit - max items to fetch
  * @returns {Promise<Array>} - Array of results
  */
-export const getApifyResults = async (token, datasetId) => {
+export const getApifyResults = async (token, datasetId, offset = 0, limit = 1000) => {
     try {
         const response = await axios.get(
-            `${APIFY_API_URL}/datasets/${datasetId}/items?token=${token}`
+            `${APIFY_API_URL}/datasets/${datasetId}/items?token=${token}&offset=${offset}&limit=${limit}`
         );
         return response.data;
     } catch (error) {
         console.error('Apify Result Error:', error.response?.data || error.message);
         throw new Error('Failed to fetch results');
+    }
+};
+
+/**
+ * Fetches dataset metadata (to get itemCount)
+ */
+export const getDatasetInfo = async (token, datasetId) => {
+    try {
+        const response = await axios.get(
+            `${APIFY_API_URL}/datasets/${datasetId}?token=${token}`
+        );
+        return response.data.data;
+    } catch (error) {
+        console.error('Apify Dataset Info Error:', error.response?.data || error.message);
+        return null;
     }
 };
 
@@ -726,10 +743,8 @@ export const scrapeFullSite = async (domain, token, maxCost = 5.00, onProgress =
             const status = data.status;
 
             // Calculate Stats
-            // `website-content-crawler` usually puts request counts in stats.requestsFinished
-            const requestsFinished = data.stats?.requestsFinished || data.stats?.crawledPages || 0;
-            const requestCount = data.stats?.usage?.requestCount || 0;
-            const pages = requestsFinished || requestCount;
+            const statsObj = data.stats || {};
+            const pages = statsObj.requestsFinished || statsObj.crawlItemsCount || statsObj.storedItemsCount || statsObj.crawledPages || 0;
 
             const duration = (Date.now() - new Date(data.startedAt).getTime()) / 1000; // seconds
 
@@ -775,19 +790,25 @@ export const scrapeFullSite = async (domain, token, maxCost = 5.00, onProgress =
             }
         }
 
-        console.log(`[Apify] Run finished. Status: ${stats.status}. Downloading results...`);
-        onProgress({ ...stats, status: 'DOWNLOADING' });
+        console.log(`[Apify] Run finished. Status: ${stats.status}. Downloading results in chunks...`);
 
-        // Fetch Results (Markdown)
-        const results = await getApifyResults(token, datasetId);
+        // Fetch Results in Chunks
+        const datasetInfo = await getDatasetInfo(token, datasetId);
+        const totalItems = datasetInfo?.itemCount || stats.pages || 0;
+        const results = [];
+        const CHUNK_SIZE = 500;
 
-        // Combine (or return raw if too huge)
-        // With 900+ pages, this will be massive. We should probably filter or summarize?
-        // For now, return the full text joined.
-
-        const combinedMarkdown = results.map(r => {
-            return `--- URL: ${r.url} ---\n${r.markdown || r.text || ''}\n`;
-        }).join('\n\n');
+        for (let offset = 0; offset < totalItems; offset += CHUNK_SIZE) {
+            const currentCount = Math.min(offset + CHUNK_SIZE, totalItems);
+            // Size estimation: approximate 5KB per page average
+            const approxSizeKB = (currentCount * 5).toFixed(0);
+            onProgress({
+                ...stats,
+                status: `Downloading: ${currentCount}/${totalItems} pages (~${approxSizeKB} KB)...`
+            });
+            const chunk = await getApifyResults(token, datasetId, offset, CHUNK_SIZE);
+            results.push(...chunk);
+        }
 
         return {
             ...stats,
