@@ -234,7 +234,7 @@ function CRM() {
       const filename = `leads_export_selected_${timestamp}.csv`;
 
       // Define CSV headers
-      const headers = ['Name', 'Email', 'Title', 'Company', 'LinkedIn', 'Phone Numbers', 'Connection Request', 'Date Added'];
+      const headers = ['Name', 'Email', 'Title', 'Company', 'LinkedIn', 'Phone Numbers', 'Connection Request', 'Date Added', 'Company Profile'];
 
       // Convert rows to CSV format
       const csvRows = leadsToExport.map(row => [
@@ -245,7 +245,8 @@ function CRM() {
         row.linkedin,
         Array.isArray(row.phoneNumbers) ? row.phoneNumbers.join('; ') : '',
         row.connectionRequest,
-        row.date
+        row.date,
+        (row.companyProfile || '').replace(/[\n\r]+/g, ' ')
       ]);
 
       // Escape and quote CSV fields

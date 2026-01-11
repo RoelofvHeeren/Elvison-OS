@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Building2, ChevronDown, ChevronUp, Trash2, Users, Search, PlusCircle, Star, Globe } from 'lucide-react'
+import { Building2, ChevronDown, ChevronUp, Trash2, Users, Search, PlusCircle, Star, Globe, Download } from 'lucide-react'
 import { fetchLeads, deleteLead, fetchCompanies, deleteCompany } from '../utils/api'
 import { useIcp } from '../context/IcpContext'
 import AddCompanyModal from '../components/AddCompanyModal'
@@ -591,6 +591,17 @@ function Companies() {
                             </p>
                         </div>
 
+                        <button
+                            onClick={() => {
+                                const params = new URLSearchParams();
+                                if (filters.icpId) params.append('icpId', filters.icpId);
+                                window.location.href = `/api/companies/export?${params.toString()}`;
+                            }}
+                            className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 text-white rounded-xl text-sm font-bold transition-all border border-white/10"
+                        >
+                            <Download className="w-4 h-4" />
+                            Export CSV
+                        </button>
                         <button
                             onClick={() => setAddCompanyModalOpen(true)}
                             className="flex items-center gap-2 px-4 py-2 bg-teal-500/20 hover:bg-teal-500/30 text-teal-400 rounded-xl text-sm font-bold transition-all border border-teal-500/30"

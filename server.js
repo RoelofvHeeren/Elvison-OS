@@ -2179,6 +2179,95 @@ app.get('/api/debug/review-required', async (req, res) => {
 
 // --- LEADS & CRM ---
 
+// Export Companies to CSV
+app.get('/api/companies/export', requireAuth, async (req, res) => {
+    try {
+        const { icpId, sort } = req.query;
+        console.log('[GET /api/companies/export] User:', req.userId);
+
+        let queryText = `
+            SELECT 
+                c.*,
+                COUNT(l.id) as lead_count
+            FROM companies c
+            LEFT JOIN leads l ON c.company_name = l.company_name AND c.user_id = l.user_id
+            WHERE c.user_id = $1
+        `;
+        const params = [req.userId];
+
+        // Apply same filters as main view
+        if (icpId) {
+            const { rows: icpRows } = await query('SELECT name FROM icps WHERE id = $1', [icpId]);
+            const icpName = icpRows[0]?.name?.toLowerCase() || '';
+
+            if (icpName.includes('family office')) {
+                queryText += ` AND c.icp_type IN ('FAMILY_OFFICE_SINGLE', 'FAMILY_OFFICE_MULTI')`;
+            } else if (icpName.includes('fund') || icpName.includes('investment firm')) {
+                queryText += ` AND (
+                     (
+                         c.icp_type IN (
+                             'REAL_ESTATE_PRIVATE_EQUITY', 
+                             'ASSET_MANAGER_MULTI_STRATEGY',
+                             'PENSION',
+                             'SOVEREIGN_WEALTH_FUND',
+                             'INSURANCE_INVESTOR',
+                             'REIT_PUBLIC',
+                             'INVESTMENT_MANAGER'
+                         )
+                         AND (c.fit_score IS NULL OR c.fit_score >= 4)
+                     )
+                     OR (c.icp_type IS NULL) 
+                     OR (c.id IN (SELECT DISTINCT c2.id FROM companies c2 JOIN leads l2 ON c2.company_name = l2.company_name WHERE l2.icp_id = $${params.length + 1}))
+                 )`;
+                // Only push param if we used the placeholder
+                if (queryText.includes(`$${params.length + 1}`)) params.push(icpId);
+            }
+        }
+
+        queryText += ` GROUP BY c.id ORDER BY c.fit_score DESC NULLS LAST`;
+
+        const { rows } = await query(queryText, params);
+
+        // Generate CSV
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename="companies_export_${new Date().toISOString().split('T')[0]}.csv"`);
+
+        const headers = [
+            'Company Name', 'Website', 'Fit Score', 'ICP Type', 'Lead Count', 'Last Researched', 'Profile (Market Intelligence)'
+        ];
+
+        res.write(headers.join(',') + '\n');
+
+        for (const row of rows) {
+            const csvRow = [
+                row.company_name || '',
+                row.website || '',
+                row.fit_score || '',
+                row.icp_type || '',
+                row.lead_count || '0',
+                row.last_researched_at ? new Date(row.last_researched_at).toISOString().split('T')[0] : '',
+                // Prefer the new market_intelligence, fallback to legacy profile
+                (row.market_intelligence || row.company_profile || '').replace(/[\n\r]+/g, ' ').substring(0, 30000) // Flatten and limit length slightly for Excel safety
+            ];
+
+            const csvLine = csvRow.map(field => {
+                const str = String(field || '');
+                if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+                    return `"${str.replace(/"/g, '""')}"`;
+                }
+                return str;
+            }).join(',');
+
+            res.write(csvLine + '\n');
+        }
+        res.end();
+
+    } catch (e) {
+        console.error('Export companies failed:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // Get ALL Companies (For Companies View)
 app.get('/api/companies', requireAuth, async (req, res) => {
     try {
@@ -2448,7 +2537,7 @@ app.get('/api/leads/export', requireAuth, async (req, res) => {
         // CSV Header
         const headers = [
             'ID', 'Date Added', 'Name', 'Title', 'Company', 'Email', 'LinkedIn', 'Website',
-            'Status', 'Fit Score', 'ICP Strategy', 'Phone Numbers', 'Personalized Line'
+            'Status', 'Fit Score', 'ICP Strategy', 'Phone Numbers', 'Personalized Line', 'Company Profile'
         ];
 
         res.write(headers.join(',') + '\n');
@@ -2483,7 +2572,9 @@ app.get('/api/leads/export', requireAuth, async (req, res) => {
                 row.company_fit_score || details.fit_score || '',
                 row.icp_id || '',
                 phones,
-                (details.connection_request || '').replace(/[\n\r]/g, ' ') // Flatten newlines
+                (details.connection_request || '').replace(/[\n\r]/g, ' '), // Flatten newlines
+                // Prefer market_intelligence over company_profile_text for the export
+                (row.market_intelligence || row.company_profile_text || '').replace(/[\n\r]+/g, ' ').substring(0, 30000)
             ];
 
             // Manual CSV stringify to handle commas/quotes
