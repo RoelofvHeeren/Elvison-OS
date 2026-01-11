@@ -307,6 +307,16 @@ function CRM() {
                 />
                 Agent
               </div>
+
+              <button
+                type="button"
+                onClick={toggleSelectAll}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-gray-300 hover:text-white hover:bg-white/5 border border-white/10 rounded-xl transition-all"
+              >
+                <Check className={`h-4 w-4 ${selectAll ? 'text-teal-400' : 'text-gray-500'}`} />
+                {selectAll ? 'Deselect All' : 'Select All'}
+              </button>
+
               <button
                 type="button"
                 onClick={handleClearSheet}

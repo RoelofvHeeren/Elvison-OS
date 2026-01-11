@@ -3,7 +3,7 @@ import PropTypes from 'prop-types'
 import { Trash2 } from 'lucide-react'
 
 const columns = [
-  { key: 'select', label: '', width: 'w-12' },
+  { key: 'select', label: '', width: 'w-16' },
   { key: 'index', label: '#', width: 'w-12' },
   { key: 'date', label: 'Date Added', width: 'w-28' },
   { key: 'name', label: 'Name', width: 'w-40' },
