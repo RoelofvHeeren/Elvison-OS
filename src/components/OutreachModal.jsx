@@ -50,6 +50,9 @@ export default function OutreachModal({ isOpen, onClose, selectedLeadsCount, sel
             setLoadingAimfox(true)
             try {
                 const data = await fetchAimfoxCampaigns()
+                console.log('🔍 Aimfox API Response:', data)
+                console.log('🔍 Campaigns array:', data.campaigns)
+                console.log('🔍 Campaigns length:', data.campaigns?.length)
                 setAimfoxCampaigns(data.campaigns || [])
             } catch (err) {
                 console.error('Failed to load Aimfox campaigns:', err)
