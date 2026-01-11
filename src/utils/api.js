@@ -144,7 +144,7 @@ export const fetchHealth = async () => {
 
 export const fetchAimfoxCampaigns = async () => {
   const { data } = await client.get('/api/integrations/aimfox/campaigns')
-  return data.campaigns
+  return data
 }
 
 export const fetchGhlTags = async () => {
