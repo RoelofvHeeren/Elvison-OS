@@ -27,11 +27,7 @@ app.use(cors({
 app.use(express.json())
 app.use(cookieParser())
 
-// DEBUG: Log all requests
-app.use((req, res, next) => {
-    console.log(`[REQUEST] ${req.method} ${req.url}`);
-    next();
-});
+
 
 // --- API Endpoints (Static files served at the end) ---
 
@@ -3923,22 +3919,7 @@ const __dirname = path.dirname(__filename)
 // Serve static files from dist
 app.use(express.static(path.join(__dirname, 'dist')))
 
-// DEBUG: List files in dist
-app.get('/debug/files', async (req, res) => {
-    const fs = await import('fs/promises');
-    try {
-        const distFiles = await fs.readdir(path.join(__dirname, 'dist'));
-        const assetsFiles = await fs.readdir(path.join(__dirname, 'dist', 'assets')).catch(() => []);
-        res.json({
-            dist: distFiles,
-            assets: assetsFiles,
-            cwd: process.cwd(),
-            dirname: __dirname
-        });
-    } catch (e) {
-        res.json({ error: e.message, stack: e.stack });
-    }
-});
+
 
 // SPA catchall - return index.html for all non-API routes
 app.get(/(.*)/, (req, res) => {
@@ -3955,27 +3936,10 @@ initDB().then(async () => {
         console.error("Values migration warning:", err.message);
     }
 
-    // STARTUP DEBUG: Check dist files
-    try {
-        const fs = await import('fs/promises');
-        console.log("📂 Startup FS Check:");
-        console.log("   __dirname:", __dirname);
-        console.log("   cwd:", process.cwd());
-        const distPath = path.join(__dirname, 'dist');
-        console.log("   dist path:", distPath);
 
-        const distFiles = await fs.readdir(distPath).catch(err => `Error: ${err.message}`);
-        console.log("   dist contents:", distFiles);
-
-        const assetsPath = path.join(distPath, 'assets');
-        const assetsFiles = await fs.readdir(assetsPath).catch(err => `Error: ${err.message}`);
-        console.log("   assets contents:", assetsFiles);
-    } catch (e) {
-        console.error("Startup FS Check Failed:", e);
-    }
 
     app.listen(port, () => {
         console.log(`Server running on port ${port}`)
-        console.log("✅ SERVER.JS - GIT DEPLOYMENT ACTIVE - LOGGING ENABLED");
+        console.log("✅ SERVER.JS - LOG PERSISTENCE V2 & CLAUDE FIX ACTIVE");
     })
 })
