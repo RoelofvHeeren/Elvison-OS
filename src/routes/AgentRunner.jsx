@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { safeUUID } from '../utils/security'
-import { PlayCircle, Terminal, CheckCircle, AlertCircle, Loader2, Send, FileText, Bot, Users, StopCircle, Clock, ChevronRight, Activity, RefreshCw, Search, List } from 'lucide-react'
+import { PlayCircle, Terminal, CheckCircle, AlertCircle, Loader2, Send, FileText, Bot, Users, StopCircle, Clock, ChevronRight, Activity, RefreshCw, Search, List, History, ChevronLeft } from 'lucide-react'
 import { useIcp } from '../context/IcpContext'
 
 const STEPS = [
@@ -23,6 +23,8 @@ const AgentRunner = () => {
     const [runs, setRuns] = useState([])
     const [selectedRunId, setSelectedRunId] = useState(null)
     const [isLoadingRuns, setIsLoadingRuns] = useState(true)
+    const [showHistory, setShowHistory] = useState(false)
+    const [sessionRunIds, setSessionRunIds] = useState(new Set())
 
     // Active Run Details
     const [logs, setLogs] = useState([])
@@ -71,10 +73,8 @@ const AgentRunner = () => {
                     const running = data.find(r => r.status === 'RUNNING');
                     if (running) {
                         setSelectedRunId(running.id);
-                    } else if (!selectedRunId) {
-                        // Only auto-select latest if user hasn't selected anything yet
-                        setSelectedRunId(data[0].id);
                     }
+                    // Else: Don't auto-select completed runs on initial load anymore
                 }
             }
         } catch (e) {
@@ -251,6 +251,8 @@ const AgentRunner = () => {
                                     foundRunId = true;
                                     // Add to active streams tracking
                                     activeStreamsRef.current[data.runId] = abortController;
+                                    // Add to session runs
+                                    setSessionRunIds(prev => new Set([...prev, data.runId]));
                                     // Refresh list (will pick up new run)
                                     await fetchRuns();
                                     // Auto-select the new run
@@ -330,10 +332,10 @@ const AgentRunner = () => {
         <div className="flex h-[calc(100vh-2rem)] gap-6 p-6 lg:p-8 max-w-[1800px] mx-auto animate-fade-in relative">
 
             {/* LEFT: Run History & Config */}
-            <div className="w-1/4 flex flex-col gap-4 min-w-[300px]">
+            <div className={`${showHistory ? 'w-1/4' : 'w-auto'} flex flex-col gap-4 min-w-fit transition-all duration-300`}>
 
                 {/* New Run Config */}
-                <div className="bg-white/5 border border-white/10 rounded-xl p-4 backdrop-blur-sm flex flex-col gap-3 shrink-0">
+                <div className="bg-white/5 border border-white/10 rounded-xl p-4 backdrop-blur-sm flex flex-col gap-3 shrink-0 w-[300px]">
                     <h2 className="text-lg font-serif font-bold text-white flex items-center gap-2">
                         <PlayCircle className="h-5 w-5 text-[#139187]" />
                         New Run
@@ -401,54 +403,56 @@ const AgentRunner = () => {
                     </button>
                 </div>
 
-                {/* History List */}
-                <div className="flex-1 bg-white/5 border border-white/10 rounded-xl p-0 backdrop-blur-sm overflow-hidden flex flex-col">
-                    <div className="p-3 border-b border-white/10 flex justify-between items-center text-xs font-bold uppercase text-gray-400 tracking-wider bg-black/10">
-                        <span className="flex items-center gap-2"><Clock className="h-4 w-4" /> Run History</span>
-                        <button onClick={() => fetchRuns()} className="hover:text-white"><RefreshCw className="h-3 w-3" /></button>
-                    </div>
+                {/* History List - Toggleable */}
+                {showHistory && (
+                    <div className="flex-1 bg-white/5 border border-white/10 rounded-xl p-0 backdrop-blur-sm overflow-hidden flex flex-col animate-in slide-in-from-left duration-300">
+                        <div className="p-3 border-b border-white/10 flex justify-between items-center text-xs font-bold uppercase text-gray-400 tracking-wider bg-black/10">
+                            <span className="flex items-center gap-2"><Clock className="h-4 w-4" /> Run History</span>
+                            <button onClick={() => fetchRuns()} className="hover:text-white"><RefreshCw className="h-3 w-3" /></button>
+                        </div>
 
-                    <div className="overflow-y-auto flex-1 p-2 space-y-1 scrollbar-thin scrollbar-thumb-white/10">
-                        {isLoadingRuns && runs.length === 0 ? (
-                            <div className="p-4 text-center"><Loader2 className="h-5 w-5 animate-spin mx-auto text-gray-500" /></div>
-                        ) : runs.length === 0 ? (
-                            <div className="p-4 text-center text-gray-500 text-xs text-italic">No runs found.</div>
-                        ) : (
-                            runs.map(run => {
-                                const isActive = currentRun?.id === run.id;
-                                const isRunning = run.status === 'RUNNING';
-                                return (
-                                    <button
-                                        key={run.id}
-                                        onClick={() => setSelectedRunId(run.id)}
-                                        className={`w-full text-left p-3 rounded-lg border transition-all flex flex-col gap-1 relative ${isActive
-                                            ? 'bg-[#139187]/10 border-[#139187] shadow-[0_0_15px_rgba(19,145,135,0.1)]'
-                                            : 'bg-transparent border-transparent hover:bg-white/5'
-                                            }`}
-                                    >
-                                        <div className="flex justify-between items-center w-full">
-                                            <span className={`text-xs font-bold ${isActive ? 'text-white' : 'text-gray-300'}`}>
-                                                {run.run_name || `Run #${run.run_number || '?'}`}
-                                            </span>
-                                            {isRunning ? (
-                                                <Activity className="h-3 w-3 text-[#139187] animate-pulse" />
-                                            ) : run.status === 'COMPLETED' ? (
-                                                <CheckCircle className="h-3 w-3 text-emerald-500" />
-                                            ) : (
-                                                <AlertCircle className="h-3 w-3 text-red-500" />
-                                            )}
-                                        </div>
-                                        <div className="flex justify-between items-center text-[10px] text-gray-500">
-                                            <span>{new Date(run.started_at).toLocaleDateString()}</span>
-                                            <span>{new Date(run.started_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                                        </div>
-                                        {isActive && <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#139187] rounded-l-lg"></div>}
-                                    </button>
-                                )
-                            })
-                        )}
+                        <div className="overflow-y-auto flex-1 p-2 space-y-1 scrollbar-thin scrollbar-thumb-white/10">
+                            {isLoadingRuns && runs.length === 0 ? (
+                                <div className="p-4 text-center"><Loader2 className="h-5 w-5 animate-spin mx-auto text-gray-500" /></div>
+                            ) : runs.length === 0 ? (
+                                <div className="p-4 text-center text-gray-500 text-xs text-italic">No runs found.</div>
+                            ) : (
+                                runs.map(run => {
+                                    const isActive = currentRun?.id === run.id;
+                                    const isRunning = run.status === 'RUNNING';
+                                    return (
+                                        <button
+                                            key={run.id}
+                                            onClick={() => setSelectedRunId(run.id)}
+                                            className={`w-full text-left p-3 rounded-lg border transition-all flex flex-col gap-1 relative ${isActive
+                                                ? 'bg-[#139187]/10 border-[#139187] shadow-[0_0_15px_rgba(19,145,135,0.1)]'
+                                                : 'bg-transparent border-transparent hover:bg-white/5'
+                                                }`}
+                                        >
+                                            <div className="flex justify-between items-center w-full">
+                                                <span className={`text-xs font-bold ${isActive ? 'text-white' : 'text-gray-300'}`}>
+                                                    {run.run_name || `Run #${run.run_number || '?'}`}
+                                                </span>
+                                                {isRunning ? (
+                                                    <Activity className="h-3 w-3 text-[#139187] animate-pulse" />
+                                                ) : run.status === 'COMPLETED' ? (
+                                                    <CheckCircle className="h-3 w-3 text-emerald-500" />
+                                                ) : (
+                                                    <AlertCircle className="h-3 w-3 text-red-500" />
+                                                )}
+                                            </div>
+                                            <div className="flex justify-between items-center text-[10px] text-gray-500">
+                                                <span>{new Date(run.started_at).toLocaleDateString()}</span>
+                                                <span>{new Date(run.started_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                            </div>
+                                            {isActive && <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#139187] rounded-l-lg"></div>}
+                                        </button>
+                                    )
+                                })
+                            )}
+                        </div>
                     </div>
-                </div>
+                )}
 
             </div>
 
@@ -457,6 +461,13 @@ const AgentRunner = () => {
                 {/* Header */}
                 <div className="h-14 border-b border-white/10 bg-white/5 flex items-center justify-between px-6">
                     <div className="flex items-center gap-3">
+                        <button
+                            onClick={() => setShowHistory(!showHistory)}
+                            className={`p-2 rounded-lg border border-white/10 hover:bg-white/5 transition-colors ${showHistory ? 'text-[#139187] border-[#139187]/30' : 'text-gray-400'}`}
+                            title={showHistory ? "Hide History" : "Show History"}
+                        >
+                            <History className="h-4 w-4" />
+                        </button>
                         <Terminal className="h-4 w-4 text-gray-400" />
                         {currentRun ? (
                             <div>
@@ -469,7 +480,7 @@ const AgentRunner = () => {
                                 </h3>
                             </div>
                         ) : (
-                            <span className="text-sm text-gray-500 italic">Select a run to view logs</span>
+                            <span className="text-sm text-gray-500 font-medium">Ready to start a new search</span>
                         )}
                     </div>
                     {/* Controls */}
@@ -549,67 +560,64 @@ const AgentRunner = () => {
             </div>
 
             {/* RIGHT: Status Overview */}
-            <div className="w-1/5 flex flex-col gap-4 min-w-[250px]">
-                <div className="bg-white/5 border border-white/10 rounded-xl p-5 backdrop-blur-sm h-full flex flex-col">
-                    <h3 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-4 text-center">Step Progress</h3>
+            {selectedRunId && (
+                <div className="w-1/5 flex flex-col gap-4 min-w-[250px] animate-in fade-in slide-in-from-right duration-500">
+                    <div className="bg-white/5 border border-white/10 rounded-xl p-5 backdrop-blur-sm h-full flex flex-col">
+                        <h3 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-4 text-center">Step Progress</h3>
 
-                    <div className="space-y-3 relative">
-                        {/* Connecting Line */}
-                        <div className="absolute left-[15px] top-4 bottom-4 w-0.5 bg-white/5 -z-10"></div>
+                        <div className="space-y-3 relative">
+                            {/* Connecting Line */}
+                            <div className="absolute left-[15px] top-4 bottom-4 w-0.5 bg-white/5 -z-10"></div>
 
-                        {STEPS.map((step, idx) => {
-                            // Logic: If step is BEFORE current step index, it's done. 
-                            // If it IS current step, it's active.
-                            // Need to find index of currentStep in STEPS (by label or id?)
-                            // Logs return ID usually matching STEPS id.
+                            {STEPS.map((step, idx) => {
+                                const currentStepIdx = STEPS.findIndex(s => s.id === currentStep);
+                                const stepIdx = idx;
 
-                            const currentStepIdx = STEPS.findIndex(s => s.id === currentStep);
-                            const stepIdx = idx;
+                                let status = 'pending'; // pending, active, completed
 
-                            let status = 'pending'; // pending, active, completed
+                                if (runStatus === 'COMPLETED') status = 'completed';
+                                else if (runStatus === 'FAILED' && currentStepIdx === stepIdx) status = 'error';
+                                else if (currentStepIdx > stepIdx) status = 'completed';
+                                else if (currentStepIdx === stepIdx && runStatus === 'RUNNING') status = 'active';
 
-                            if (runStatus === 'COMPLETED') status = 'completed';
-                            else if (runStatus === 'FAILED' && currentStepIdx === stepIdx) status = 'error';
-                            else if (currentStepIdx > stepIdx) status = 'completed';
-                            else if (currentStepIdx === stepIdx && runStatus === 'RUNNING') status = 'active';
-
-                            return (
-                                <div key={step.id} className="flex items-center gap-3">
-                                    <div className={`h-8 w-8 rounded-full flex items-center justify-center border-2 z-10 transition-all ${status === 'completed' ? 'bg-emerald-500 border-emerald-500 text-white' :
-                                        status === 'active' ? 'bg-[#139187] border-[#139187] text-white shadow-[0_0_10px_#139187]' :
-                                            status === 'error' ? 'bg-red-500 border-red-500 text-white' :
-                                                'bg-[#0f1115] border-white/10 text-gray-600'
-                                        }`}>
-                                        {status === 'completed' ? <CheckCircle className="h-4 w-4" /> :
-                                            status === 'error' ? <AlertCircle className="h-4 w-4" /> :
-                                                <span className="text-xs font-bold">{idx + 1}</span>}
+                                return (
+                                    <div key={step.id} className="flex items-center gap-3">
+                                        <div className={`h-8 w-8 rounded-full flex items-center justify-center border-2 z-10 transition-all ${status === 'completed' ? 'bg-emerald-500 border-emerald-500 text-white' :
+                                            status === 'active' ? 'bg-[#139187] border-[#139187] text-white shadow-[0_0_10px_#139187]' :
+                                                status === 'error' ? 'bg-red-500 border-red-500 text-white' :
+                                                    'bg-[#0f1115] border-white/10 text-gray-600'
+                                            }`}>
+                                            {status === 'completed' ? <CheckCircle className="h-4 w-4" /> :
+                                                status === 'error' ? <AlertCircle className="h-4 w-4" /> :
+                                                    <span className="text-xs font-bold">{idx + 1}</span>}
+                                        </div>
+                                        <div className={`text-xs font-medium transition-colors ${status === 'completed' ? 'text-emerald-400' :
+                                            status === 'active' ? 'text-white' :
+                                                status === 'error' ? 'text-red-400' :
+                                                    'text-gray-600'
+                                            }`}>
+                                            {step.label}
+                                        </div>
                                     </div>
-                                    <div className={`text-xs font-medium transition-colors ${status === 'completed' ? 'text-emerald-400' :
-                                        status === 'active' ? 'text-white' :
-                                            status === 'error' ? 'text-red-400' :
-                                                'text-gray-600'
-                                        }`}>
-                                        {step.label}
-                                    </div>
-                                </div>
-                            )
-                        })}
-                    </div>
+                                )
+                            })}
+                        </div>
 
-                    {/* Result Card */}
-                    {runResult && (
-                        <div className="mt-auto pt-6 animate-in slide-in-from-bottom fade-in duration-500">
-                            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-4 text-center">
-                                <CheckCircle className="h-8 w-8 text-emerald-500 mx-auto mb-2" />
-                                <div className="text-white font-bold text-sm">Success!</div>
-                                <div className="text-emerald-400/80 text-xs mt-1">
-                                    {runResult.leads ? `${runResult.leads.length} leads generated` : 'Task completed'}
+                        {/* Result Card */}
+                        {runResult && (
+                            <div className="mt-auto pt-6 animate-in slide-in-from-bottom fade-in duration-500">
+                                <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-4 text-center">
+                                    <CheckCircle className="h-8 w-8 text-emerald-500 mx-auto mb-2" />
+                                    <div className="text-white font-bold text-sm">Success!</div>
+                                    <div className="text-emerald-400/80 text-xs mt-1">
+                                        {runResult.leads ? `${runResult.leads.length} leads generated` : 'Task completed'}
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                    )}
+                        )}
+                    </div>
                 </div>
-            </div>
+            )}
 
         </div>
     )

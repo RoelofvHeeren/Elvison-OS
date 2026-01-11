@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Book, Clock, CheckCircle, AlertCircle, Trash2, ChevronDown, ChevronUp, RefreshCw, ThumbsUp, Building, Users, Filter, Check, DollarSign, Zap, Activity } from 'lucide-react'
 import { fetchRuns, fetchLeads, approveLead, deleteLead, enrichLead } from '../utils/api'
 import OutreachModal from '../components/OutreachModal'
 
 const Logbook = () => {
+    const navigate = useNavigate()
     const [activeTab, setActiveTab] = useState('history') // 'history' | 'disqualified'
 
     // Job History State

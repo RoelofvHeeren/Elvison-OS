@@ -2159,8 +2159,8 @@ app.get('/api/debug/review-required', async (req, res) => {
 // Get ALL Companies (For Companies View)
 app.get('/api/companies', requireAuth, async (req, res) => {
     try {
-        const { icpId } = req.query;
-        console.log('[GET /api/companies] User:', req.userId, 'ICP Filter:', icpId || 'none');
+        const { icpId, sort } = req.query;
+        console.log('[GET /api/companies] User:', req.userId, 'ICP Filter:', icpId || 'none', 'Sort:', sort || 'fit');
 
         let queryText = `
             SELECT 
@@ -2228,8 +2228,15 @@ app.get('/api/companies', requireAuth, async (req, res) => {
             }
         }
 
-        // Sort by FIT score (High to Low), then by creation date
-        queryText += ` GROUP BY c.id ORDER BY c.fit_score DESC NULLS LAST, c.created_at DESC`;
+        // Sort handling
+        queryText += ` GROUP BY c.id `;
+
+        if (sort === 'newest') {
+            queryText += ` ORDER BY COALESCE(c.last_updated, c.created_at) DESC, c.company_name ASC`;
+        } else {
+            // Default: Fit Score
+            queryText += ` ORDER BY c.fit_score DESC NULLS LAST, c.created_at DESC`;
+        }
 
         const { rows } = await query(queryText, params);
         console.log(`[GET /api/companies] Found ${rows.length} rows.`);
@@ -2452,6 +2459,24 @@ app.post('/api/leads', requireAuth, async (req, res) => {
 })
 
 // Delete Lead
+// Toggle Lead Outreach Status
+app.post('/api/leads/:leadId/pushed', requireAuth, async (req, res) => {
+    try {
+        const { leadId } = req.params;
+        const { pushed } = req.body;
+
+        await query(
+            'UPDATE leads SET pushed_to_outreach = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3',
+            [pushed, leadId, req.userId]
+        );
+
+        res.json({ success: true, pushed_to_outreach: pushed });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
 app.delete('/api/leads/:id', requireAuth, async (req, res) => {
     const { id } = req.params
     try {
