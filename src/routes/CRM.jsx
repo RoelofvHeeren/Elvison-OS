@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { CalendarDays, Building2, RefreshCw, Trash2, Upload, Filter, Target, Loader, Check, Search, ChevronLeft, ChevronRight, Download, Users } from 'lucide-react'
 import SheetTable from '../components/SheetTable'
 import ImportModal from '../components/ImportModal'
-import { fetchLeads, deleteLead, approveLead, fetchAllLeadIds } from '../utils/api'
+import { fetchLeads, deleteLead, approveLead, fetchAllLeadIds, fetchRuns } from '../utils/api'
 import OutreachModal from '../components/OutreachModal'
 import { useIcp } from '../context/IcpContext'
 
@@ -13,7 +13,8 @@ function CRM() {
   const [error, setError] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
-  const [filters, setFilters] = useState({ date: '', company: '', name: '', icpId: '' })
+  const [filters, setFilters] = useState({ date: '', company: '', name: '', icpId: '', runId: '' })
+  const [runs, setRuns] = useState([])
   const [health, setHealth] = useState({ sheet: 'pending', agent: 'pending' })
   const [isImportOpen, setIsImportOpen] = useState(false)
   const [isOutreachOpen, setIsOutreachOpen] = useState(false)
@@ -43,7 +44,12 @@ function CRM() {
       setError('')
 
       // Call paginated API
-      const response = await fetchLeads({ page, pageSize })
+      const response = await fetchLeads({
+        page,
+        pageSize,
+        icpId: filters.icpId,
+        runId: filters.runId
+      })
 
       // Handle both old (array) and new (paginated) response formats
       let leadsData = [];
@@ -140,6 +146,15 @@ function CRM() {
     }
   }
 
+  const fetchRunsList = async () => {
+    try {
+      const data = await fetchRuns()
+      setRuns(data || [])
+    } catch (err) {
+      console.error('Failed to fetch runs:', err)
+    }
+  }
+
   const fetchStatus = async () => {
     try {
       const data = await fetchHealth()
@@ -154,7 +169,7 @@ function CRM() {
   }
 
   const refreshAll = async () => {
-    await Promise.allSettled([fetchRows(), fetchStatus(), fetchIcps()])
+    await Promise.allSettled([fetchRows(), fetchStatus(), fetchIcps(), fetchRunsList()])
   }
 
   // Selection handlers
@@ -190,7 +205,8 @@ function CRM() {
       // Fetch ALL IDs matching current filters
       const allIds = await fetchAllLeadIds({
         status: filterStatus,
-        icpId: filters.icpId
+        icpId: filters.icpId,
+        runId: filters.runId
       });
       setSelectedLeads(new Set(allIds))
       setSelectAll(true)
@@ -211,6 +227,7 @@ function CRM() {
         setLoading(true);
         const params = new URLSearchParams();
         if (filters.icpId) params.append('icpId', filters.icpId);
+        if (filters.runId) params.append('runId', filters.runId);
         if (filterStatus) params.append('status', filterStatus); // Keep status filter
 
         // Direct link is easiest for file download
@@ -292,6 +309,7 @@ function CRM() {
 
       const params = new URLSearchParams();
       if (filters.icpId) params.append('icpId', filters.icpId);
+      if (filters.runId) params.append('runId', filters.runId);
 
       // Use fetch to handle errors better, or just direct link
       // Direct link is easiest for file download
@@ -322,7 +340,8 @@ function CRM() {
         ? row.name?.toLowerCase().includes(filters.name.toLowerCase())
         : true
       const matchesIcp = filters.icpId ? row.icpId === filters.icpId : true
-      return matchesDate && matchesCompany && matchesName && matchesIcp
+      const matchesRun = filters.runId ? row.runId === filters.runId : true // Though server handles this mostly
+      return matchesDate && matchesCompany && matchesName && matchesIcp && matchesRun
     })
   }, [rows, filters])
 
@@ -512,6 +531,27 @@ function CRM() {
               <option value="">All Strategies</option>
               {icps.map(icp => (
                 <option key={icp.id} value={icp.id}>{icp.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-col gap-2">
+            <label
+              htmlFor="run"
+              className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 flex items-center gap-2"
+            >
+              <RefreshCw className="w-3 h-3" /> Filter by Run (Job)
+            </label>
+            <select
+              id="run"
+              value={filters.runId}
+              onChange={(e) => setFilters((prev) => ({ ...prev, runId: e.target.value }))}
+              className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none transition-all duration-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20"
+            >
+              <option value="">All Runs</option>
+              {runs.map(run => (
+                <option key={run.id} value={run.id}>
+                  {run.run_name || `Run #${run.run_number}`} ({new Date(run.started_at).toLocaleDateString()})
+                </option>
               ))}
             </select>
           </div>

@@ -2479,7 +2479,7 @@ app.get('/api/leads/all-ids', requireAuth, async (req, res) => {
 
 // Get Leads with Pagination
 app.get('/api/leads', requireAuth, async (req, res) => {
-    const { status, icpId, page = 1, pageSize = 100 } = req.query;
+    const { status, icpId, runId, page = 1, pageSize = 100 } = req.query;
 
     try {
         // Parse and validate pagination params
@@ -2514,9 +2514,21 @@ app.get('/api/leads', requireAuth, async (req, res) => {
             countParams.push(icpId);
         }
 
+        if (runId) {
+            queryStr += ' AND leads.run_id = $' + (params.length + 1);
+            params.push(runId);
+            countParams.push(runId);
+        }
+
         // Get total count for pagination metadata
         // For count, we can just count leads, join shouldn't change count unless we filter by company props (which we don't for now)
-        const countQuery = `SELECT COUNT(*) FROM leads WHERE leads.user_id = $1 ${status ? 'AND leads.status = $2' : "AND leads.status != 'DISQUALIFIED'"} ${icpId ? 'AND leads.icp_id = $' + (status ? 3 : 2) : ''} `;
+        const countQuery = `
+            SELECT COUNT(*) FROM leads 
+            WHERE leads.user_id = $1 
+            ${status ? 'AND leads.status = $' + (countParams.indexOf(status) + 1) : "AND leads.status != 'DISQUALIFIED'"} 
+            ${icpId ? 'AND leads.icp_id = $' + (countParams.indexOf(icpId) + 1) : ''}
+            ${runId ? 'AND leads.run_id = $' + (countParams.indexOf(runId) + 1) : ''}
+        `;
         const { rows: countRows } = await query(countQuery, countParams);
 
         // Note: The simple countQuery above is safer than replacing 'SELECT *' because of the join syntax complexity
@@ -2557,7 +2569,7 @@ app.get('/api/leads', requireAuth, async (req, res) => {
 
 // Export All Leads to CSV
 app.get('/api/leads/export', requireAuth, async (req, res) => {
-    const { status, icpId } = req.query;
+    const { status, icpId, runId } = req.query;
 
     try {
         console.log('Exporting leads for user:', req.userId);
@@ -2583,6 +2595,11 @@ app.get('/api/leads/export', requireAuth, async (req, res) => {
         if (icpId) {
             queryStr += ' AND leads.icp_id = $' + (params.length + 1);
             params.push(icpId);
+        }
+
+        if (runId) {
+            queryStr += ' AND leads.run_id = $' + (params.length + 1);
+            params.push(runId);
         }
 
         queryStr += ` ORDER BY leads.created_at DESC`;
