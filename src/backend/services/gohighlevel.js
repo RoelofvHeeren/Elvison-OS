@@ -173,8 +173,8 @@ class GoHighLevelService {
         }
 
         const customData = lead.custom_data || {};
-        const emailMessage = customData.email_message || '';
-        const connectionRequest = customData.connection_request || ''; // This maps to "Linkedin Message" based on user context
+        const emailMessage = lead.email_body || customData.email_message || '';
+        const connectionRequest = lead.linkedin_message || customData.connection_request || ''; // This maps to "Linkedin Message" based on user context
         const companyProfile = customData.company_profile || '';
 
         try {

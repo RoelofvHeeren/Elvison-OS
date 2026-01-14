@@ -149,15 +149,44 @@ export default function OutreachModal({ isOpen, onClose, selectedLeadsCount, sel
     const handlePush = async () => {
         setPushing(true)
         setError('')
+        setResult(null)
 
         const leadIdsArray = Array.from(selectedLeadIds)
         let successCount = 0
+        let lockedCount = 0
+        let failedDetails = []
 
         try {
             // Push to Aimfox if selected
             if (selectedTools.aimfox && selectedAimfoxCampaign) {
                 const response = await pushLeadsToOutreach('aimfox', selectedAimfoxCampaign, leadIdsArray)
-                if (response.success) successCount++
+
+                // Handle Aimfox specific response structure
+                if (response.status === 'ok') {
+                    successCount += response.profiles?.length || 0
+
+                    if (response.failed && response.failed.length > 0) {
+                        const reasons = response.failedReason || {}
+                        response.failed.forEach(failedLead => {
+                            // Extract ID from the failed object if available, though Aimfox failed array structure varies.
+                            // Based on observation: failed contains lead objects. failedReason keys are lead IDs.
+                            // We'll count "locked" specifically.
+                            let isLocked = false
+                            // Check if any reason is "locked"
+                            Object.values(reasons).forEach(r => {
+                                if (r === 'locked') isLocked = true
+                            })
+
+                            if (isLocked) {
+                                lockedCount++
+                            } else {
+                                failedDetails.push(`Lead failed: ${JSON.stringify(failedLead)}`)
+                            }
+                        })
+                    }
+                } else if (response.success) {
+                    successCount++
+                }
             }
 
             // Push to GHL for each selected tag
@@ -168,11 +197,21 @@ export default function OutreachModal({ isOpen, onClose, selectedLeadsCount, sel
                 }
             }
 
+            // Construct Result Message
+            let message = `Successfully pushed ${successCount} lead(s).`
+            if (lockedCount > 0) {
+                message += ` ${lockedCount} lead(s) were ignored because they are "Locked" (already in a campaign).`
+            }
+            if (failedDetails.length > 0) {
+                message += ` ${failedDetails.length} lead(s) failed for other reasons.`
+            }
+
             setResult({
-                message: `Started pushing ${leadIdsArray.length} leads to ${successCount} destination(s) in the background.`
+                message: message,
+                type: lockedCount > 0 || failedDetails.length > 0 ? 'warning' : 'success'
             })
 
-            if (onComplete) onComplete()
+            if (onComplete && lockedCount === 0 && failedDetails.length === 0) onComplete()
         } catch (err) {
             console.error(err)
             setError('Failed to push leads. Please try again.')

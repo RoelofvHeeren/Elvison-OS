@@ -2545,6 +2545,8 @@ app.get('/api/leads', requireAuth, async (req, res) => {
         // Build base query
         let queryStr = `
             SELECT leads.*,
+            leads.linkedin_message,
+            leads.email_body,
             companies.company_profile as company_profile_text,
             companies.fit_score as company_fit_score
             FROM leads 
@@ -2553,12 +2555,14 @@ app.get('/api/leads', requireAuth, async (req, res) => {
             `;
 
         // Default Filter: Hide leads from low-fit companies, UNLESS the lead is interesting (Enriched/Contacted)
-        // or if the company has no score yet (NULL).
-        // If status is specifically asked for (e.g. DISQUALIFIED), we might want to respect that content, 
-        // but for general views, hide low fit.
-        // Let's apply valid fit check:
-        // "Show if (Fit > 5 OR Fit is NULL OR Lead is ENRICHED/CONTACTED)"
-        queryStr += ` AND (companies.fit_score > 5 OR companies.fit_score IS NULL OR leads.status IN ('ENRICHED', 'CONTACTED', 'APPROVED')) `;
+        // STRICT FILTER:
+        // 1. Hide companies with fit_score <= 5 (unless enriched/contacted)
+        // 2. Hide leads with SKIPPED messages (unless manually approved/filtered)
+
+        queryStr += ` 
+            AND (companies.fit_score > 5 OR companies.fit_score IS NULL OR leads.status IN ('ENRICHED', 'CONTACTED', 'APPROVED')) 
+            AND (leads.linkedin_message NOT LIKE '[SKIPPED%' OR leads.linkedin_message IS NULL)
+        `;
 
         const params = [req.userId];
 
@@ -2590,6 +2594,7 @@ app.get('/api/leads', requireAuth, async (req, res) => {
             LEFT JOIN companies ON leads.company_name = companies.company_name AND leads.user_id = companies.user_id
             WHERE leads.user_id = $1 
             AND (companies.fit_score > 5 OR companies.fit_score IS NULL OR leads.status IN ('ENRICHED', 'CONTACTED', 'APPROVED')) 
+            AND (leads.linkedin_message NOT LIKE '[SKIPPED%' OR leads.linkedin_message IS NULL) 
             ${status ? 'AND leads.status = $' + (params.indexOf(status) + 1) : "AND leads.status != 'DISQUALIFIED'"} 
             ${icpId ? 'AND leads.icp_id = $' + (params.indexOf(icpId) + 1) : ''}
             ${runId ? 'AND leads.run_id = $' + (params.indexOf(runId) + 1) : ''}

@@ -88,9 +88,9 @@ function CRM() {
           email: lead.email || '',
           linkedin: lead.linkedin_url || '',
           website: details.company_website || '',
-          connectionRequest: details.connection_request || '',
-          emailMessage: details.email_message || '',
-          companyProfile: details.company_profile || '',
+          connectionRequest: lead.linkedin_message || details.connection_request || '',
+          emailMessage: lead.email_body || details.email_message || '',
+          companyProfile: lead.company_profile_text || details.company_profile || '',
           phoneNumbers: lead.phone_numbers || [],
           icpId: lead.icp_id || '', // NEW: ICP ID
         };
@@ -341,6 +341,8 @@ function CRM() {
         : true
       const matchesIcp = filters.icpId ? row.icpId === filters.icpId : true
       const matchesRun = filters.runId ? row.runId === filters.runId : true // Though server handles this mostly
+
+      // Server now strictly filters out SKIPPED and low-score leads, so no client-side override needed
       return matchesDate && matchesCompany && matchesName && matchesIcp && matchesRun
     })
   }, [rows, filters])

@@ -1,6 +1,6 @@
 import { GeminiModel, extractJson } from './gemini.js';
 
-// V4 CONSTANTS
+// V4.5 CONSTANTS (10/10 Standard)
 const OPENERS = [
     "I came across",
     "I was looking at",
@@ -15,12 +15,6 @@ const CLOSERS = [
     "thought it made sense to connect"
 ];
 
-const CONNECTIVES = [
-    "particularly",
-    "especially",
-    "in particular"
-];
-
 // Tier 1: Investor Intent
 const TIER_1_KEYWORDS = [
     'invests', 'investment', 'acquires', 'acquisition', 'fund', 'strategy',
@@ -32,13 +26,20 @@ const TIER_1_KEYWORDS = [
 const TIER_2_KEYWORDS = [
     'residential', 'multi suite', 'multi-suite', 'purpose built rental',
     'rental housing', 'multifamily', 'multi-family', 'apartments', 'housing',
-    'condo development', 'student housing', 'senior living', 'SFR', 'single family rental'
+    'condo', 'condominium', 'condo development', 'student housing', 'senior living', 'SFR', 'single family rental'
+];
+
+// Tier 3: Direct Investing Evidence (The "Real Investor" Gate)
+const TIER_3_KEYWORDS = [
+    'acquired', 'portfolio', 'we invest', 'capital deployed',
+    'co-invest', 'direct investments', 'investment platform', 'holdings',
+    'assets under management', 'aum' // Allowed as evidence of scale/investing, just not as the hook
 ];
 
 const BANNED_OUTPUT_WORDS = [
     'AUM', 'offices', 'global reach', 'international', 'years in business',
     'award', 'congrats', 'impressed', 'synergies', 'quick call', 'hop on a call',
-    'Head of', 'Managing Director', 'CEO', 'Partner', 'Principal'
+    'Head of', 'Managing Director', 'CEO', 'Principal'
 ];
 
 export class OutreachService {
@@ -56,7 +57,6 @@ export class OutreachService {
             }
 
             // === 3. RESIDENTIAL INVESTOR RELEVANCE GATE ===
-            // Must have Tier 1 >= 1 AND Tier 2 >= 1
             if (!company_profile) {
                 return this._createSkipResponse("No profile available.");
             }
@@ -64,35 +64,78 @@ export class OutreachService {
             const profileLower = company_profile.toLowerCase();
             const hasTier1 = TIER_1_KEYWORDS.some(k => profileLower.includes(k.toLowerCase()));
             const hasTier2 = TIER_2_KEYWORDS.some(k => profileLower.includes(k.toLowerCase()));
+            const hasTier3 = TIER_3_KEYWORDS.some(k => profileLower.includes(k.toLowerCase()));
 
             if (!hasTier1 || !hasTier2) {
                 return this._createSkipResponse("Failed Keyword Gate: Needs clear Investor + Residential keywords.");
             }
 
+            if (!hasTier3) {
+                return this._createSkipResponse("Failed Tier 3 Gate: No evidence of direct investing (acquired, portfolio, capital deployed).");
+            }
+
             // === 4. RANDOMIZATION ===
             const opener = OPENERS[Math.floor(Math.random() * OPENERS.length)];
             const closer = CLOSERS[Math.floor(Math.random() * CLOSERS.length)];
-            // connective isn't explicitly used in the prompt structure but useful context if needed.
 
-            // === 5. PREPARE PROMPT ===
+            // === 5. SELECT PROMPT BASED ON ICP ===
+            const isFamilyOffice = icp_type && icp_type.toUpperCase().includes('FAMILY_OFFICE');
+
+            let PROMPT_INSTRUCTIONS = "";
+
+            if (isFamilyOffice) {
+                PROMPT_INSTRUCTIONS = `
+You are writing outreach on behalf of Roelof van Heeren at Fifth Avenue Properties.
+TARGET: A Single or Multi-Family Office.
+TONE: Extremely discrete, direct, peer-to-peer. NO sales fluff.
+Instructions:
+1. Identify if they are an SFO or MFO.
+2. Extract ONE research fact (Deal > Thesis).
+3. If they are a Family Office, DO NOT treat them like a large institutional fund (avoid "institutional" jargon if possible).
+`;
+            } else {
+                PROMPT_INSTRUCTIONS = `
+You are writing outreach on behalf of Roelof van Heeren at Fifth Avenue Properties.
+TARGET: An Institutional Investment Firm (PE, REIT, Pension).
+TONE: Professional, competent, peer-to-peer.
+Instructions:
+1. Extract ONE research fact (Deal > Thesis).
+`;
+            }
+
             const MASTER_PROMPT = `
-GOAL:  
-The primary objective is to draft outreach messages that achieve successful engagements via LinkedIn and Email. Success on LinkedIn is defined as receiving a reply and an accepted connection request, while success on Email is defined as receiving a reply. The messages should be crafted to encourage potential partners to connect with Roelof from Fifth Avenue Properties by showcasing mutual benefits and leveraging credible references.
+${PROMPT_INSTRUCTIONS}
 
-BEHAVIOR:  
-As an expert copywriter, generate unique and personalized outreach messages. Utilize the provided template: "Hi [First_name], we noticed [research fact about company]. We frequently have similar investments come through our pipeline. Think connecting could be mutually beneficial." Ensure messages are tailored for the specified channels: LinkedIn and Email. Each message should reflect human-like warmth and insight as if conducted through thorough research by a person rather than AI, emphasizing a single strong reference point in a compelling manner.
+CORE RULES:
+- Use the provided company_profile as the only source of truth.
+- Apply mandatory gating: skip brokerages, advisory firms, agencies.
+- Extract exactly one research fact using this hierarchy: 
+    1. Named deal/project/asset (Specific name like "Alpine Village")
+    2. Residential investment thesis (e.g. "ground up multifamily in Texas")
+    3. Residential portfolio scale (e.g. "22,000 apartment units")
+    4. General residential focus
+- BANNED FACTS: AUM, global reach, number of offices, years in business, awards, transaction volume.
+- NEVER invent deals or use placeholders like "123 Main Street".
 
-CONSTRAINTS:  
-Maintain credibility by referencing specifics like previous investments in similar residential developments or significant company investments. Focus on the residential real estate market and highlight any notable company actions, such as opening a new fund for residential real estate in Canada, wherever relevant. Avoid being overly general, such as vague mentions of real estate investments, and do not sound too robotic or stiffly analytical. Ensure that the message stays concise by employing only one specific reference point and avoiding excessive details.
+TEMPLATE LOGIC (STRICT):
+You must classify the extracted fact as either "DEAL" (specific named asset/project) or "THESIS" (general strategy/market focus).
 
-MANDATORY VARIATION INSTRUCTIONS:
-- Use this OPENER: "${opener}"
-- Use this CLOSER: "${closer}"
+IF FACT_TYPE = "DEAL":
+Use this exact structure:
+"Hi {First_name}, ${opener} {extracted_fact}. We frequently develop similar projects at Fifth Avenue Properties and often partner with groups deploying long-term capital. ${closer}."
+
+IF FACT_TYPE = "THESIS":
+Use this exact structure:
+"Hi {First_name}, ${opener} {extracted_fact}. We work on similar residential strategies at Fifth Avenue Properties and often partner with groups deploying long-term capital. ${closer}."
+
+NO OTHER VARIATIONS. DO NOT MIX MATCH.
 
 OUTPUT FORMAT (JSON ONLY):
 {
   "status": "SUCCESS" | "SKIP",
   "skip_reason": "string",
+  "research_fact_type": "DEAL" | "THESIS" | "SCALE" | "GENERAL",
+  "research_fact": "string",
   "linkedin_message": "string",
   "email_subject": "string",
   "email_body": "string"
@@ -100,10 +143,10 @@ OUTPUT FORMAT (JSON ONLY):
 
 EMAIL RULES:
 Subject: Introduction | Residential Development (Canada)
-Body must follow:
+Body:
 Hi {First_name},
-\${opener} {Company_Name} and {Research_Fact}.
-At Fifth Avenue Properties, we develop residential projects in Canada, and thought it could make sense to connect given the overlap.
+${opener} {Company_Name} and {research_fact}.
+[Insert Alignment Sentence based on FACT_TYPE logic here]
 If it makes sense, I’m happy to share more information about our current projects.
 Best regards,
 Roelof van Heeren
@@ -148,20 +191,8 @@ ${company_profile}
             const violation = BANNED_OUTPUT_WORDS.find(word => checkString.includes(word.toLowerCase()));
 
             if (violation) {
-                // In a perfect world we retry. For now, we return specific error or SKIP.
-                // Re-running a LLM call inside here might be expensive/slow but is requested.
-                // Let's force a Fail/Skip for now to be safe.
                 return this._createSkipResponse(`QA FAILED: Banned word detected ('${violation}')`);
             }
-
-            // Verify single research fact usage (heuristic: length or structure) - AI handles this mostly.
-            // Verify residential keyword presence in output? 
-            // The user says "Reject if: no residential keyword exists".
-            const hasResKeyword = TIER_2_KEYWORDS.some(k => checkString.includes(k.toLowerCase()));
-            // Note: Named deals might NOT have "residential" in the name (e.g. "Alpine Village").
-            // So we shouldn't strictly enforce this on the *output* messsage if it's a Deal-based message.
-            // But if it's a thesis message, it should.
-            // Let's trust the input gate for now.
 
             return result;
 

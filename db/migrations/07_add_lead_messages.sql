@@ -1,0 +1,6 @@
+
+ALTER TABLE leads
+ADD COLUMN IF NOT EXISTS linkedin_message TEXT,
+ADD COLUMN IF NOT EXISTS email_subject TEXT,
+ADD COLUMN IF NOT EXISTS email_body TEXT,
+ADD COLUMN IF NOT EXISTS last_outreach_generated_at TIMESTAMP WITH TIME ZONE;

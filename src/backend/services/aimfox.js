@@ -1,9 +1,13 @@
 import axios from 'axios';
+import { normalizeLinkedInUrl } from '../utils/linkedin-utils.js';
 
 class AimfoxService {
     constructor() {
-        this.apiKey = process.env.AIMFOX_API_KEY;
         this.baseUrl = 'https://api.aimfox.com/api/v2';
+    }
+
+    get apiKey() {
+        return process.env.AIMFOX_API_KEY;
     }
 
     _getHeaders() {
@@ -47,16 +51,16 @@ class AimfoxService {
             const payload = {
                 type: 'profile_url',
                 profiles: [{
-                    profile_url: lead.linkedin_url,
+                    profile_url: normalizeLinkedInUrl(lead.linkedin_url),
                     custom_variables: {
                         firstName: lead.person_name?.split(' ')[0] || '',
                         lastName: lead.person_name?.split(' ').slice(1).join(' ') || '',
-                        companyName: lead.company_name || '',
+                        COMPANYNAME: lead.company_name || '',
                         jobTitle: lead.job_title || '',
                         email: lead.email || '',
-                        companyProfile: customData.company_profile || '',
-                        connectionRequest: customData.connection_request || '',
-                        emailMessage: customData.email_message || ''
+                        COMPANYPROFILE: customData.company_profile || '',
+                        CONNECTIONREQUEST: lead.linkedin_message || customData.connection_request || '',
+                        EMAILMESSAGE: lead.email_body || customData.email_message || ''
                     }
                 }]
             };
@@ -67,7 +71,12 @@ class AimfoxService {
                 headers: this._getHeaders()
             });
 
-            console.log(`[Aimfox] Lead added successfully.`);
+            console.log(`[Aimfox] Response received.`);
+
+            if (response.data.failed && response.data.failed.length > 0) {
+                console.warn(`[Aimfox] Some leads failed to add:`, JSON.stringify(response.data.failedReason));
+            }
+
             return response.data;
         } catch (error) {
             console.error(`Failed to add lead to Aimfox campaign ${campaignId}:`, error.response?.data || error.message);

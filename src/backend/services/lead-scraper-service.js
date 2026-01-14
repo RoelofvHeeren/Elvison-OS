@@ -3,6 +3,8 @@ import {
     getApifyResults,
     startApolloDomainScrape
 } from "./apify.js";
+import { normalizeLinkedInUrl } from "../utils/linkedin-utils.js";
+
 
 // --- DEFAULTS ---
 
@@ -475,7 +477,7 @@ export class LeadScraperService {
                 email: item.email || '',
                 personal_email: item.personal_email || '',
                 title: item.position || '',
-                linkedin_url: item.linkedinUrl || '',
+                linkedin_url: normalizeLinkedInUrl(item.linkedinUrl || ''),
                 company_name: finalCompanyName,
                 company_domain: companyDomain || originalCompany.domain || '',
                 company_website: item.organizationWebsite || originalCompany.website || '',

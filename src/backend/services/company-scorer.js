@@ -194,9 +194,10 @@ PROFILE: ${profile.substring(0, 1500)}
 
 EVALUATION RULES:
 1. **Target**: Private Equity Firms, REITs, Pension Funds, Asset Managers, **Private Investment Firms**, **Holdings Companies**.
-2. **Key Signals**: "Acquisitions", "Development", "Capital Deployment", "Assets Under Management (AUM)", "Equity Partner".
-3. **Multi-Strategy**: If a firm invests in Tech/Healthcare BUT also Real Estate/Infrastructure, **KEEP THEM** (Score 7-8).
-4. **Holdings**: "Group" or "Holdings" companies that invest are VALID.
+2. **Key Signals**: "Acquisitions", "Development", "Capital Deployment", "Equity Partner", "Joint Venture", "Co-Invest".
+3. **Secondary/Optional**: "Assets Under Management (AUM)" (Valid only if tied to Real Estate).
+4. **Multi-Strategy**: If a firm invests in Tech/Healthcare BUT also Real Estate/Infrastructure, **KEEP THEM** (Score 7-8).
+5. **Holdings**: "Group" or "Holdings" companies that invest are VALID.
 
 ${canadaInstruction}
 

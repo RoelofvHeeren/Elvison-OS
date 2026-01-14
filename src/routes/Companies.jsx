@@ -1261,24 +1261,6 @@ function Companies() {
                                                                 <div className="absolute top-0 right-0 p-6 opacity-10 group-hover/lead:opacity-30 transition-opacity">
                                                                     <Users className="w-12 h-12 text-purple-400" />
                                                                 </div>
-
-                                                                <div className="flex items-start justify-between mb-6">
-                                                                    <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-purple-500/20 to-teal-500/20 border border-white/10 flex items-center justify-center group-hover/lead:scale-110 transition-transform duration-500 shadow-lg">
-                                                                        <span className="text-white font-black text-sm tracking-tighter">{initials}</span>
-                                                                    </div>
-                                                                    <div className="flex items-center gap-2">
-                                                                        {lead.linkedinUrl && (
-                                                                            <a
-                                                                                href={lead.linkedinUrl}
-                                                                                target="_blank"
-                                                                                rel="noreferrer"
-                                                                                className="p-2.5 bg-white/5 rounded-xl text-gray-400 hover:text-white hover:bg-purple-500/30 transition-all border border-white/5 shadow-inner"
-                                                                            >
-                                                                                <Users className="w-4 h-4" />
-                                                                            </a>
-                                                                        )}
-                                                                    </div>
-                                                                </div>
                                                                 <div className="min-w-0 relative z-10">
                                                                     <h4 className="font-bold text-white text-lg tracking-tight truncate mb-1">{lead.personName}</h4>
                                                                     <p className="text-[10px] font-black text-purple-400 uppercase tracking-[0.2em] truncate mb-6">{lead.jobTitle || 'Business Leader'}</p>
