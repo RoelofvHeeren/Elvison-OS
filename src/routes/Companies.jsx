@@ -9,6 +9,7 @@ function Companies() {
     const [loading, setLoading] = useState(true)
     const [expandedCompany, setExpandedCompany] = useState(null)
     const [filters, setFilters] = useState({ icpId: '' })
+    const [showLowFit, setShowLowFit] = useState(false) // New state for filtering
     const [cleaning, setCleaning] = useState(false)
     const [cleaningProgress, setCleaningProgress] = useState(null)
     const [searchQuery, setSearchQuery] = useState('')
@@ -404,7 +405,7 @@ function Companies() {
         loadCompanies()
         fetchIcps()
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [filters.icpId])
+    }, [filters.icpId, showLowFit])
 
     const loadCompanies = async () => {
         setLoading(true)
@@ -412,6 +413,7 @@ function Companies() {
             // Pass ICP filter to server
             const params = {};
             if (filters.icpId) params.icpId = filters.icpId;
+            if (showLowFit) params.includeLowFit = 'true';
 
             const response = await fetchCompanies(params);
             const mappedCompanies = (response.companies || []).map(c => ({
@@ -725,7 +727,45 @@ function Companies() {
                         </div>
                     )}
                     {/* Data Repair Button (Temporary) */}
-                    <div className="mt-4 flex justify-end">
+                    <div className="flex items-center gap-4 mt-4 justify-end">
+                        {/* Low Fit Toggle */}
+                        <label className="flex items-center gap-2 cursor-pointer group">
+                            <div className="relative">
+                                <input
+                                    type="checkbox"
+                                    checked={showLowFit}
+                                    onChange={(e) => {
+                                        setShowLowFit(e.target.checked);
+                                        // The effect on icpId changes loadCompanies, but we need to trigger it here too.
+                                        // Actually, adding showLowFit to the dependency array of useEffect is better.
+                                    }}
+                                    className="sr-only peer"
+                                />
+                                <div className="w-10 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-teal-600"></div>
+                            </div>
+                            <span className={`text-xs font-medium transition-colors ${showLowFit ? 'text-teal-400' : 'text-gray-500 group-hover:text-gray-400'}`}>
+                                Show Rejected (Score ≤ 5)
+                            </span>
+                        </label>
+
+                        {/* Orphan Cleanup */}
+                        <button
+                            onClick={async () => {
+                                if (!confirm('This will remove leads that are linked to deleted companies ("Orphan Leads"). Continue?')) return;
+                                try {
+                                    const res = await fetch('/api/admin/cleanup-orphans', { method: 'POST' });
+                                    const data = await res.json();
+                                    alert(data.message || `Cleaned up ${data.count} orphans.`);
+                                    window.location.reload();
+                                } catch (e) {
+                                    alert('Failed: ' + e.message);
+                                }
+                            }}
+                            className="text-xs text-gray-500 hover:text-red-400 underline decoration-dotted transition-colors"
+                        >
+                            Cleanup Orphans
+                        </button>
+
                         <button
                             onClick={async () => {
                                 if (!confirm('This will verify all leads and restore any missing companies. Continue?')) return;
@@ -1013,11 +1053,20 @@ function Companies() {
                 ) : (
                     <div className="space-y-4">
                         {companies
-                            .filter(company =>
-                            (!searchQuery ||
-                                company.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                                company.website?.toLowerCase().includes(searchQuery.toLowerCase()))
-                            )
+                            .filter(company => {
+                                // 1. Search Filter (Priority)
+                                if (searchQuery) {
+                                    return company.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                                        company.website?.toLowerCase().includes(searchQuery.toLowerCase());
+                                }
+                                // 2. ICP Filter (Handled by API usually, but extra safety)
+                                if (filters.icpId && company.icpId !== filters.icpId) return false;
+
+                                // 3. DEFAULT: Hide companies with Score < 6 (unless searching)
+                                // Handle 'N/A' or missing scores by treating them as 0
+                                const score = parseInt(company.fitScore) || 0;
+                                return score >= 6;
+                            })
                             .map((company) => (
                                 <div key={company.name} className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl overflow-hidden">
                                     {/* Company Header */}
@@ -1031,8 +1080,8 @@ function Companies() {
                                                 onClick={(e) => toggleSelectCompany(company.id, e)}
                                             >
                                                 <div className={`w-5 h-5 rounded border flex items-center justify-center transition-all ${selectedCompanies.has(company.id)
-                                                        ? 'bg-teal-500 border-teal-500'
-                                                        : 'border-white/20 hover:border-teal-500/50'
+                                                    ? 'bg-teal-500 border-teal-500'
+                                                    : 'border-white/20 hover:border-teal-500/50'
                                                     }`}>
                                                     {selectedCompanies.has(company.id) && <div className="w-2.5 h-2.5 bg-black rounded-sm" />}
                                                 </div>

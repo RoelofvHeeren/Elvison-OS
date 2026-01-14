@@ -2130,6 +2130,53 @@ app.get('/api/knowledge/files', requireAuth, async (req, res) => {
     }
 })
 
+// Cleanup Orphan Leads (Leads with no matching Company)
+app.post('/api/admin/cleanup-orphans', requireAuth, async (req, res) => {
+    try {
+        console.log(`[Admin] Cleaning up orphan leads for user ${req.userId}...`);
+
+        // Find orphans first for logging
+        const checkQuery = `
+            SELECT l.id, l.company_name 
+            FROM leads l
+            LEFT JOIN companies c ON l.company_name = c.company_name AND l.user_id = c.user_id
+            WHERE l.user_id = $1 AND c.id IS NULL
+        `;
+        const { rows: orphans } = await query(checkQuery, [req.userId]);
+
+        if (orphans.length === 0) {
+            return res.json({ success: true, message: 'No orphan leads found.', count: 0 });
+        }
+
+        console.log(`[Admin] Found ${orphans.length} orphan leads. Deleting...`);
+
+        // Delete orphans
+        const deleteQuery = `
+            DELETE FROM leads l
+            USING companies c
+            WHERE l.company_name = c.company_name AND l.user_id = c.user_id
+            AND l.user_id = $1 AND c.id IS NULL
+        `;
+        // Note: The above delete syntax using join is tricky in Postgres. 
+        // Simpler to use subquery or LEFT JOIN ... WHERE NULL logic, but DELETE doesn't support immediate LEFT JOIN easily.
+        // Better standard SQL for this:
+        const simpleDelete = `
+            DELETE FROM leads 
+            WHERE user_id = $1 
+            AND company_name NOT IN (SELECT company_name FROM companies WHERE user_id = $1)
+        `;
+
+        const { rowCount } = await query(simpleDelete, [req.userId]);
+
+        console.log(`[Admin] Deleted ${rowCount} orphan leads.`);
+        res.json({ success: true, count: rowCount });
+
+    } catch (e) {
+        console.error('Orphan Cleanup Failed:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // Get CRM Columns
 app.get('/api/crm-columns', requireAuth, async (req, res) => {
     try {
@@ -2330,8 +2377,8 @@ app.get('/api/companies/export', requireAuth, async (req, res) => {
 // Get ALL Companies (For Companies View)
 app.get('/api/companies', requireAuth, async (req, res) => {
     try {
-        const { icpId, sort } = req.query;
-        console.log('[GET /api/companies] User:', req.userId, 'ICP Filter:', icpId || 'none', 'Sort:', sort || 'fit');
+        const { icpId, sort, includeLowFit } = req.query;
+        console.log('[GET /api/companies] User:', req.userId, 'ICP Filter:', icpId || 'none', 'Sort:', sort || 'fit', 'LowFit:', includeLowFit === 'true');
 
         let queryText = `
             SELECT 
@@ -2342,6 +2389,15 @@ app.get('/api/companies', requireAuth, async (req, res) => {
             WHERE c.user_id = $1
         `;
         const params = [req.userId];
+
+        // 1. Filter Logic
+        // If includeLowFit is NOT 'true', we filter out low scores (<= 5)
+        // Exception: Always show companies if they have an assigned ICP type from a strategy (user manually added/approved?) 
+        // Actually, user wants "Low fit" hidden. "Low fit" is usually score <= 5.
+        // We will respect includeLowFit param.
+        if (includeLowFit !== 'true') {
+            queryText += ` AND (c.fit_score > 5 OR c.fit_score IS NULL OR c.cleanup_status = 'KEPT') `;
+        }
 
         // ICP Filter - check the company's icp_type OR lead's icp_id
         if (icpId) {
@@ -2355,8 +2411,8 @@ app.get('/api/companies', requireAuth, async (req, res) => {
                 queryText += ` AND c.icp_type IN ('FAMILY_OFFICE_SINGLE', 'FAMILY_OFFICE_MULTI')`;
             } else if (icpName.includes('fund') || icpName.includes('investment firm')) {
                 // Show investment-related types for Funds/Investment Firms strategy
-                // ALSO include companies with NULL icp_type (unclassified) OR those with leads under this ICP
-                // FILTER OUT low-quality matches (score < 4) unless explicitly KEPT
+                // FILTER OUT low-quality matches (score < 4) unless explicitly KEPT or LowFit enabled
+                // Note: We already applied a global >5 filter above if includeLowFit is false.
                 queryText += ` AND (
                     (
                         c.icp_type IN (
@@ -2381,7 +2437,6 @@ app.get('/api/companies', requireAuth, async (req, res) => {
                             )
                         )
                     )
-                    AND (COALESCE(c.fit_score, 0) >= 6 OR c.cleanup_status = 'KEPT')
                 )`;
                 params.push(icpId);
             } else {
@@ -2496,13 +2551,23 @@ app.get('/api/leads', requireAuth, async (req, res) => {
             LEFT JOIN companies ON leads.company_name = companies.company_name AND leads.user_id = companies.user_id
             WHERE leads.user_id = $1
             `;
+
+        // Default Filter: Hide leads from low-fit companies, UNLESS the lead is interesting (Enriched/Contacted)
+        // or if the company has no score yet (NULL).
+        // If status is specifically asked for (e.g. DISQUALIFIED), we might want to respect that content, 
+        // but for general views, hide low fit.
+        // Let's apply valid fit check:
+        // "Show if (Fit > 5 OR Fit is NULL OR Lead is ENRICHED/CONTACTED)"
+        queryStr += ` AND (companies.fit_score > 5 OR companies.fit_score IS NULL OR leads.status IN ('ENRICHED', 'CONTACTED', 'APPROVED')) `;
+
         const params = [req.userId];
-        let countParams = [req.userId];
+
+        // We need separate params list for count query if we want to be exact, or we reuse.
+        // Careful with param indices.
 
         if (status) {
             queryStr += ' AND leads.status = $' + (params.length + 1);
             params.push(status);
-            countParams.push(status);
         } else {
             // Default: Hide disqualified
             queryStr += " AND leads.status != 'DISQUALIFIED'";
@@ -2511,39 +2576,48 @@ app.get('/api/leads', requireAuth, async (req, res) => {
         if (icpId) {
             queryStr += ' AND leads.icp_id = $' + (params.length + 1);
             params.push(icpId);
-            countParams.push(icpId);
         }
 
         if (runId) {
             queryStr += ' AND leads.run_id = $' + (params.length + 1);
             params.push(runId);
-            countParams.push(runId);
         }
 
         // Get total count for pagination metadata
-        // For count, we can just count leads, join shouldn't change count unless we filter by company props (which we don't for now)
+        // For count, we MUST join companies now to respect the fit filter
         const countQuery = `
             SELECT COUNT(*) FROM leads 
+            LEFT JOIN companies ON leads.company_name = companies.company_name AND leads.user_id = companies.user_id
             WHERE leads.user_id = $1 
-            ${status ? 'AND leads.status = $' + (countParams.indexOf(status) + 1) : "AND leads.status != 'DISQUALIFIED'"} 
-            ${icpId ? 'AND leads.icp_id = $' + (countParams.indexOf(icpId) + 1) : ''}
-            ${runId ? 'AND leads.run_id = $' + (countParams.indexOf(runId) + 1) : ''}
+            AND (companies.fit_score > 5 OR companies.fit_score IS NULL OR leads.status IN ('ENRICHED', 'CONTACTED', 'APPROVED')) 
+            ${status ? 'AND leads.status = $' + (params.indexOf(status) + 1) : "AND leads.status != 'DISQUALIFIED'"} 
+            ${icpId ? 'AND leads.icp_id = $' + (params.indexOf(icpId) + 1) : ''}
+            ${runId ? 'AND leads.run_id = $' + (params.indexOf(runId) + 1) : ''}
         `;
-        const { rows: countRows } = await query(countQuery, countParams);
 
-        // Note: The simple countQuery above is safer than replacing 'SELECT *' because of the join syntax complexity
+        // Use the same params array for count (it has all we need, just in different order if we rebuilt it, but here we appended sequentially)
+        // Wait, params are [$1=userId, $2=status?, $3=icpId?, $4=runId?]
+        // The countQuery uses the exact same params in same order (userId is $1).
 
+        const { rows: countRows } = await query(countQuery, params);
         const totalCount = parseInt(countRows[0].count);
         const totalPages = Math.ceil(totalCount / pageSizeNum);
 
-        // Add pagination
+        // Add pagination (Limit/Offset)
         queryStr += ` ORDER BY leads.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2} `;
         params.push(pageSizeNum, offset);
 
         const { rows } = await query(queryStr, params);
 
         // Get total unique companies count (for dashboard stats)
-        const uniqueCompanyQuery = `SELECT COUNT(DISTINCT company_name) as count FROM leads WHERE user_id = $1`;
+        // Also need to respect the filter
+        const uniqueCompanyQuery = `
+            SELECT COUNT(DISTINCT leads.company_name) as count 
+            FROM leads 
+            LEFT JOIN companies ON leads.company_name = companies.company_name AND leads.user_id = companies.user_id
+            WHERE leads.user_id = $1
+            AND (companies.fit_score > 5 OR companies.fit_score IS NULL OR leads.status IN ('ENRICHED', 'CONTACTED', 'APPROVED')) 
+        `;
         const { rows: uniqueCompanyRows } = await query(uniqueCompanyQuery, [req.userId]);
         const uniqueCompanies = parseInt(uniqueCompanyRows[0]?.count || 0);
 
