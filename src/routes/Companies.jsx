@@ -9,6 +9,7 @@ function Companies() {
     const [loading, setLoading] = useState(true)
     const [expandedCompany, setExpandedCompany] = useState(null)
     const [filters, setFilters] = useState({ icpId: '' })
+    const [leadCountFilter, setLeadCountFilter] = useState('all') // 'all', '0', '1-5', '5+'
     const [showLowFit, setShowLowFit] = useState(false) // New state for filtering
     const [cleaning, setCleaning] = useState(false)
     const [cleaningProgress, setCleaningProgress] = useState(null)
@@ -383,10 +384,10 @@ function Companies() {
     };
 
     const toggleSelectAll = () => {
-        if (selectedCompanies.size === companies.length) {
+        if (selectedCompanies.size === filteredCompanies.length) {
             setSelectedCompanies(new Set());
         } else {
-            setSelectedCompanies(new Set(companies.map(c => c.id)));
+            setSelectedCompanies(new Set(filteredCompanies.map(c => c.id)));
         }
     };
 
@@ -667,6 +668,19 @@ function Companies() {
         return sections;
     }
 
+    // Filter logic
+    const filteredCompanies = companies.filter(c => {
+        // Search Filter
+        if (searchQuery && !c.name?.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+
+        // Lead Count Filter
+        if (leadCountFilter === '0') return c.leadCount === 0;
+        if (leadCountFilter === '1-5') return c.leadCount >= 1 && c.leadCount <= 5;
+        if (leadCountFilter === '5+') return c.leadCount > 5;
+
+        return true;
+    });
+
     return (
         <div className="min-h-screen p-6 lg:p-8">
             <div className="max-w-[1400px] mx-auto space-y-6">
@@ -680,6 +694,9 @@ function Companies() {
                             </h1>
                             <p className="text-sm text-gray-400 mt-1">
                                 Review all companies with leads, view company profiles, and clean up bad data.
+                                <span className="text-teal-400 ml-2 text-xs">
+                                    (Filtered: {filteredCompanies.length} / {companies.length} total)
+                                </span>
                             </p>
                         </div>
 
@@ -728,6 +745,18 @@ function Companies() {
                     )}
                     {/* Data Repair Button (Temporary) */}
                     <div className="flex items-center gap-4 mt-4 justify-end">
+                        {/* Lead Count Filter */}
+                        <select
+                            value={leadCountFilter}
+                            onChange={(e) => setLeadCountFilter(e.target.value)}
+                            className="bg-[#1C2526] border border-gray-700 text-gray-300 text-xs rounded-lg px-2.5 py-1.5 focus:ring-teal-500 focus:border-teal-500 block"
+                        >
+                            <option value="all">Any Lead Count</option>
+                            <option value="0">0 Leads</option>
+                            <option value="1-5">1-5 Leads</option>
+                            <option value="5+">5+ Leads</option>
+                        </select>
+
                         {/* Low Fit Toggle */}
                         <label className="flex items-center gap-2 cursor-pointer group">
                             <div className="relative">
@@ -1052,29 +1081,41 @@ function Companies() {
                     </div>
                 ) : (
                     <div className="space-y-4">
-                        {companies
-                            .filter(company => {
-                                // 1. Search Filter (Priority)
-                                if (searchQuery) {
-                                    return company.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                                        company.website?.toLowerCase().includes(searchQuery.toLowerCase());
-                                }
-                                // 2. ICP Filter (Handled by API usually, but extra safety)
-                                if (filters.icpId && company.icpId !== filters.icpId) return false;
+                        {/* List */}
+                        <div className="space-y-4">
+                            {/* Header Row */}
+                            <div className="grid grid-cols-[auto_2fr_1fr_1fr_1fr_auto] gap-4 px-6 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider">
+                                <div className="w-5">
+                                    <input
+                                        type="checkbox"
+                                        className="rounded bg-white/5 border-white/10"
+                                        checked={filteredCompanies.length > 0 && selectedCompanies.size === filteredCompanies.length}
+                                        onChange={toggleSelectAll}
+                                    />
+                                </div>
+                                <div>Company</div>
+                                <div className="text-center">Leads</div>
+                                <div className="text-center">Score</div>
+                                <div className="text-right">Last Updated</div>
+                                <div className="w-8"></div>
+                            </div>
 
-                                // 3. DEFAULT: Hide companies with Score < 6 (unless searching)
-                                // Handle 'N/A' or missing scores by treating them as 0
-                                const score = parseInt(company.fitScore) || 0;
-                                return score >= 6;
-                            })
-                            .map((company) => (
-                                <div key={company.name} className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl overflow-hidden">
-                                    {/* Company Header */}
+                            {filteredCompanies.map(company => (
+                                <div key={company.id} className="group bg-[#161b1c] hover:bg-[#1C2526] border border-white/5 hover:border-teal-500/20 rounded-xl transition-all duration-300">
+                                    {/* Company Summary Row */}
                                     <div
-                                        className={`p-6 cursor-pointer hover:bg-white/5 transition-colors flex items-center justify-between ${selectedCompanies.has(company.id) ? 'bg-teal-500/5' : ''}`}
+                                        className="grid grid-cols-[auto_2fr_1fr_1fr_1fr_auto] gap-4 p-6 items-center cursor-pointer"
                                         onClick={() => toggleCompanyExpand(company.name)}
                                     >
-                                        <div className="flex items-center gap-4 flex-1">
+                                        <div className="w-5" onClick={e => e.stopPropagation()}>
+                                            <input
+                                                type="checkbox"
+                                                className="rounded bg-white/5 border-white/10 checked:bg-teal-500 checked:border-teal-500 focus:ring-teal-500/30"
+                                                checked={selectedCompanies.has(company.id)}
+                                                onChange={(e) => toggleSelectCompany(company.id, e)}
+                                            />
+                                        </div>
+                                        <div className="flex items-center gap-4">
                                             <div
                                                 className="flex-shrink-0 flex items-center justify-center p-2"
                                                 onClick={(e) => toggleSelectCompany(company.id, e)}
@@ -1259,6 +1300,7 @@ function Companies() {
                                     )}
                                 </div>
                             ))}
+                        </div>
                     </div>
                 )}
             </div>
