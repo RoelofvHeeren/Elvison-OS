@@ -98,20 +98,19 @@ export const getDatasetInfo = async (token, datasetId) => {
  * @returns {Object} - The constructed payload
  */
 export const buildApolloDomainPayload = (domains, filters = {}) => {
-    // Default titles covering executives and decision-makers
-    // Default titles matching successful Apify console run
+    // Strict titles - Only C-level and senior decision makers (Real Estate/Investment focus)
     const defaultTitles = [
-        "Executive Director", "Director Of Operations", "Director Of Sales", "Director Of Business Development",
-        "Founder", "Co-Founder", "General Manager", "Head Of Operations", "Head Of Business Development",
-        "Founding Partner", "Co-Owner", "Business Owner", "CEO/President/Owner", "Executive Vice President",
-        "Principal", "Managing Director", "Director of Investments", "Director of Developments", "Partner",
-        "Managing Partner", "CEO", "President", "Vice President", "CIO", "COO"
+        "CEO", "President", "Managing Director", "Principal",
+        "Founder", "Co-Founder", "Managing Partner", "Partner",
+        "CIO", "COO", "CFO",
+        "Executive Vice President", "Executive Director",
+        "Director of Investments", "Director of Developments"
     ];
 
-    // Default seniorities
+    // Strict seniorities - C-level and Executives only
     const defaultSeniorities = [
         "Founder", "Chairman", "President", "CEO", "CXO",
-        "Vice President", "Director", "Head"
+        "Vice President", "Director"
     ];
 
     // Clean domains - ensure no http/https prefix and deduplicate
@@ -183,8 +182,8 @@ export const buildApolloDomainPayload = (domains, filters = {}) => {
         includeEmails: true,
         skipLeadsWithoutEmails: true,
 
-        // Limits
-        totalResults: Math.max(1000, Math.min(filters.maxLeads ? (filters.maxLeads * 100) : 1000, 5000))
+        // Limits - 20 leads per company max (user requested)
+        totalResults: Math.min(filters.maxLeads || 20, 20)
     };
 
     // STRICT MODE: If domains are provided, do NOT send broad filters (Country/Employee Size)

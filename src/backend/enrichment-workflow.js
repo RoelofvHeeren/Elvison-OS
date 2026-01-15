@@ -101,13 +101,16 @@ export const runEnrichmentWorkflow = async ({ companyIds, icpId, userId, listene
         // Use static method from OutreachService (as seen in previous steps)
         const enrichedLeads = await OutreachService.createLeadMessages(leads, icpId);
 
-        results.messagesGenerated = enrichedLeads.filter(l => l.email_message || l.connection_request).length;
+        // Safety: Ensure enrichedLeads is an array (OutreachService might return non-array)
+        const leadsArray = Array.isArray(enrichedLeads) ? enrichedLeads : [];
+
+        results.messagesGenerated = leadsArray.filter(l => l.email_message || l.connection_request).length;
         logStep('Outreach Creator', `✅ Generated messages for ${results.messagesGenerated} leads.`);
 
         // 4. Save to DB
         // We need to pass runId if we want to track it, but for now we might leave it null or generate one.
         // We'll reuse saveLeadsToDB.
-        await saveLeadsToDB(enrichedLeads, userId, icpId, logStep, 'NEW');
+        await saveLeadsToDB(leadsArray, userId, icpId, logStep, 'NEW');
 
         // Also save disqualified for review
         if (disqualified.length > 0) {
