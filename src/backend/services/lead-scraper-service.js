@@ -162,7 +162,12 @@ export class LeadScraperService {
         console.log(`[ApolloDomain] Retrieved ${rawValid.length} valid leads and ${rawDisqualified.length} disqualified.`);
 
         // 5. Normalize Data with Tiering
-        const validLeads = this._normalizeApolloDomainResults(rawValid, companies, filters);
+        const totalLimit = domains.length * 30; // 30 per company hard cap
+        const constrainedValid = rawValid.slice(0, totalLimit);
+
+        console.log(`[ApolloDomain] Strict Limit Enforced: ${rawValid.length} -> ${constrainedValid.length} (Max: ${totalLimit})`);
+
+        const validLeads = this._normalizeApolloDomainResults(constrainedValid, companies, filters);
 
         // Normalize disqualified too (so they can be saved)
         const disqualifiedLeads = this._normalizeApolloDomainResults(rawDisqualified, companies, filters).map((l, i) => ({
