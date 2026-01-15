@@ -68,6 +68,8 @@ export const runEnrichmentWorkflow = async ({ companyIds, icpId, userId, listene
                     if (cfg.seniority) filters.seniority = cfg.seniority;
                     if (cfg.excluded_functions) filters.excluded_functions = cfg.excluded_functions;
                     if (cfg.geography) filters.geography = cfg.geography;
+                    // Extract ICP Type/Name for Outreach reasoning
+                    filters.icp_type_label = icpRes.rows[0].icp_type || 'General';
                 }
             } catch (e) {
                 console.warn("Failed to load ICP filters", e);
@@ -98,14 +100,33 @@ export const runEnrichmentWorkflow = async ({ companyIds, icpId, userId, listene
         // The LeadScraper should have already attached it if we passed it in the companies array (it does normalization).
         // Let's ensure leads have company_profile.
 
-        // Use static method from OutreachService (as seen in previous steps)
-        const enrichedLeads = await OutreachService.createLeadMessages(leads, icpId);
+        // 3. Generate Outreach - Iterating through leads one by one
+        const enrichedLeads = [];
+        const icpTypeLabel = filters.icp_type_label || 'General';
 
-        // Safety: Ensure enrichedLeads is an array (OutreachService might return non-array)
-        const leadsArray = Array.isArray(enrichedLeads) ? enrichedLeads : [];
+        // Limit concurrency if needed, but simple loop is safer for rate limits
+        for (const lead of leads) {
+            try {
+                // Ensure fit_score is passed (mapped from company_fit_score)
+                const outreachInput = {
+                    ...lead,
+                    fit_score: lead.company_fit_score,
+                    icp_type: lead.icp_type || icpTypeLabel, // Use lead's type or fallback to ICP context
+                    person_name: `${lead.first_name} ${lead.last_name}`
+                };
 
-        results.messagesGenerated = leadsArray.filter(l => l.email_message || l.connection_request).length;
+                const enriched = await OutreachService.createLeadMessages(outreachInput);
+                enrichedLeads.push({ ...lead, ...enriched });
+            } catch (err) {
+                console.warn(`[Outreach] Failed for ${lead.email}:`, err.message);
+                enrichedLeads.push(lead); // Keep lead even if message gen fails
+            }
+        }
+
+        results.messagesGenerated = enrichedLeads.filter(l => l.email_message || l.connection_request).length;
         logStep('Outreach Creator', `✅ Generated messages for ${results.messagesGenerated} leads.`);
+
+        const leadsArray = enrichedLeads;
 
         // 4. Save to DB
         // We need to pass runId if we want to track it, but for now we might leave it null or generate one.
