@@ -450,7 +450,8 @@ function Companies() {
             setCompanies(companies.filter(c => c.id !== companyId))
         } catch (error) {
             console.error('Failed to delete company:', error)
-            alert('Failed to delete company. Please try again.')
+            const msg = error.response?.data?.error || error.message || 'Unknown error'
+            alert(`Failed to delete company: ${msg}`)
         }
     }
 

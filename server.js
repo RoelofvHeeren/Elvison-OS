@@ -1103,17 +1103,37 @@ app.post('/api/agents/config', requireAuth, async (req, res) => {
             linkedFileIds: linkedFileIds || []
         }
 
-        await query(
-            `INSERT INTO agent_prompts (agent_id, name, system_prompt, config, user_id) 
-             VALUES ($1, $2, $3, $4, $5)
-             ON CONFLICT (agent_id, user_id) DO UPDATE SET 
-                system_prompt = EXCLUDED.system_prompt,
-                config = agent_prompts.config || EXCLUDED.config,
-                updated_at = NOW()`,
-            [agentKey, name, instructions, configObj, req.userId]
-        )
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
 
-        res.json({ success: true })
+            const { rows } = await client.query(
+                `INSERT INTO agent_prompts(agent_id, name, system_prompt, config, user_id)
+                 VALUES($1, $2, $3, $4, $5)
+                 ON CONFLICT (agent_id) DO UPDATE 
+                 SET system_prompt = EXCLUDED.system_prompt,
+                     config = EXCLUDED.config,
+                     updated_at = NOW()
+                 RETURNING id`,
+                [agentKey, name, instructions, configObj, req.userId]
+            );
+
+            // Ensure link exists (for update cases too)
+            await client.query(
+                `INSERT INTO agent_prompts_link_table(agent_prompt_id, parent_id, parent_type)
+                 VALUES($1, $2, 'user')
+                 ON CONFLICT DO NOTHING`,
+                [rows[0].id, req.userId]
+            );
+
+            await client.query('COMMIT');
+            res.json({ success: true });
+        } catch (err) {
+            await client.query('ROLLBACK');
+            throw err;
+        } finally {
+            client.release();
+        }
     } catch (err) {
         console.error('Failed to save agent config:', err)
         res.status(500).json({ error: 'Database error' })
@@ -2443,30 +2463,37 @@ app.get('/api/companies', requireAuth, async (req, res) => {
 });
 
 // Delete Company and its Leads
+// Delete Company and its Leads
 app.delete('/api/companies/:id', requireAuth, async (req, res) => {
     try {
         const { id } = req.params;
 
-        // 1. Delete associated leads
-        // First get company name to delete leads by name if needed, but we can delete by joins if we had foreign keys.
-        // reliably, leads are linked by company_name AND user_id. 
-        // Let's get the company details first.
+        // 1. Get company details
         const { rows } = await query('SELECT * FROM companies WHERE id = $1 AND user_id = $2', [id, req.userId]);
         if (rows.length === 0) {
             return res.status(404).json({ error: 'Company not found' });
         }
         const company = rows[0];
 
-        // Delete leads
+        // 2. Delete leads linked to this company
         await query('DELETE FROM leads WHERE company_name = $1 AND user_id = $2', [company.company_name, req.userId]);
 
-        // Delete company
+        // 3. Delete from researched_companies tracking (in case of FK constraints)
+        await query('DELETE FROM researched_companies WHERE company_name = $1 AND user_id = $2', [company.company_name, req.userId]);
+
+        // 4. Update any children companies (if using parent_company_id)
+        if (company.id) {
+            await query('UPDATE companies SET parent_company_id = NULL WHERE parent_company_id = $1', [id]);
+        }
+
+        // 5. Delete company
         await query('DELETE FROM companies WHERE id = $1 AND user_id = $2', [id, req.userId]);
 
         res.json({ message: 'Company and leads deleted' });
     } catch (e) {
         console.error('Failed to delete company:', e);
-        res.status(500).json({ error: e.message });
+        // Send the actual error message for debugging
+        res.status(500).json({ error: e.message || 'Failed to delete company' });
     }
 });
 
@@ -2476,18 +2503,23 @@ app.get('/api/leads/all-ids', requireAuth, async (req, res) => {
     const { status, icpId } = req.query;
 
     try {
-        let queryStr = `SELECT id FROM leads WHERE user_id = $1`;
+        let queryStr = `
+            SELECT l.id 
+            FROM leads l
+            JOIN leads_link_table link ON l.id = link.lead_id
+            WHERE link.parent_id = $1 AND link.parent_type = 'user'
+        `;
         const params = [req.userId];
 
         if (status) {
-            queryStr += ' AND status = $' + (params.length + 1);
+            queryStr += ' AND l.status = $' + (params.length + 1);
             params.push(status);
         } else {
-            queryStr += " AND status != 'DISQUALIFIED'";
+            queryStr += " AND l.status != 'DISQUALIFIED'";
         }
 
         if (icpId) {
-            queryStr += ' AND icp_id = $' + (params.length + 1);
+            queryStr += ' AND l.icp_id = $' + (params.length + 1);
             params.push(icpId);
         }
 
@@ -2500,86 +2532,73 @@ app.get('/api/leads/all-ids', requireAuth, async (req, res) => {
     }
 });
 
-// Get Leads with Pagination
+// Get Leads with filtering
 app.get('/api/leads', requireAuth, async (req, res) => {
-    const { status, icpId, runId, page = 1, pageSize = 100 } = req.query;
+    const { status, page = 1, pageSize = 50, icpId, runId } = req.query
+    const offset = (page - 1) * pageSize
+    const pageSizeNum = parseInt(pageSize)
+    const pageNum = parseInt(page)
 
     try {
-        // Parse and validate pagination params
-        const pageNum = Math.max(1, parseInt(page) || 1);
-        const pageSizeNum = Math.min(500, Math.max(1, parseInt(pageSize) || 100)); // Max 500 per page for performance
-        const offset = (pageNum - 1) * pageSizeNum;
-
-        // Build base query
+        let countQuery = `
+            SELECT COUNT(*) 
+            FROM leads l
+            JOIN leads_link_table link ON l.id = link.lead_id
+            WHERE link.parent_id = $1 AND link.parent_type = 'user'
+        `;
         let queryStr = `
-            SELECT leads.*,
-            leads.linkedin_message,
-            leads.email_body,
-            companies.company_profile as company_profile_text,
-            companies.fit_score as company_fit_score
-            FROM leads 
-            LEFT JOIN companies ON leads.company_name = companies.company_name AND leads.user_id = companies.user_id
-            WHERE leads.user_id = $1
-            `;
-
-        // Filter out leads with SKIPPED messages (low-quality automated messages)
-        queryStr += ` 
-            AND (leads.linkedin_message NOT LIKE '[SKIPPED%' OR leads.linkedin_message IS NULL)
+            SELECT l.*,
+            c.company_profile as company_profile_text,
+            c.fit_score as company_fit_score
+            FROM leads l
+            JOIN leads_link_table link ON l.id = link.lead_id
+            LEFT JOIN companies c ON l.company_name = c.company_name AND c.user_id = $1
+            WHERE link.parent_id = $1 AND link.parent_type = 'user'
         `;
 
         const params = [req.userId];
 
-        // We need separate params list for count query if we want to be exact, or we reuse.
-        // Careful with param indices.
-
         if (status) {
-            queryStr += ' AND leads.status = $' + (params.length + 1);
+            const statusClause = ' AND l.status = $' + (params.length + 1);
+            countQuery += statusClause;
+            queryStr += statusClause;
             params.push(status);
         } else {
-            // Default: Hide disqualified
-            queryStr += " AND leads.status != 'DISQUALIFIED'";
+            const excludeClause = " AND l.status != 'DISQUALIFIED'";
+            countQuery += excludeClause;
+            queryStr += excludeClause;
         }
 
         if (icpId) {
-            queryStr += ' AND leads.icp_id = $' + (params.length + 1);
+            const icpClause = ' AND l.icp_id = $' + (params.length + 1);
+            countQuery += icpClause;
+            queryStr += icpClause;
             params.push(icpId);
         }
 
         if (runId) {
-            queryStr += ' AND leads.run_id = $' + (params.length + 1);
+            const runClause = ' AND l.run_id = $' + (params.length + 1);
+            countQuery += runClause;
+            queryStr += runClause;
             params.push(runId);
         }
-
-        // Get total count for pagination metadata
-        const countQuery = `
-            SELECT COUNT(*) FROM leads 
-            LEFT JOIN companies ON leads.company_name = companies.company_name AND leads.user_id = companies.user_id
-            WHERE leads.user_id = $1 
-            AND (leads.linkedin_message NOT LIKE '[SKIPPED%' OR leads.linkedin_message IS NULL) 
-            ${status ? 'AND leads.status = $' + (params.indexOf(status) + 1) : "AND leads.status != 'DISQUALIFIED'"} 
-            ${icpId ? 'AND leads.icp_id = $' + (params.indexOf(icpId) + 1) : ''}
-            ${runId ? 'AND leads.run_id = $' + (params.indexOf(runId) + 1) : ''}
-        `;
-
-        // Use the same params array for count (it has all we need, just in different order if we rebuilt it, but here we appended sequentially)
-        // Wait, params are [$1=userId, $2=status?, $3=icpId?, $4=runId?]
-        // The countQuery uses the exact same params in same order (userId is $1).
 
         const { rows: countRows } = await query(countQuery, params);
         const totalCount = parseInt(countRows[0].count);
         const totalPages = Math.ceil(totalCount / pageSizeNum);
 
-        // Add pagination (Limit/Offset)
-        queryStr += ` ORDER BY leads.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2} `;
+        // Add pagination
+        queryStr += ` ORDER BY l.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2} `;
         params.push(pageSizeNum, offset);
 
         const { rows } = await query(queryStr, params);
 
         // Get total unique companies count (for dashboard stats)
         const uniqueCompanyQuery = `
-            SELECT COUNT(DISTINCT leads.company_name) as count 
-            FROM leads 
-            WHERE leads.user_id = $1
+            SELECT COUNT(DISTINCT l.company_name) as count 
+            FROM leads l
+            JOIN leads_link_table link ON l.id = link.lead_id
+            WHERE link.parent_id = $1 AND link.parent_type = 'user'
             AND status != 'DISQUALIFIED'
             AND (linkedin_message NOT LIKE '[SKIPPED%' OR linkedin_message IS NULL)
         `;
@@ -2615,33 +2634,34 @@ app.get('/api/leads/export', requireAuth, async (req, res) => {
 
         // Build base query - same as GET /leads but NO pagination
         let queryStr = `
-            SELECT leads.*,
-            companies.company_profile as company_profile_text,
-            companies.fit_score as company_fit_score
-            FROM leads 
-            LEFT JOIN companies ON leads.company_name = companies.company_name AND leads.user_id = companies.user_id
-            WHERE leads.user_id = $1
+            SELECT l.*,
+            c.company_profile as company_profile_text,
+            c.fit_score as company_fit_score
+            FROM leads l
+            JOIN leads_link_table link ON l.id = link.lead_id
+            LEFT JOIN companies c ON l.company_name = c.company_name AND c.user_id = $1
+            WHERE link.parent_id = $1 AND link.parent_type = 'user'
             `;
         const params = [req.userId];
 
         if (status) {
-            queryStr += ' AND leads.status = $' + (params.length + 1);
+            queryStr += ' AND l.status = $' + (params.length + 1);
             params.push(status);
         } else {
-            queryStr += " AND leads.status != 'DISQUALIFIED'";
+            queryStr += " AND l.status != 'DISQUALIFIED'";
         }
 
         if (icpId) {
-            queryStr += ' AND leads.icp_id = $' + (params.length + 1);
+            queryStr += ' AND l.icp_id = $' + (params.length + 1);
             params.push(icpId);
         }
 
         if (runId) {
-            queryStr += ' AND leads.run_id = $' + (params.length + 1);
+            queryStr += ' AND l.run_id = $' + (params.length + 1);
             params.push(runId);
         }
 
-        queryStr += ` ORDER BY leads.created_at DESC`;
+        queryStr += ` ORDER BY l.created_at DESC`;
 
         const { rows } = await query(queryStr, params);
 
@@ -2719,14 +2739,19 @@ app.post('/api/leads/:id/approve', requireAuth, async (req, res) => {
     if (!reason || !reason.trim()) return res.status(400).json({ error: 'Reason required' });
     try {
         // 1. Fetch Lead
-        const { rows } = await query('SELECT * FROM leads WHERE id = $1 AND user_id = $2', [id, req.userId]);
-        if (rows.length === 0) return res.status(404).json({ error: 'Lead not found' });
+        const { rows: leadRows } = await query('SELECT * FROM leads WHERE id = $1 AND user_id = $2', [id, req.userId]);
+        if (leadRows.length === 0) return res.status(404).json({ error: 'Lead not found' });
 
-        let lead = rows[0];
+        let lead = leadRows[0];
+
+        const { rows } = await query(
+            'INSERT INTO lead_feedback(lead_id, user_id, reason, original_status, new_status) VALUES($1, $2, $3, $4, \'NEW\') RETURNING id',
+            [id, req.userId, reason, lead.status]
+        );
 
         await query(
-            `INSERT INTO lead_feedback(lead_id, user_id, reason, original_status, new_status) VALUES($1, $2, $3, $4, 'NEW')`,
-            [id, req.userId, reason, lead.status]
+            'INSERT INTO lead_feedback_link_table(lead_feedback_id, parent_id, parent_type) VALUES($1, $2, \'user\')',
+            [rows[0].id, req.userId]
         );
 
         // 2. Generate Outreach
@@ -2791,33 +2816,65 @@ app.post('/api/leads', requireAuth, async (req, res) => {
     if (!Array.isArray(leads)) return res.status(400).json({ error: 'Invalid data' })
 
     try {
-        await query('BEGIN')
-        for (const lead of leads) {
-            await query(
-                `INSERT INTO leads(company_name, person_name, email, job_title, linkedin_url, status, custom_data, source, user_id)
-                 VALUES($1, $2, $3, $4, $5, 'NEW', $6, $7, $8)`,
-                [
-                    lead.company_name,
-                    lead.first_name ? `${lead.first_name} ${lead.last_name}` : lead.person_name,
-                    lead.email,
-                    lead.title,
-                    lead.linkedin_url,
-                    JSON.stringify(lead.custom_data || {}),
-                    'Automation',
-                    req.userId
-                ]
-            )
-        }
-        await query('COMMIT')
-        res.json({ success: true, count: leads.length })
-    } catch (err) {
-        await query('ROLLBACK')
-        console.error('Failed to save leads:', err)
-        res.status(500).json({ error: 'Database error' })
-    }
-})
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+            for (const lead of leads) {
+                const { rows } = await client.query(
+                    `INSERT INTO leads(company_name, person_name, email, job_title, linkedin_url, status, custom_data, source, user_id)
+                     VALUES($1, $2, $3, $4, $5, 'NEW', $6, $7, $8) RETURNING id`,
+                    [
+                        lead.company_name,
+                        lead.first_name ? `${lead.first_name} ${lead.last_name}` : lead.person_name,
+                        lead.email,
+                        lead.title,
+                        lead.linkedin_url,
+                        JSON.stringify(lead.custom_data || {}),
+                        'Automation',
+                        req.userId
+                    ]
+                );
 
-// Delete Lead
+                await client.query(
+                    `INSERT INTO leads_link_table(lead_id, parent_id, parent_type) VALUES($1, $2, 'user')`,
+                    [rows[0].id, req.userId]
+                );
+            }
+            await client.query('COMMIT');
+            res.json({ success: true, count: leads.length });
+        } catch (err) {
+            await client.query('ROLLBACK');
+            console.error('Failed to save leads:', err);
+            res.status(500).json({ error: 'Database error' });
+        } finally {
+            client.release();
+        }
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.get('/api/agents/:agentId', requireAuth, async (req, res) => {
+    const { agentId } = req.params;
+    try {
+        const { rows } = await query(`
+            SELECT ap.* 
+            FROM agent_prompts ap
+            JOIN agent_prompts_link_table link ON ap.id = link.agent_prompt_id
+            WHERE ap.agent_id = $1 
+            AND link.parent_id = $2
+            AND link.parent_type = 'user'
+        `, [agentId, req.userId]);
+
+        if (rows.length === 0) return res.status(404).json({ error: 'Agent config not found' });
+        res.json(rows[0]);
+    } catch (err) {
+        console.error('Failed to fetch agent config:', err);
+        res.status(500).json({ error: 'Database error' });
+    }
+});
+
 // Toggle Lead Outreach Status
 app.post('/api/leads/:leadId/pushed', requireAuth, async (req, res) => {
     try {
@@ -2867,12 +2924,13 @@ app.get('/api/runs', requireAuth, async (req, res) => {
         const { rows } = await query(`
             SELECT 
                 wr.*,
-    ar.output_data,
-    i.name as icp_name
+                ar.output_data,
+                i.name as icp_name
             FROM workflow_runs wr
+            JOIN workflow_runs_link_table link ON wr.id = link.workflow_run_id
             LEFT JOIN agent_results ar ON wr.id = ar.run_id
             LEFT JOIN icps i ON wr.icp_id = i.id
-            WHERE wr.user_id = $1
+            WHERE link.parent_id = $1 AND link.parent_type = 'user'
             ORDER BY wr.started_at DESC
             LIMIT 50
     `, [req.userId])
@@ -2890,10 +2948,11 @@ app.get('/api/runs/:id', requireAuth, async (req, res) => {
         const { rows } = await query(`
             SELECT 
                 wr.*,
-    ar.output_data
+                ar.output_data
             FROM workflow_runs wr
+            JOIN workflow_runs_link_table link ON wr.id = link.workflow_run_id
             LEFT JOIN agent_results ar ON wr.id = ar.run_id
-            WHERE wr.id = $1 AND wr.user_id = $2
+            WHERE wr.id = $1 AND link.parent_id = $2 AND link.parent_type = 'user'
     `, [id, req.userId]);
 
         if (rows.length === 0) {
@@ -2952,16 +3011,30 @@ const sendProgress = (res, message) => {
 
 // Start Run
 app.post('/api/runs/start', requireAuth, async (req, res) => {
-    const { agent_id, metadata } = req.body
+    const { agent_id, metadata } = req.body;
+    const client = await pool.connect();
+
     try {
-        const { rows } = await query(
+        await client.query('BEGIN');
+        const { rows } = await client.query(
             `INSERT INTO workflow_runs(agent_id, status, started_at, metadata, user_id) VALUES($1, 'RUNNING', NOW(), $2, $3) RETURNING id`,
             [agent_id, metadata, req.userId]
-        )
-        res.json({ run_id: rows[0].id })
+        );
+        const runId = rows[0].id;
+
+        await client.query(
+            `INSERT INTO workflow_runs_link_table(workflow_run_id, parent_id, parent_type) VALUES($1, $2, 'user')`,
+            [runId, req.userId]
+        );
+
+        await client.query('COMMIT');
+        res.json({ run_id: runId });
     } catch (err) {
-        console.error('Failed to start run:', err)
-        res.status(500).json({ error: 'Database error' })
+        await client.query('ROLLBACK');
+        console.error('Failed to start run:', err);
+        res.status(500).json({ error: 'Database error' });
+    } finally {
+        client.release();
     }
 })
 
