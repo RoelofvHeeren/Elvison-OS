@@ -105,22 +105,33 @@ export const runEnrichmentWorkflow = async ({ companyIds, icpId, userId, listene
         const icpTypeLabel = filters.icp_type_label || 'General';
 
         // Limit concurrency if needed, but simple loop is safer for rate limits
-        for (const lead of leads) {
-            try {
-                // Ensure fit_score is passed (mapped from company_fit_score)
-                const outreachInput = {
-                    ...lead,
-                    fit_score: lead.company_fit_score,
-                    icp_type: lead.icp_type || icpTypeLabel, // Use lead's type or fallback to ICP context
-                    person_name: `${lead.first_name} ${lead.last_name}`
-                };
+        // UPDATE: Using chunks of 5 to speed up processing
+        const BATCH_SIZE = 5;
+        for (let i = 0; i < leads.length; i += BATCH_SIZE) {
+            const batch = leads.slice(i, i + BATCH_SIZE);
+            const batchPromises = batch.map(async (lead) => {
+                try {
+                    // Ensure fit_score is passed (mapped from company_fit_score)
+                    const outreachInput = {
+                        ...lead,
+                        fit_score: lead.company_fit_score,
+                        icp_type: lead.icp_type || icpTypeLabel, // Use lead's type or fallback to ICP context
+                        person_name: `${lead.first_name} ${lead.last_name}`
+                    };
 
-                const enriched = await OutreachService.createLeadMessages(outreachInput);
-                enrichedLeads.push({ ...lead, ...enriched });
-            } catch (err) {
-                console.warn(`[Outreach] Failed for ${lead.email}:`, err.message);
-                enrichedLeads.push(lead); // Keep lead even if message gen fails
-            }
+                    const enriched = await OutreachService.createLeadMessages(outreachInput);
+                    return { ...lead, ...enriched };
+                } catch (err) {
+                    console.warn(`[Outreach] Failed for ${lead.email}:`, err.message);
+                    return lead; // Keep lead even if message gen fails
+                }
+            });
+
+            const results = await Promise.all(batchPromises);
+            enrichedLeads.push(...results);
+
+            // Optional small delay to be nice to rate limits
+            if (i + BATCH_SIZE < leads.length) await new Promise(r => setTimeout(r, 200));
         }
 
         results.messagesGenerated = enrichedLeads.filter(l => l.email_message || l.connection_request).length;
