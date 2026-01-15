@@ -2475,8 +2475,30 @@ app.delete('/api/companies/:id', requireAuth, async (req, res) => {
         }
         const company = rows[0];
 
+
         // 2. Delete leads linked to this company
-        await query('DELETE FROM leads WHERE company_name = $1 AND user_id = $2', [company.company_name, req.userId]);
+        // We need to delete dependencies first because "leads_link_table" might not have CASCADE enabled in prod
+        const leadsResult = await query('SELECT id FROM leads WHERE company_name = $1 AND user_id = $2', [company.company_name, req.userId]);
+        const leadIds = leadsResult.rows.map(l => l.id);
+
+        if (leadIds.length > 0) {
+            // Delete from link tables
+            // Check both potential table names just in case
+            await query('DELETE FROM leads_link_table WHERE lead_id = ANY($1)', [leadIds]);
+            await query('DELETE FROM leads_link WHERE lead_id = ANY($1)', [leadIds]).catch(() => { }); // Ignore if table doesn't exist
+
+            // Delete from lead_feedback and its link tables
+            const feedbackResult = await query('SELECT id FROM lead_feedback WHERE lead_id = ANY($1)', [leadIds]).catch(() => ({ rows: [] }));
+            const feedbackIds = feedbackResult.rows.map(f => f.id);
+
+            if (feedbackIds.length > 0) {
+                await query('DELETE FROM lead_feedback_link_table WHERE lead_feedback_id = ANY($1)', [feedbackIds]).catch(() => { });
+                await query('DELETE FROM lead_feedback WHERE id = ANY($1)', [feedbackIds]);
+            }
+
+            // Finally delete the leads
+            await query('DELETE FROM leads WHERE id = ANY($1)', [leadIds]);
+        }
 
         // 3. Delete from researched_companies tracking (in case of FK constraints)
         await query('DELETE FROM researched_companies WHERE company_name = $1 AND user_id = $2', [company.company_name, req.userId]);
