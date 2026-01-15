@@ -1293,19 +1293,63 @@ export const saveLeadsToDB = async (leads, userId, icpId, logStep, forceStatus =
             const exists = await query("SELECT id FROM leads WHERE email = $1 AND user_id = $2", [lead.email, userId]);
             if (exists.rows.length > 0) continue;
 
-            await query(`INSERT INTO leads(company_name, person_name, email, job_title, linkedin_url, status, source, user_id, icp_id, custom_data, run_id)
-                        VALUES($1, $2, $3, $4, $5, $6, 'Outbound Agent', $7, $8, $9, $10) ON CONFLICT (email) DO NOTHING`,
-                [lead.company_name, `${lead.first_name} ${lead.last_name} `, lead.email, lead.title, lead.linkedin_url, currentStatus, userId, icpId, {
-                    icp_id: icpId,
-                    score: lead.match_score,
-                    company_profile: lead.company_profile,
-                    company_website: lead.company_website || lead.company_domain,
-                    company_domain: lead.company_domain,
-                    email_message: lead.email_message || lead.email_body,
-                    email_subject: lead.email_subject,
-                    connection_request: lead.connection_request,
-                    disqualification_reason: lead.disqualification_reason
-                }, runId]);
+            await query(`INSERT INTO leads(company_name, person_name, email, job_title, linkedin_url, status, source, user_id, icp_id, custom_data, run_id, 
+                        company_profile, company_website, company_domain, match_score, email_message, email_body, email_subject, linkedin_message, connection_request, disqualification_reason)
+                        VALUES($1, $2, $3, $4, $5, $6, 'Outbound Agent', $7, $8, $9, $10, 
+                        $11, $12, $13, $14, $15, $16, $17, $18, $19, $20) 
+                        ON CONFLICT (email) DO UPDATE SET
+                            company_name = EXCLUDED.company_name,
+                            person_name = EXCLUDED.person_name,
+                            job_title = EXCLUDED.job_title,
+                            linkedin_url = EXCLUDED.linkedin_url,
+                            status = EXCLUDED.status,
+                            icp_id = EXCLUDED.icp_id,
+                            custom_data = EXCLUDED.custom_data,
+                            run_id = EXCLUDED.run_id,
+                            company_profile = EXCLUDED.company_profile,
+                            company_website = EXCLUDED.company_website,
+                            company_domain = EXCLUDED.company_domain,
+                            match_score = EXCLUDED.match_score,
+                            email_message = EXCLUDED.email_message,
+                            email_body = EXCLUDED.email_body,
+                            email_subject = EXCLUDED.email_subject,
+                            linkedin_message = EXCLUDED.linkedin_message,
+                            connection_request = EXCLUDED.connection_request,
+                            disqualification_reason = EXCLUDED.disqualification_reason,
+                            updated_at = NOW()`,
+                [
+                    lead.company_name,
+                    `${lead.first_name} ${lead.last_name}`.trim(),
+                    lead.email,
+                    lead.title,
+                    lead.linkedin_url,
+                    currentStatus,
+                    userId,
+                    icpId,
+                    {
+                        icp_id: icpId,
+                        score: lead.match_score,
+                        company_profile: lead.company_profile,
+                        company_website: lead.company_website || lead.company_domain,
+                        company_domain: lead.company_domain,
+                        email_message: lead.email_message || lead.email_body,
+                        email_subject: lead.email_subject,
+                        connection_request: lead.connection_request,
+                        disqualification_reason: lead.disqualification_reason
+                    },
+                    runId,
+                    // Direct columns for easier querying
+                    lead.company_profile,
+                    lead.company_website || lead.company_domain,
+                    lead.company_domain,
+                    lead.match_score,
+                    lead.email_message,
+                    lead.email_body,
+                    lead.email_subject,
+                    lead.linkedin_message, // Assuming this is where connection request msg might be stored if different
+                    lead.connection_request,
+                    lead.disqualification_reason
+                ]);
 
             savedCount++;
         } catch (e) {
