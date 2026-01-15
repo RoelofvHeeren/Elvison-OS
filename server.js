@@ -2414,7 +2414,7 @@ app.get('/api/companies', requireAuth, async (req, res) => {
                     WHERE company_name = c.company_name 
                     AND user_id = c.user_id
                     AND status != 'DISQUALIFIED'
-                    AND (linkedin_message NOT LIKE '[SKIPPED%' OR linkedin_message IS NULL)
+                    -- AND (linkedin_message NOT LIKE '[SKIPPED%' OR linkedin_message IS NULL) -- Fixed: Count all leads including skipped
                 ) as lead_count
             FROM companies c
             WHERE c.user_id = $1
