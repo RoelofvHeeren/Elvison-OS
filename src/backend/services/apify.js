@@ -182,8 +182,9 @@ export const buildApolloDomainPayload = (domains, filters = {}) => {
         includeEmails: true,
         skipLeadsWithoutEmails: true,
 
-        // Limits - 20 leads per company max (user requested)
-        totalResults: Math.min(filters.maxLeads || 20, 20)
+        // Limits - Dynamic based on batch size (30 per company)
+        // filters.maxLeads is set by lead-scraper-service to domains.length * 30
+        totalResults: filters.maxLeads || 300 // Fallback to 300 if not set
     };
 
     // STRICT MODE: If domains are provided, do NOT send broad filters (Country/Employee Size)

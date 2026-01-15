@@ -185,8 +185,14 @@ export class LeadScraperService {
         }
 
         try {
+            // Dynamic totalResults: 30 leads per company in this batch
+            const batchFilters = {
+                ...filters,
+                maxLeads: domains.length * 30 // 30 leads per company
+            };
+
             // Start Job
-            const runId = await startApolloDomainScrape(this.apifyApiKey, domains, filters, idempotencyKey);
+            const runId = await startApolloDomainScrape(this.apifyApiKey, domains, batchFilters, idempotencyKey);
 
             if (!runId) {
                 throw new Error(`Batch ${batchId}: No run ID returned`);
