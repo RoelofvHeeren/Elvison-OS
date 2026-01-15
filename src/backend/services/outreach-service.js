@@ -43,7 +43,7 @@ const BANNED_OUTPUT_WORDS = [
 ];
 
 export class OutreachService {
-    static async createLeadMessages({ company_name, website, company_profile, fit_score, icp_type }) {
+    static async createLeadMessages({ company_name, website, company_profile, fit_score, icp_type, first_name, person_name }) {
         try {
             // === 1. MANDATORY LEAD QUALIFICATION GATE ===
             // 2.2 Disallowed company types (AUTO SKIP)
@@ -186,7 +186,18 @@ ${company_profile}
                 return this._createSkipResponse(result.skip_reason);
             }
 
-            // === 7. POST GENERATION QA ===
+            // === 7. REPLACE PLACEHOLDERS WITH ACTUAL VALUES ===
+            const actualFirstName = first_name || (person_name ? person_name.split(' ')[0] : 'there');
+
+            result.linkedin_message = result.linkedin_message
+                .replace(/{First_name}/g, actualFirstName)
+                .replace(/{Company_Name}/g, company_name);
+
+            result.email_body = result.email_body
+                .replace(/{First_name}/g, actualFirstName)
+                .replace(/{Company_Name}/g, company_name);
+
+            // === 8. POST GENERATION QA ===
             const checkString = (result.linkedin_message + result.email_body).toLowerCase();
             const violation = BANNED_OUTPUT_WORDS.find(word => checkString.includes(word.toLowerCase()));
 

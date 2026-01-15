@@ -482,6 +482,7 @@ export class LeadScraperService {
                 company_domain: companyDomain || originalCompany.domain || '',
                 company_website: item.organizationWebsite || originalCompany.website || '',
                 company_profile: originalCompany.company_profile || '',
+                company_fit_score: originalCompany.match_score || null, // PRESERVE company profiling score
                 city: item.city || '',
                 state: item.state || '',
                 personTitle: (filters.job_titles && filters.job_titles.length > 0) ? filters.job_titles : defaultTitles,

@@ -115,7 +115,7 @@ app.post('/api/admin/deep-cleanup', requireAuth, async (req, res) => {
 
         send({ type: 'icps', familyOffice: familyOfficeIcp?.name, investmentFund: investmentFundIcp?.name });
 
-        // 2. Get ALL companies with their profiles
+        // 2. Get ALL companies with their profiles (excluding low-fit companies already rejected)
         const { rows: companies } = await query(`
             SELECT 
                 c.id, 
@@ -127,6 +127,7 @@ app.post('/api/admin/deep-cleanup', requireAuth, async (req, res) => {
                 (SELECT icp_id FROM leads WHERE company_name = c.company_name AND user_id = c.user_id LIMIT 1) as current_icp_id
             FROM companies c
             WHERE c.user_id = $1
+            AND (c.fit_score > 5 OR c.fit_score IS NULL OR c.cleanup_status = 'KEPT')
             ORDER BY c.company_name
         `, [userId]);
 
@@ -2294,9 +2295,14 @@ app.get('/api/companies/export', requireAuth, async (req, res) => {
         let queryText = `
             SELECT 
                 c.*,
-                COUNT(l.id) as lead_count
+                (
+                    SELECT COUNT(*) FROM leads 
+                    WHERE company_name = c.company_name 
+                    AND user_id = c.user_id
+                    AND status != 'DISQUALIFIED'
+                    AND (linkedin_message NOT LIKE '[SKIPPED%' OR linkedin_message IS NULL)
+                ) as lead_count
             FROM companies c
-            LEFT JOIN leads l ON c.company_name = l.company_name AND c.user_id = l.user_id
             WHERE c.user_id = $1
         `;
         const params = [req.userId];
@@ -2383,9 +2389,14 @@ app.get('/api/companies', requireAuth, async (req, res) => {
         let queryText = `
             SELECT 
                 c.*,
-                COUNT(l.id) as lead_count
+                (
+                    SELECT COUNT(*) FROM leads 
+                    WHERE company_name = c.company_name 
+                    AND user_id = c.user_id
+                    AND status != 'DISQUALIFIED'
+                    AND (linkedin_message NOT LIKE '[SKIPPED%' OR linkedin_message IS NULL)
+                ) as lead_count
             FROM companies c
-            LEFT JOIN leads l ON c.company_name = l.company_name AND c.user_id = l.user_id
             WHERE c.user_id = $1
         `;
         const params = [req.userId];
@@ -2407,8 +2418,17 @@ app.get('/api/companies', requireAuth, async (req, res) => {
 
             // Map ICP name to company icp_types
             if (icpName.includes('family office')) {
-                // STRICT: Only show actual Family Offices for Family Office strategy
-                queryText += ` AND c.icp_type IN ('FAMILY_OFFICE_SINGLE', 'FAMILY_OFFICE_MULTI')`;
+                // RELAXED: Include by type OR lead's icp_id
+                queryText += ` AND (
+                    c.icp_type IN ('FAMILY_OFFICE_SINGLE', 'FAMILY_OFFICE_MULTI')
+                    OR EXISTS (
+                        SELECT 1 FROM leads 
+                        WHERE company_name = c.company_name 
+                        AND user_id = c.user_id 
+                        AND icp_id = $2
+                    )
+                )`;
+                params.push(icpId);
             } else if (icpName.includes('fund') || icpName.includes('investment firm')) {
                 // Show investment-related types for Funds/Investment Firms strategy
                 // FILTER OUT low-quality matches (score < 4) unless explicitly KEPT or LowFit enabled
@@ -2554,13 +2574,8 @@ app.get('/api/leads', requireAuth, async (req, res) => {
             WHERE leads.user_id = $1
             `;
 
-        // Default Filter: Hide leads from low-fit companies, UNLESS the lead is interesting (Enriched/Contacted)
-        // STRICT FILTER:
-        // 1. Hide companies with fit_score <= 5 (unless enriched/contacted)
-        // 2. Hide leads with SKIPPED messages (unless manually approved/filtered)
-
+        // Filter out leads with SKIPPED messages (low-quality automated messages)
         queryStr += ` 
-            AND (companies.fit_score > 5 OR companies.fit_score IS NULL OR leads.status IN ('ENRICHED', 'CONTACTED', 'APPROVED')) 
             AND (leads.linkedin_message NOT LIKE '[SKIPPED%' OR leads.linkedin_message IS NULL)
         `;
 
@@ -2588,12 +2603,10 @@ app.get('/api/leads', requireAuth, async (req, res) => {
         }
 
         // Get total count for pagination metadata
-        // For count, we MUST join companies now to respect the fit filter
         const countQuery = `
             SELECT COUNT(*) FROM leads 
             LEFT JOIN companies ON leads.company_name = companies.company_name AND leads.user_id = companies.user_id
             WHERE leads.user_id = $1 
-            AND (companies.fit_score > 5 OR companies.fit_score IS NULL OR leads.status IN ('ENRICHED', 'CONTACTED', 'APPROVED')) 
             AND (leads.linkedin_message NOT LIKE '[SKIPPED%' OR leads.linkedin_message IS NULL) 
             ${status ? 'AND leads.status = $' + (params.indexOf(status) + 1) : "AND leads.status != 'DISQUALIFIED'"} 
             ${icpId ? 'AND leads.icp_id = $' + (params.indexOf(icpId) + 1) : ''}
@@ -2615,13 +2628,12 @@ app.get('/api/leads', requireAuth, async (req, res) => {
         const { rows } = await query(queryStr, params);
 
         // Get total unique companies count (for dashboard stats)
-        // Also need to respect the filter
         const uniqueCompanyQuery = `
             SELECT COUNT(DISTINCT leads.company_name) as count 
             FROM leads 
-            LEFT JOIN companies ON leads.company_name = companies.company_name AND leads.user_id = companies.user_id
             WHERE leads.user_id = $1
-            AND (companies.fit_score > 5 OR companies.fit_score IS NULL OR leads.status IN ('ENRICHED', 'CONTACTED', 'APPROVED')) 
+            AND status != 'DISQUALIFIED'
+            AND (linkedin_message NOT LIKE '[SKIPPED%' OR linkedin_message IS NULL)
         `;
         const { rows: uniqueCompanyRows } = await query(uniqueCompanyQuery, [req.userId]);
         const uniqueCompanies = parseInt(uniqueCompanyRows[0]?.count || 0);

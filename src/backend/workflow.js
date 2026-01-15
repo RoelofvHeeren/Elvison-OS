@@ -1294,7 +1294,7 @@ export const saveLeadsToDB = async (leads, userId, icpId, logStep, forceStatus =
             if (exists.rows.length > 0) continue;
 
             await query(`INSERT INTO leads(company_name, person_name, email, job_title, linkedin_url, status, source, user_id, icp_id, custom_data, run_id)
-                        VALUES($1, $2, $3, $4, $5, $6, 'Outbound Agent', $7, $8, $9, $10)`,
+                        VALUES($1, $2, $3, $4, $5, $6, 'Outbound Agent', $7, $8, $9, $10) ON CONFLICT (email) DO NOTHING`,
                 [lead.company_name, `${lead.first_name} ${lead.last_name} `, lead.email, lead.title, lead.linkedin_url, currentStatus, userId, icpId, {
                     icp_id: icpId,
                     score: lead.match_score,
@@ -1306,6 +1306,7 @@ export const saveLeadsToDB = async (leads, userId, icpId, logStep, forceStatus =
                     connection_request: lead.connection_request,
                     disqualification_reason: lead.disqualification_reason
                 }, runId]);
+
             savedCount++;
         } catch (e) {
             console.error('Failed to save lead:', e.message);
@@ -1344,7 +1345,11 @@ export const saveLeadsToDB = async (leads, userId, icpId, logStep, forceStatus =
             for (const name of uniqueCompanies) {
                 const lead = savedLeads.find(l => l.company_name === name);
                 const finalWebsite = lead.company_website || lead.company_domain || lead.domain;
-                let score = parseInt(lead.match_score);
+
+                // CRITICAL FIX: Use company_fit_score (from Company Profiler), NOT lead.match_score (from Lead Ranker)
+                // lead.match_score = how good the PERSON is (1-10 based on job title)
+                // company_fit_score = how good the COMPANY is (1-10 based on ICP fit)
+                let score = parseInt(lead.company_fit_score);
                 if (isNaN(score)) score = null;
 
                 await query(`

@@ -8,7 +8,7 @@ const __dirname = path.dirname(__filename);
 
 const runMigration = async () => {
     try {
-        const migrationFile = '05_company_tracking.sql'; // Update this to run different migrations
+        const migrationFile = '08_audit_compliance.sql'; // Update this to run different migrations
         const migrationPath = path.join(__dirname, 'db', 'migrations', migrationFile);
         const sql = fs.readFileSync(migrationPath, 'utf8');
         console.log(`Running migration: ${migrationFile}`);

@@ -1080,10 +1080,8 @@ function Companies() {
                                     return company.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
                                         company.website?.toLowerCase().includes(searchQuery.toLowerCase());
                                 }
-                                // 2. ICP Filter (Handled by API usually, but extra safety)
-                                if (filters.icpId && company.icpId !== filters.icpId) return false;
 
-                                // 3. DEFAULT: Hide companies with Score < 6 (unless searching)
+                                // 2. DEFAULT: Hide companies with Score < 6 (unless searching)
                                 // Handle 'N/A' or missing scores by treating them as 0
                                 const score = parseInt(company.fitScore) || 0;
                                 return score >= 6;
