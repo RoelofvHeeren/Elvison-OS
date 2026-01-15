@@ -134,7 +134,7 @@ export const runEnrichmentWorkflow = async ({ companyIds, icpId, userId, listene
             if (i + BATCH_SIZE < leads.length) await new Promise(r => setTimeout(r, 200));
         }
 
-        results.messagesGenerated = enrichedLeads.filter(l => l.email_message || l.connection_request).length;
+        results.messagesGenerated = enrichedLeads.filter(l => (l.email_body && !l.email_body.includes('SKIPPED')) || (l.linkedin_message && !l.linkedin_message.includes('SKIPPED'))).length;
         logStep('Outreach Creator', `✅ Generated messages for ${results.messagesGenerated} leads.`);
 
         const leadsArray = enrichedLeads;
