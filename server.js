@@ -2410,68 +2410,16 @@ app.get('/api/companies', requireAuth, async (req, res) => {
             queryText += ` AND (c.fit_score > 5 OR c.fit_score IS NULL OR c.cleanup_status = 'KEPT') `;
         }
 
-        // ICP Filter - check the company's icp_type OR lead's icp_id
+        // ICP Filter
         if (icpId) {
-            // Get the ICP name to determine which icp_types to filter
-            const { rows: icpRows } = await query('SELECT name FROM icps WHERE id = $1', [icpId]);
-            const icpName = icpRows[0]?.name?.toLowerCase() || '';
-
-            // Map ICP name to company icp_types
-            if (icpName.includes('family office')) {
-                // RELAXED: Include by type OR lead's icp_id
-                queryText += ` AND (
-                    c.icp_type IN ('FAMILY_OFFICE_SINGLE', 'FAMILY_OFFICE_MULTI')
-                    OR EXISTS (
-                        SELECT 1 FROM leads 
-                        WHERE company_name = c.company_name 
-                        AND user_id = c.user_id 
-                        AND icp_id = $2
-                    )
-                )`;
-                params.push(icpId);
-            } else if (icpName.includes('fund') || icpName.includes('investment firm')) {
-                // Show investment-related types for Funds/Investment Firms strategy
-                // FILTER OUT low-quality matches (score < 4) unless explicitly KEPT or LowFit enabled
-                // Note: We already applied a global >5 filter above if includeLowFit is false.
-                queryText += ` AND (
-                    (
-                        c.icp_type IN (
-                            'REAL_ESTATE_PRIVATE_EQUITY', 
-                            'ASSET_MANAGER_MULTI_STRATEGY',
-                            'PENSION',
-                            'SOVEREIGN_WEALTH_FUND',
-                            'INSURANCE_INVESTOR',
-                            'REIT_PUBLIC',
-                            'RE_DEVELOPER_OPERATOR',
-                            'REAL_ESTATE_DEBT_FUND',
-                            'BANK_LENDER',
-                            'PLATFORM_FRACTIONAL'
-                        )
-                        OR (
-                            c.icp_type IS NULL
-                            AND EXISTS (
-                                SELECT 1 FROM leads 
-                                WHERE company_name = c.company_name 
-                                AND user_id = c.user_id 
-                                AND icp_id = $2
-                            )
-                        )
-                    )
-                )`;
-                params.push(icpId);
-            } else {
-                // Fallback: filter by lead icp_id if icp_type not set
-                queryText += ` AND (
-                    c.icp_type IS NOT NULL 
-                    OR EXISTS (
-                        SELECT 1 FROM leads 
-                        WHERE company_name = c.company_name 
-                        AND user_id = c.user_id 
-                        AND icp_id = $2
-                    )
-                )`;
-                params.push(icpId);
-            }
+            queryText += ` AND EXISTS (
+                SELECT 1 FROM leads 
+                WHERE company_name = c.company_name 
+                AND user_id = c.user_id 
+                AND icp_id = $2
+                AND status != 'DISQUALIFIED'
+            )`;
+            params.push(icpId);
         }
 
         // Sort handling
