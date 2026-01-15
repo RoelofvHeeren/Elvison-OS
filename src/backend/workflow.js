@@ -1295,13 +1295,8 @@ export const saveLeadsToDB = async (leads, userId, icpId, logStep, forceStatus =
                 }
             }
 
-            const exists = await query(`
-                SELECT l.id 
-                FROM leads l 
-                JOIN leads_link_table link ON l.id = link.lead_id
-                WHERE l.email = $1 AND link.parent_id = $2 AND link.parent_type = 'user'
-            `, [lead.email, userId]);
-            if (exists.rows.length > 0) continue;
+            // Removed redundant existence check to allow ON CONFLICT UPDATE to work for existing leads
+            // This ensures enrichment data is saved even if the lead is already linked to the user
 
             const insertRes = await query(`INSERT INTO leads(company_name, person_name, email, job_title, linkedin_url, status, source, user_id, icp_id, custom_data, run_id, 
                         company_website, company_domain, match_score, email_message, email_body, email_subject, linkedin_message, connection_request, disqualification_reason)
