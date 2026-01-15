@@ -140,9 +140,17 @@ export const runEnrichmentWorkflow = async ({ companyIds, icpId, userId, listene
         const leadsArray = enrichedLeads;
 
         // 4. Save to DB
-        // We need to pass runId if we want to track it, but for now we might leave it null or generate one.
-        // We'll reuse saveLeadsToDB.
-        await saveLeadsToDB(leadsArray, userId, icpId, logStep, 'NEW');
+        // Filter out SKIPPED leads - User strictly wants only qualified leads with messages
+        const validLeads = enrichedLeads.filter(l =>
+            !l.email_body?.includes('[SKIPPED') &&
+            !l.linkedin_message?.includes('[SKIPPED')
+        );
+
+        if (validLeads.length > 0) {
+            await saveLeadsToDB(validLeads, userId, icpId, logStep, 'NEW');
+        } else {
+            logStep('Database', 'ℹ️ No qualified leads to save (all filtered/skipped).');
+        }
 
         // Also save disqualified for review
         if (disqualified.length > 0) {

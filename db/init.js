@@ -24,6 +24,15 @@ async function initDb() {
                 console.log('Migration 05 applied.');
             }
 
+            // Run Migration 12 (Cleanup Skipped Leads)
+            const migration12Path = path.join(__dirname, 'migrations', '12_cleanup_skipped_leads.sql');
+            if (fs.existsSync(migration12Path)) {
+                console.log('Running cleanup migration (12)...');
+                const migration12 = fs.readFileSync(migration12Path, 'utf8');
+                await client.query(migration12);
+                console.log('Migration 12 applied (Skipped leads deleted).');
+            }
+
             await client.query('COMMIT');
             console.log('Database schema applied successfully.');
         } catch (e) {
