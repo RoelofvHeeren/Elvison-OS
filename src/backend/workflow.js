@@ -1335,7 +1335,7 @@ export const saveLeadsToDB = async (leads, userId, icpId, logStep, forceStatus =
                     lead.linkedin_url,
                     currentStatus,
                     userId,
-                    icpId,
+                    icpId || null, // Sanitize empty string to null for UUID
                     {
                         icp_id: icpId,
                         score: lead.match_score,
@@ -1347,7 +1347,7 @@ export const saveLeadsToDB = async (leads, userId, icpId, logStep, forceStatus =
                         connection_request: lead.connection_request,
                         disqualification_reason: lead.disqualification_reason
                     },
-                    runId,
+                    runId || null, // Sanitize empty string to null for UUID
                     // Direct columns for easier querying
                     lead.company_website || lead.company_domain,
                     lead.company_domain,
