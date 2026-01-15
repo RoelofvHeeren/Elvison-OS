@@ -143,7 +143,12 @@ export const runAgentWorkflow = async (input, config) => {
     const checkCancellation = async () => {
         if (!runId) return false; // Cannot check cancellation without runId
         try {
-            const res = await query(`SELECT status FROM workflow_runs WHERE id = $1`, [runId]);
+            const res = await query(`
+                SELECT wr.status 
+                FROM workflow_runs wr
+                JOIN workflow_runs_link_table link ON wr.id = link.workflow_run_id
+                WHERE wr.id = $1 AND link.parent_id = $2 AND link.parent_type = 'user'
+            `, [runId, userId]);
             if (res.rows.length > 0 && res.rows[0].status === 'CANCELLED') {
                 logStep('System', '⛔ Run Cancellation Detected. Stopping workflow immediately.');
                 return true;
@@ -1290,13 +1295,18 @@ export const saveLeadsToDB = async (leads, userId, icpId, logStep, forceStatus =
                 }
             }
 
-            const exists = await query("SELECT id FROM leads WHERE email = $1 AND user_id = $2", [lead.email, userId]);
+            const exists = await query(`
+                SELECT l.id 
+                FROM leads l 
+                JOIN leads_link_table link ON l.id = link.lead_id
+                WHERE l.email = $1 AND link.parent_id = $2 AND link.parent_type = 'user'
+            `, [lead.email, userId]);
             if (exists.rows.length > 0) continue;
 
-            await query(`INSERT INTO leads(company_name, person_name, email, job_title, linkedin_url, status, source, user_id, icp_id, custom_data, run_id, 
-                        company_profile, company_website, company_domain, match_score, email_message, email_body, email_subject, linkedin_message, connection_request, disqualification_reason)
+            const insertRes = await query(`INSERT INTO leads(company_name, person_name, email, job_title, linkedin_url, status, source, user_id, icp_id, custom_data, run_id, 
+                        company_website, company_domain, match_score, email_message, email_body, email_subject, linkedin_message, connection_request, disqualification_reason)
                         VALUES($1, $2, $3, $4, $5, $6, 'Outbound Agent', $7, $8, $9, $10, 
-                        $11, $12, $13, $14, $15, $16, $17, $18, $19, $20) 
+                        $11, $12, $13, $14, $15, $16, $17, $18, $19) 
                         ON CONFLICT (email) DO UPDATE SET
                             company_name = EXCLUDED.company_name,
                             person_name = EXCLUDED.person_name,
@@ -1306,7 +1316,6 @@ export const saveLeadsToDB = async (leads, userId, icpId, logStep, forceStatus =
                             icp_id = EXCLUDED.icp_id,
                             custom_data = EXCLUDED.custom_data,
                             run_id = EXCLUDED.run_id,
-                            company_profile = EXCLUDED.company_profile,
                             company_website = EXCLUDED.company_website,
                             company_domain = EXCLUDED.company_domain,
                             match_score = EXCLUDED.match_score,
@@ -1316,7 +1325,8 @@ export const saveLeadsToDB = async (leads, userId, icpId, logStep, forceStatus =
                             linkedin_message = EXCLUDED.linkedin_message,
                             connection_request = EXCLUDED.connection_request,
                             disqualification_reason = EXCLUDED.disqualification_reason,
-                            updated_at = NOW()`,
+                            updated_at = NOW()
+                        RETURNING id`,
                 [
                     lead.company_name,
                     `${lead.first_name} ${lead.last_name}`.trim(),
@@ -1339,7 +1349,6 @@ export const saveLeadsToDB = async (leads, userId, icpId, logStep, forceStatus =
                     },
                     runId,
                     // Direct columns for easier querying
-                    lead.company_profile,
                     lead.company_website || lead.company_domain,
                     lead.company_domain,
                     lead.match_score,
@@ -1350,6 +1359,15 @@ export const saveLeadsToDB = async (leads, userId, icpId, logStep, forceStatus =
                     lead.connection_request,
                     lead.disqualification_reason
                 ]);
+
+            const leadId = insertRes.rows[0].id;
+
+            await query(
+                `INSERT INTO leads_link_table(lead_id, parent_id, parent_type) 
+                 VALUES($1, $2, 'user') 
+                 ON CONFLICT DO NOTHING`,
+                [leadId, userId]
+            );
 
             savedCount++;
         } catch (e) {

@@ -24,14 +24,6 @@ async function initDb() {
                 console.log('Migration 05 applied.');
             }
 
-            // Run Migration 11 - Add company_profile
-            const migration11Path = path.join(__dirname, 'migrations', '11_add_company_profile.sql');
-            if (fs.existsSync(migration11Path)) {
-                const migration11 = fs.readFileSync(migration11Path, 'utf8');
-                await client.query(migration11);
-                console.log('Migration 11 applied.');
-            }
-
             await client.query('COMMIT');
             console.log('Database schema applied successfully.');
         } catch (e) {
