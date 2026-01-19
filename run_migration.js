@@ -8,7 +8,7 @@ const __dirname = path.dirname(__filename);
 
 const runMigration = async () => {
     try {
-        const migrationFile = '20_drop_obsolete_columns.sql'; // Update this to run different migrations
+        const migrationFile = '25_repopulate_leads_icp_corrected.sql'; // Update this to run different migrations
         const migrationPath = path.join(__dirname, 'db', 'migrations', migrationFile);
         const sql = fs.readFileSync(migrationPath, 'utf8');
         console.log(`Running migration: ${migrationFile}`);
