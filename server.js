@@ -124,7 +124,11 @@ app.post('/api/admin/deep-cleanup', requireAuth, async (req, res) => {
                 c.company_profile,
                 c.fit_score,
                 c.user_id,
-                (SELECT icp_id FROM leads WHERE company_name = c.company_name AND user_id = c.user_id LIMIT 1) as current_icp_id
+                (SELECT l.icp_id FROM leads l 
+                 JOIN leads_link link ON l.id = link.lead_id 
+                 WHERE l.company_name = c.company_name 
+                 AND link.parent_id = c.user_id AND link.parent_type = 'user' 
+                 LIMIT 1) as current_icp_id
             FROM companies c
             WHERE c.user_id = $1
             AND (c.fit_score > 5 OR c.fit_score IS NULL OR c.cleanup_status = 'KEPT')
@@ -1073,7 +1077,12 @@ Rewrite the system instruction to be professional, robust, and optimized for an 
 // 2. Get Agent Configs (For UI)
 app.get('/api/agents/config', requireAuth, async (req, res) => {
     try {
-        const { rows } = await query("SELECT * FROM agent_prompts WHERE user_id = $1", [req.userId])
+        // agent_prompts has no user_id - must join through agent_prompts_link
+        const { rows } = await query(`
+            SELECT ap.* FROM agent_prompts ap
+            JOIN agent_prompts_link link ON ap.id = link.agent_prompt_id
+            WHERE link.parent_id = $1 AND link.parent_type = 'user'
+        `, [req.userId])
         const configs = {}
 
         rows.forEach(row => {
@@ -2410,11 +2419,13 @@ app.get('/api/companies', requireAuth, async (req, res) => {
             SELECT 
                 c.*,
                 (
-                    SELECT COUNT(*) FROM leads 
-                    WHERE company_name = c.company_name 
-                    AND user_id = c.user_id
-                    AND status != 'DISQUALIFIED'
-                    AND (linkedin_message NOT LIKE '[SKIPPED%' OR linkedin_message IS NULL)
+                    SELECT COUNT(*) FROM leads l
+                    JOIN leads_link link ON l.id = link.lead_id
+                    WHERE l.company_name = c.company_name 
+                    AND link.parent_id = c.user_id
+                    AND link.parent_type = 'user'
+                    AND l.status != 'DISQUALIFIED'
+                    AND (l.linkedin_message NOT LIKE '[SKIPPED%' OR l.linkedin_message IS NULL)
                 ) as lead_count
             FROM companies c
             WHERE c.user_id = $1
@@ -2430,14 +2441,16 @@ app.get('/api/companies', requireAuth, async (req, res) => {
             queryText += ` AND (c.fit_score > 5 OR c.fit_score IS NULL OR c.cleanup_status = 'KEPT') `;
         }
 
-        // ICP Filter
+        // ICP Filter - use leads_link for proper user matching
         if (icpId) {
             queryText += ` AND EXISTS (
-                SELECT 1 FROM leads 
-                WHERE company_name = c.company_name 
-                AND user_id = c.user_id 
-                AND icp_id = $2
-                AND status != 'DISQUALIFIED'
+                SELECT 1 FROM leads l
+                JOIN leads_link link ON l.id = link.lead_id
+                WHERE l.company_name = c.company_name 
+                AND link.parent_id = c.user_id
+                AND link.parent_type = 'user'
+                AND l.icp_id = $2
+                AND l.status != 'DISQUALIFIED'
             )`;
             params.push(icpId);
         }
