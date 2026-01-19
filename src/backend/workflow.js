@@ -1358,7 +1358,7 @@ export const saveLeadsToDB = async (leads, userId, icpId, logStep, forceStatus =
             const leadId = insertRes.rows[0].id;
 
             await query(
-                `INSERT INTO leads_link_table(lead_id, parent_id, parent_type) 
+                `INSERT INTO leads_link(lead_id, parent_id, parent_type) 
                  VALUES($1, $2, 'user') 
                  ON CONFLICT DO NOTHING`,
                 [leadId, userId]

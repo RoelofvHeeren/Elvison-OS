@@ -2477,14 +2477,14 @@ app.delete('/api/companies/:id', requireAuth, async (req, res) => {
 
 
         // 2. Delete leads linked to this company
-        // We need to delete dependencies first because "leads_link_table" might not have CASCADE enabled in prod
+        // We need to delete dependencies first because "leads_link" might not have CASCADE enabled in prod
         const leadsResult = await query('SELECT id FROM leads WHERE company_name = $1 AND user_id = $2', [company.company_name, req.userId]);
         const leadIds = leadsResult.rows.map(l => l.id);
 
         if (leadIds.length > 0) {
             // Delete from link tables
             // Check both potential table names just in case
-            await query('DELETE FROM leads_link_table WHERE lead_id = ANY($1)', [leadIds]);
+            await query('DELETE FROM leads_link WHERE lead_id = ANY($1)', [leadIds]);
             await query('DELETE FROM leads_link WHERE lead_id = ANY($1)', [leadIds]).catch(() => { }); // Ignore if table doesn't exist
 
             // Delete from lead_feedback and its link tables
@@ -2528,7 +2528,7 @@ app.get('/api/leads/all-ids', requireAuth, async (req, res) => {
         let queryStr = `
             SELECT l.id 
             FROM leads l
-            JOIN leads_link_table link ON l.id = link.lead_id
+            JOIN leads_link link ON l.id = link.lead_id
             WHERE link.parent_id = $1 AND link.parent_type = 'user'
         `;
         const params = [req.userId];
@@ -2565,7 +2565,7 @@ app.get('/api/leads', requireAuth, async (req, res) => {
         let countQuery = `
             SELECT COUNT(*) 
             FROM leads l
-            JOIN leads_link_table link ON l.id = link.lead_id
+            JOIN leads_link link ON l.id = link.lead_id
             WHERE link.parent_id = $1 AND link.parent_type = 'user'
         `;
         let queryStr = `
@@ -2573,7 +2573,7 @@ app.get('/api/leads', requireAuth, async (req, res) => {
             c.company_profile as company_profile_text,
             c.fit_score as company_fit_score
             FROM leads l
-            JOIN leads_link_table link ON l.id = link.lead_id
+            JOIN leads_link link ON l.id = link.lead_id
             LEFT JOIN companies c ON l.company_name = c.company_name AND c.user_id = $1
             WHERE link.parent_id = $1 AND link.parent_type = 'user'
         `;
@@ -2619,7 +2619,7 @@ app.get('/api/leads', requireAuth, async (req, res) => {
         const uniqueCompanyQuery = `
             SELECT COUNT(DISTINCT l.company_name) as count 
             FROM leads l
-            JOIN leads_link_table link ON l.id = link.lead_id
+            JOIN leads_link link ON l.id = link.lead_id
             WHERE link.parent_id = $1 AND link.parent_type = 'user'
             AND status != 'DISQUALIFIED'
             AND (linkedin_message NOT LIKE '[SKIPPED%' OR linkedin_message IS NULL)
@@ -2660,7 +2660,7 @@ app.get('/api/leads/export', requireAuth, async (req, res) => {
             c.company_profile as company_profile_text,
             c.fit_score as company_fit_score
             FROM leads l
-            JOIN leads_link_table link ON l.id = link.lead_id
+            JOIN leads_link link ON l.id = link.lead_id
             LEFT JOIN companies c ON l.company_name = c.company_name AND c.user_id = $1
             WHERE link.parent_id = $1 AND link.parent_type = 'user'
             `;
@@ -2858,7 +2858,7 @@ app.post('/api/leads', requireAuth, async (req, res) => {
                 );
 
                 await client.query(
-                    `INSERT INTO leads_link_table(lead_id, parent_id, parent_type) VALUES($1, $2, 'user')`,
+                    `INSERT INTO leads_link(lead_id, parent_id, parent_type) VALUES($1, $2, 'user')`,
                     [rows[0].id, req.userId]
                 );
             }

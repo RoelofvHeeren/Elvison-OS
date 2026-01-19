@@ -18,7 +18,7 @@ const cleanupSkippedLeads = async () => {
 
         if (leadIds.length > 0) {
             // 2. Delete links first (if cascading isn't set up perfectly)
-            await query('DELETE FROM leads_link_table WHERE lead_id = ANY($1)', [leadIds]);
+            await query('DELETE FROM leads_link WHERE lead_id = ANY($1)', [leadIds]);
             await query('DELETE FROM leads_link WHERE lead_id = ANY($1)', [leadIds]).catch(() => { });
 
             // 3. Delete from feedback
