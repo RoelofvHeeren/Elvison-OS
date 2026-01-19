@@ -60,8 +60,8 @@ export class CompanyScorer {
         const CONCURRENCY_LIMIT = 8;
         const typeStr = isFamilyOffice ? 'FAMILY_OFFICE' : 'INVESTMENT_FIRM';
 
-        // Stricter threshold for Family Offices (8), standard for Investment Firms (6)
-        const SCORE_THRESHOLD = isFamilyOffice ? 8 : 6;
+        // Unified threshold of 7 for all ICP types
+        const SCORE_THRESHOLD = 7;
 
         // Helper to process a single company
         const processCompany = async (company) => {
@@ -73,7 +73,13 @@ export class CompanyScorer {
                         // DELETE the company AND all its leads
                         console.log(`❌ Deleting company: ${company.company_name} (Score: ${scoreData.fit_score})`);
 
-                        // Delete leads first
+                        // Delete from leads_link first to avoid FK violations
+                        await query(`
+                            DELETE FROM leads_link 
+                            WHERE lead_id IN (SELECT id FROM leads WHERE company_name = $1 AND user_id = $2)
+                        `, [company.company_name, company.user_id]);
+
+                        // Delete leads
                         const leadDeleteResult = await query(`
                             DELETE FROM leads 
                             WHERE company_name = $1 AND user_id = $2
