@@ -1,1 +1,0 @@
-ALTER TABLE leads ADD COLUMN IF NOT EXISTS company_profile TEXT;
