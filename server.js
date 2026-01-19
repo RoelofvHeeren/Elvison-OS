@@ -2425,7 +2425,6 @@ app.get('/api/companies', requireAuth, async (req, res) => {
                     AND link.parent_id = c.user_id
                     AND link.parent_type = 'user'
                     AND l.status != 'DISQUALIFIED'
-                    AND (l.linkedin_message NOT LIKE '[SKIPPED%' OR l.linkedin_message IS NULL)
                 ) as lead_count
             FROM companies c
             WHERE c.user_id = $1
