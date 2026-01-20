@@ -177,16 +177,16 @@ export const buildApolloDomainPayload = (domains, filters = {}) => {
         personTitle: (filters.job_titles && filters.job_titles.length > 0) ? filters.job_titles : defaultTitles,
         seniority: (mappedSeniority && mappedSeniority.length > 0) ? mappedSeniority : defaultSeniorities,
 
-        // STRICT Department Filters - Only include business-critical departments
-        departments: [
+        // STRICT Department Filters - Only applied if NOT in lenient mode
+        departments: filters.lenientMode ? [] : [
             "master_c_suite",
             "master_executive",
             "master_operations",
             "master_finance"
         ],
 
-        // EXPLICIT Department Exclusions - Block irrelevant departments
-        departmentsExclude: [
+        // EXPLICIT Department Exclusions - Only applied if NOT in lenient mode
+        departmentsExclude: filters.lenientMode ? [] : [
             "master_marketing",
             "master_engineering_technical",
             "master_sales",
@@ -196,8 +196,8 @@ export const buildApolloDomainPayload = (domains, filters = {}) => {
             "master_media_communications"
         ],
 
-        // EXPLICIT Title Exclusions - Block specific titles that might slip through
-        personTitlesExclude: [
+        // EXPLICIT Title Exclusions - Only applied if NOT in lenient mode
+        personTitlesExclude: filters.lenientMode ? [] : [
             "VP of Marketing", "Head of Marketing", "CMO", "Chief Marketing Officer",
             "VP of Engineering", "Head of Engineering", "CTO", "Chief Technology Officer",
             "VP of Sales", "Head of Sales", "Chief Revenue Officer",
@@ -270,6 +270,117 @@ export const startApolloDomainScrape = async (token, domains, filters = {}, idem
     } catch (error) {
         console.error('[ApolloDomain] Start Error:', error.response?.data || error.message);
         throw new Error(`Failed to start Lead Scrape: ${error.response?.data?.error?.message || error.message}`);
+    }
+};
+
+// =============================================================================
+// NEW: LinkedIn People Search Scraper (apify/linkedin-people-search-scraper)
+// =============================================================================
+
+/**
+ * Starts the LinkedIn People Search Scraper
+ * @param {string} token - Apify API Token
+ * @param {Array<string>} keywords - Search keywords (e.g. ["Real Estate Investor"])
+ * @param {Object} options - Search options (limit, location, etc.)
+ * @returns {Promise<string>} - The Run ID
+ */
+export const startLinkedInPeopleSearch = async (token, keywords, options = {}) => {
+    try {
+        if (!keywords || keywords.length === 0) {
+            console.warn("[LinkedInSearch] No keywords provided.");
+            return null;
+        }
+
+        const ACTOR_ID = 'curious_coder~linkedin-people-search-scraper';
+
+        const input = {
+            searchQueries: keywords,
+            maxProfiles: options.limit || 50,
+            proxyConfiguration: { useApifyProxy: true },
+            deepSearch: options.deepSearch !== undefined ? options.deepSearch : true,
+            // Add other filters as needed by the actor schema
+        };
+
+        console.log(`[LinkedInSearch] Starting scrape for ${keywords.length} queries...`);
+        console.log(`[LinkedInSearch] Sending payload to ${ACTOR_ID}:`, JSON.stringify(input, null, 2));
+
+        const response = await axios.post(
+            `${APIFY_API_URL}/acts/${ACTOR_ID}/runs?token=${token}`,
+            input,
+            { headers: { 'Content-Type': 'application/json' } }
+        );
+
+        console.log(`[LinkedInSearch] Scrape started. Run ID: ${response.data.data.id}`);
+        return response.data.data.id;
+    } catch (error) {
+        console.error('[LinkedInSearch] Start Error:', error.response?.data || error.message);
+        throw new Error(`Failed to start LinkedIn Search: ${error.response?.data?.error?.message || error.message}`);
+    }
+};
+
+// =============================================================================
+// NEW: Google Search Scraper (apify/google-search-scraper)
+// =============================================================================
+
+/**
+ * Starts the Google Search Scraper
+ * @param {string} token - Apify API Token
+ * @param {Array<string>} queries - Search queries
+ * @param {Object} options - Search options
+ * @returns {Promise<string>} - The Run ID
+ */
+export const startGoogleSearch = async (token, queries, options = {}) => {
+    try {
+        if (!queries || queries.length === 0) {
+            console.warn("[GoogleSearch] No queries provided.");
+            return null;
+        }
+
+        const ACTOR_ID = 'apify~google-search-scraper';
+
+        const input = {
+            queries: queries.join('\n'), // Actor expects 1 query per line or array? checking docs usually string or array. The actor accepts string "queries".
+            maxPagesPerQuery: 1,
+            resultsPerPage: options.limit || 10,
+            countryCode: 'ca', // Focusing on Canada as most companies are Canadian? Or 'us'? Let's default to US or make it optional. 
+            // Many of these companies are Canadian (REITs), so 'ca' might be better, or just generic.
+            // Let's settle on no country code to be broad, or 'ca' if we know they are Canadian. 
+            // Actually, best to leave countryCode undefined for global, or pass in options.
+            customDataFunction: `async ({ input, $, request, response, html }) => {
+                return {
+                    pageTitle: $('title').text(),
+                };
+            }`,
+        };
+
+        // Adjust input structure for apify/google-search-scraper
+        // It takes "queries" as a string (one per line) OR a property. 
+        // Let's use the standard input format.
+
+        const finalInput = {
+            queries: queries.join('\n'),
+            maxPagesPerQuery: 1,
+            resultsPerPage: options.limit || 10,
+            countryCode: 'ca', // Most of the orphans looked Canadian (REITs)
+            saveHtml: false,
+            saveHtmlToKeyValueStore: false,
+            includeUnfilteredResults: false,
+        };
+
+        console.log(`[GoogleSearch] Starting scrape for ${queries.length} queries...`);
+        // console.log(`[GoogleSearch] Input:`, JSON.stringify(finalInput, null, 2));
+
+        const response = await axios.post(
+            `${APIFY_API_URL}/acts/${ACTOR_ID}/runs?token=${token}`,
+            finalInput,
+            { headers: { 'Content-Type': 'application/json' } }
+        );
+
+        console.log(`[GoogleSearch] Scrape started. Run ID: ${response.data.data.id}`);
+        return response.data.data.id;
+    } catch (error) {
+        console.error('[GoogleSearch] Start Error:', error.response?.data || error.message);
+        throw new Error(`Failed to start Google Search: ${error.response?.data?.error?.message || error.message}`);
     }
 };
 
