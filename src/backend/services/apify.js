@@ -177,6 +177,36 @@ export const buildApolloDomainPayload = (domains, filters = {}) => {
         personTitle: (filters.job_titles && filters.job_titles.length > 0) ? filters.job_titles : defaultTitles,
         seniority: (mappedSeniority && mappedSeniority.length > 0) ? mappedSeniority : defaultSeniorities,
 
+        // STRICT Department Filters - Only include business-critical departments
+        departments: [
+            "master_c_suite",
+            "master_executive",
+            "master_operations",
+            "master_finance"
+        ],
+
+        // EXPLICIT Department Exclusions - Block irrelevant departments
+        departmentsExclude: [
+            "master_marketing",
+            "master_engineering_technical",
+            "master_sales",
+            "master_human_resources",
+            "master_support",
+            "master_information_technology",
+            "master_media_communications"
+        ],
+
+        // EXPLICIT Title Exclusions - Block specific titles that might slip through
+        personTitlesExclude: [
+            "VP of Marketing", "Head of Marketing", "CMO", "Chief Marketing Officer",
+            "VP of Engineering", "Head of Engineering", "CTO", "Chief Technology Officer",
+            "VP of Sales", "Head of Sales", "Chief Revenue Officer",
+            "VP of HR", "Head of HR", "CHRO", "Chief Human Resources Officer",
+            "VP of IT", "Head of IT", "CIO", // Note: We want investment CIOs, but IT CIOs slip through
+            "Software Engineer", "Developer", "Marketing Manager", "Sales Manager",
+            "HR Manager", "IT Manager", "Support Manager"
+        ],
+
         // Email Settings
         contactEmailStatus: "verified", // Strict verification
         includeEmails: true,

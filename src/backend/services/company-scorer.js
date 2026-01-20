@@ -73,22 +73,34 @@ export class CompanyScorer {
                         // DELETE the company AND all its leads
                         console.log(`❌ Deleting company: ${company.company_name} (Score: ${scoreData.fit_score})`);
 
-                        // Delete from leads_link first to avoid FK violations
-                        await query(`
-                            DELETE FROM leads_link 
-                            WHERE lead_id IN (SELECT id FROM leads WHERE company_name = $1 AND user_id = $2)
+                        // 1. Get IDs of leads to delete for this company and user
+                        const { rows: leadsToDelete } = await query(`
+                            SELECT l.id FROM leads l
+                            JOIN leads_link link ON l.id = link.lead_id
+                            WHERE l.company_name = $1 
+                            AND link.parent_id = $2 
+                            AND link.parent_type = 'user'
                         `, [company.company_name, company.user_id]);
 
-                        // Delete leads
-                        const leadDeleteResult = await query(`
-                            DELETE FROM leads 
-                            WHERE company_name = $1 AND user_id = $2
-                            RETURNING id
-                        `, [company.company_name, company.user_id]);
+                        const leadIds = leadsToDelete.map(l => l.id);
 
-                        results.leadsDeleted += leadDeleteResult.rowCount;
+                        if (leadIds.length > 0) {
+                            // 2. Delete from leads_link
+                            await query(`
+                                DELETE FROM leads_link 
+                                WHERE lead_id = ANY($1)
+                            `, [leadIds]);
 
-                        // Delete company from companies table
+                            // 3. Delete from leads
+                            const leadDeleteResult = await query(`
+                                DELETE FROM leads 
+                                WHERE id = ANY($1)
+                            `, [leadIds]);
+
+                            results.leadsDeleted += leadDeleteResult.rowCount;
+                        }
+
+                        // 4. Delete company from companies table (this works because companies has valid user_id)
                         await query(`
                             DELETE FROM companies 
                             WHERE company_name = $1 AND user_id = $2
@@ -103,15 +115,28 @@ export class CompanyScorer {
                         results.disqualified++;
                     } else {
                         // Keep - update the score in custom_data for all leads of this company
-                        await query(`
-                            UPDATE leads 
-                            SET custom_data = custom_data || $1::jsonb
-                            WHERE company_name = $2 AND user_id = $3
-                        `, [JSON.stringify({
-                            fit_score: scoreData.fit_score,
-                            fit_reason: scoreData.fit_reason,
-                            rescored_at: new Date().toISOString()
-                        }), company.company_name, company.user_id]);
+                        // Must find leads via link table again
+                        const { rows: leadsToUpdate } = await query(`
+                            SELECT l.id FROM leads l
+                            JOIN leads_link link ON l.id = link.lead_id
+                            WHERE l.company_name = $1 
+                            AND link.parent_id = $2 
+                            AND link.parent_type = 'user'
+                        `, [company.company_name, company.user_id]);
+
+                        const leadIdsToUpdate = leadsToUpdate.map(l => l.id);
+
+                        if (leadIdsToUpdate.length > 0) {
+                            await query(`
+                                UPDATE leads 
+                                SET custom_data = custom_data || $1::jsonb
+                                WHERE id = ANY($2)
+                            `, [JSON.stringify({
+                                fit_score: scoreData.fit_score,
+                                fit_reason: scoreData.fit_reason,
+                                rescored_at: new Date().toISOString()
+                            }), leadIdsToUpdate]);
+                        }
 
                         results.kept++;
                     }
@@ -137,7 +162,7 @@ export class CompanyScorer {
             }
         }
 
-        console.log(`✅ Cleanup complete: Kept ${results.kept}, Deleted ${results.disqualified} companies (${results.leadsDeleted} leads)`);
+        console.log(`✅ Cleanup complete: Kept ${results.kept}, Deleted ${results.disqualified} companies(${results.leadsDeleted} leads)`);
         return results;
     }
 
@@ -148,77 +173,77 @@ export class CompanyScorer {
 
         // Geography instruction to inject if Canada is required
         const canadaInstruction = requiresCanada ? `
-**CRITICAL GEOGRAPHY CHECK (CANADA):**
-- The user STRICTLY requires Canadian companies or firms with explicit Canadian presence.
-- Non-Canadian firms without a Canadian office or Canadian investment strategy -> DISQUALIFY (Score 1-3).
+    ** CRITICAL GEOGRAPHY CHECK(CANADA):**
+        - The user STRICTLY requires Canadian companies or firms with explicit Canadian presence.
+- Non - Canadian firms without a Canadian office or Canadian investment strategy -> DISQUALIFY(Score 1 - 3).
 - Global firms are ONLY permitted if they mention Toronto, Vancouver, Montreal, or "investing in Canada".
 ` : '';
 
         let prompt = '';
         if (type === 'FAMILY_OFFICE') {
-            prompt = `You are an expert investment analyst with STRICT evaluation criteria for Single/Multi-Family Offices.
+            prompt = `You are an expert investment analyst with STRICT evaluation criteria for Single / Multi - Family Offices.
 
-COMPANY: ${companyName}
+    COMPANY: ${companyName}
 WEBSITE: ${website}
 PROFILE: ${profile.substring(0, 1500)}
 
-**STRICT REQUIREMENTS - MUST MEET ALL:**
-1. Must be an EXPLICIT Single Family Office (SFO) or Multi-Family Office (MFO) - NOT a wealth manager, advisor, or broker
-2. Must have a DIRECT Real Estate or Private Equity investment arm (not just "alternative investments")
-3. Must be Canadian-based or have explicit Canadian investment mandate
+** STRICT REQUIREMENTS - MUST MEET ALL:**
+    1. Must be an EXPLICIT Single Family Office(SFO) or Multi - Family Office(MFO) - NOT a wealth manager, advisor, or broker
+2. Must have a DIRECT Real Estate or Private Equity investment arm(not just "alternative investments")
+3. Must be Canadian - based or have explicit Canadian investment mandate
 
-**AUTOMATIC DISQUALIFICATION (Score 1-4):**
-- Wealth managers, financial advisors, insurance companies
-- Brokers or sales-only firms
-- Consulting firms or service providers
-- Non-Canadian firms without explicit Canadian office/strategy
-- Firms that only MANAGE money but don't INVEST directly
-- Unclear or vague investment mandates
+    ** AUTOMATIC DISQUALIFICATION(Score 1 - 4):**
+        - Wealth managers, financial advisors, insurance companies
+            - Brokers or sales - only firms
+                - Consulting firms or service providers
+                    - Non - Canadian firms without explicit Canadian office / strategy
+                        - Firms that only MANAGE money but don't INVEST directly
+                            - Unclear or vague investment mandates
 
-**SCORING (BE STRICT):**
-- **9-10**: Explicitly states SFO/MFO + names specific RE/PE deals or portfolios + Canadian
-- **8**: Clearly SFO/MFO with direct investment mandate + Canadian presence
-- **5-7**: Might be an investor but not explicitly SFO/MFO or unclear if direct investing
-- **1-4**: Does not meet strict criteria above
+                                ** SCORING(BE STRICT):**
+- ** 9 - 10 **: Explicitly states SFO / MFO + names specific RE / PE deals or portfolios + Canadian
+    - ** 8 **: Clearly SFO / MFO with direct investment mandate + Canadian presence
+        - ** 5 - 7 **: Might be an investor but not explicitly SFO / MFO or unclear if direct investing
+            - ** 1 - 4 **: Does not meet strict criteria above
 
-**WHEN IN DOUBT, SCORE LOW.** Only 8+ scores will be kept.
+                ** WHEN IN DOUBT, SCORE LOW.** Only 8 + scores will be kept.
 
 OUTPUT JSON:
 {
-    "fit_score": number (1-10),
-    "fit_reason": "string (concise reason)",
-    "is_investor": boolean,
-    "investor_type": "string (SFO/MFO/Wealth Manager/Broker/Other)"
-}`;
+    "fit_score": number(1 - 10),
+        "fit_reason": "string (concise reason)",
+            "is_investor": boolean,
+                "investor_type": "string (SFO/MFO/Wealth Manager/Broker/Other)"
+} `;
         } else {
             // Investment Firm Prompt - NOW WITH OPTIONAL CANADA CHECK
-            prompt = `You are an expert investment analyst evaluating if a company is a **Real Estate Investment Firm** or **Institutional Investor**.
+            prompt = `You are an expert investment analyst evaluating if a company is a ** Real Estate Investment Firm ** or ** Institutional Investor **.
 
-COMPANY: ${companyName}
+    COMPANY: ${companyName}
 WEBSITE: ${website}
 PROFILE: ${profile.substring(0, 1500)}
 
 EVALUATION RULES:
-1. **Target**: Private Equity Firms, REITs, Pension Funds, Asset Managers, **Private Investment Firms**, **Holdings Companies**.
-2. **Key Signals**: "Acquisitions", "Development", "Capital Deployment", "Equity Partner", "Joint Venture", "Co-Invest".
-3. **Secondary/Optional**: "Assets Under Management (AUM)" (Valid only if tied to Real Estate).
-4. **Multi-Strategy**: If a firm invests in Tech/Healthcare BUT also Real Estate/Infrastructure, **KEEP THEM** (Score 7-8).
-5. **Holdings**: "Group" or "Holdings" companies that invest are VALID.
+1. ** Target **: Private Equity Firms, REITs, Pension Funds, Asset Managers, ** Private Investment Firms **, ** Holdings Companies **.
+2. ** Key Signals **: "Acquisitions", "Development", "Capital Deployment", "Equity Partner", "Joint Venture", "Co-Invest".
+3. ** Secondary / Optional **: "Assets Under Management (AUM)"(Valid only if tied to Real Estate).
+4. ** Multi - Strategy **: If a firm invests in Tech / Healthcare BUT also Real Estate / Infrastructure, ** KEEP THEM ** (Score 7 - 8).
+5. ** Holdings **: "Group" or "Holdings" companies that invest are VALID.
 
-${canadaInstruction}
+    ${canadaInstruction}
 
 SCORING GUIDELINES:
-- **8-10 (Perfect Fit)**: Dedicated REPE, REIT, or large institutional investor${requiresCanada ? ' + Canadian presence' : ''}.
-- **6-7 (Likely Fit / Keep)**: Generalist PE firm, Holdings company with RE assets. **WHEN IN DOUBT, SCORE 6 TO KEEP.**
-- **1-5 (Disqualify)**: Pure Service Providers (Law/Tax), Pure Brokers (Sales only), Lenders (Debt only), Tenants${requiresCanada ? ', Non-Canadian without Canadian strategy' : ''}.
+- ** 8 - 10(Perfect Fit) **: Dedicated REPE, REIT, or large institutional investor${requiresCanada ? ' + Canadian presence' : ''}.
+- ** 6 - 7(Likely Fit / Keep) **: Generalist PE firm, Holdings company with RE assets. ** WHEN IN DOUBT, SCORE 6 TO KEEP.**
+- ** 1 - 5(Disqualify) **: Pure Service Providers(Law / Tax), Pure Brokers(Sales only), Lenders(Debt only), Tenants${requiresCanada ? ', Non-Canadian without Canadian strategy' : ''}.
 
 OUTPUT JSON:
 {
-    "fit_score": number (1-10),
-    "fit_reason": "string (concise reason)",
-    "is_investor": boolean,
-    "investor_type": "string (PE/REIT/Pension/Holdings/Broker/Other)"
-}`;
+    "fit_score": number(1 - 10),
+        "fit_reason": "string (concise reason)",
+            "is_investor": boolean,
+                "investor_type": "string (PE/REIT/Pension/Holdings/Broker/Other)"
+} `;
         }
 
         try {
