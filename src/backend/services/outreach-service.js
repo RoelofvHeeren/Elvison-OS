@@ -132,11 +132,15 @@ IF FACT_TYPE = "THESIS":
 Use this exact structure:
 "Hi {First_name}, ${opener} {extracted_fact}. We work on similar residential strategies at Fifth Avenue Properties and often partner with groups deploying long-term capital. ${closer}."
 
+FALLBACK (If no specific deal/thesis/scale found):
+Use this structure:
+"Hi {First_name}, ${opener} {Company_Name}'s focus on the residential sector. We are active developers in this space at Fifth Avenue Properties and thought connecting could be worthwhile."
+
 NO OTHER VARIATIONS. DO NOT MIX MATCH.
 
 OUTPUT FORMAT (JSON ONLY):
 {
-  "status": "SUCCESS" | "SKIP",
+  "status": "SUCCESS",
   "skip_reason": "string",
   "research_fact_type": "DEAL" | "THESIS" | "SCALE" | "GENERAL",
   "research_fact": "string",
@@ -187,7 +191,12 @@ ${company_profile}
             }
 
             if (result.status === 'SKIP') {
-                return this._createSkipResponse(result.skip_reason);
+                // FALLBACK: Force a generic message if the AI tried to skip
+                return {
+                    linkedin_message: `Hi {First_name}, I came across {Company_Name}'s work in the residential space. We develop similar projects at Fifth Avenue Properties and thought connecting could be worthwhile.`,
+                    email_subject: `Introduction | Residential Development`,
+                    email_body: `Hi {First_name},\n\nI came across {Company_Name} and your work in the residential sector.\n\nAt Fifth Avenue Properties, we focus on similar development strategies, which is why I thought it could make sense to connect.\n\nIf it makes sense, I'm happy to share more information about our current projects.\n\nBest regards,\nRoelof van Heeren\nFifth Avenue Properties`
+                };
             }
 
             // === 7. REPLACE PLACEHOLDERS WITH ACTUAL VALUES ===

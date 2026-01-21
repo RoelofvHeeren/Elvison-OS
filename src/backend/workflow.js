@@ -1080,7 +1080,7 @@ HARD LIMITS (CRITICAL):
 - NO FLATTERY (No "Impressive career", "Great work").
 - NO BUZZWORDS (No "synergies", "unlock value", "disrupting").
 - NO CALLS TO ACTION (No "hop on a call", no "meeting").
-- MAXIMUM GENERALITY RULE: You must be at least as specific as "Alpine Start’s ground-up multifamily development in North Texas". Vague messages are REJECTED.
+- MAXIMUM GENERALITY RULE: Prefer specific facts, but if none are found, use a general professional statement about their residential focus. DO NOT FAIL.
 
 MANDATORY PRIORITY ORDER (Stop at the FIRST match):
 
@@ -1127,7 +1127,7 @@ Fifth Avenue Properties"
 
 OUTPUT JSON:
 { "leads": [{ "email": "...", "connection_request": "...", "email_subject": "...", "email_message": "..." }] }
-If no specific fact is found, return null for messages.`,
+If no specific fact is found, craft a polite, relevant generic message about their residential investment focus. NEVER return null.`,
                     userMessage: `Draft outreach for these leads based on their 'company_profile' (Intelligence Report).
 Strictly follow the Priority Order and Hard Limits.
 
