@@ -96,8 +96,8 @@ const StageHeader = ({ currentStage, status }) => {
                     className="flex items-center gap-4"
                 >
                     <div className={`w-12 h-12 rounded-2xl flex items-center justify-center backdrop-blur-md transition-all duration-500 ${isComplete ? 'bg-emerald-500/20 border-2 border-emerald-500/50' :
-                            isError ? 'bg-red-500/20 border-2 border-red-500/50' :
-                                'bg-[#139187]/20 border-2 border-[#139187]/50 shadow-[0_0_20px_rgba(19,145,135,0.3)]'
+                        isError ? 'bg-red-500/20 border-2 border-red-500/50' :
+                            'bg-[#139187]/20 border-2 border-[#139187]/50 shadow-[0_0_20px_rgba(19,145,135,0.3)]'
                         }`}>
                         {isComplete ? (
                             <CheckCircle className="w-6 h-6 text-emerald-400" />
@@ -109,8 +109,8 @@ const StageHeader = ({ currentStage, status }) => {
                     </div>
                     <div className="flex-1">
                         <h3 className={`text-2xl font-semibold mb-1 transition-colors duration-300 ${isComplete ? 'text-emerald-400' :
-                                isError ? 'text-red-400' :
-                                    'text-white'
+                            isError ? 'text-red-400' :
+                                'text-white'
                             }`}>
                             {isComplete ? 'Complete!' : isError ? 'Failed' : stage?.label || 'Processing'}
                         </h3>
@@ -153,8 +153,8 @@ const StageTimeline = ({ currentStage, status }) => {
                         <div key={stage.id} className="relative z-10 flex flex-col items-center">
                             <motion.div
                                 className={`w-8 h-8 rounded-full flex items-center justify-center border-2 transition-all duration-500 ${isPast ? 'bg-emerald-500 border-emerald-500' :
-                                        isCurrent ? 'bg-[#139187] border-[#139187] shadow-[0_0_15px_rgba(19,145,135,0.5)]' :
-                                            'bg-[#0f1115] border-white/10'
+                                    isCurrent ? 'bg-[#139187] border-[#139187] shadow-[0_0_15px_rgba(19,145,135,0.5)]' :
+                                        'bg-[#0f1115] border-white/10'
                                     }`}
                                 animate={isCurrent ? { scale: [1, 1.1, 1] } : {}}
                                 transition={{ duration: 2, repeat: Infinity }}
@@ -168,8 +168,8 @@ const StageTimeline = ({ currentStage, status }) => {
                                 )}
                             </motion.div>
                             <span className={`text-[10px] font-medium mt-2 text-center max-w-[60px] transition-colors duration-300 ${isPast ? 'text-emerald-400' :
-                                    isCurrent ? 'text-white' :
-                                        'text-gray-600'
+                                isCurrent ? 'text-white' :
+                                    'text-gray-600'
                                 }`}>
                                 {stage.label}
                             </span>
@@ -291,10 +291,10 @@ const FullLogsPanel = ({ logs, isOpen, onToggle }) => {
                                     </span>
                                     <div className="flex-1 break-words">
                                         <span className={`font-bold mr-2 ${log.step.includes('Finder') ? 'text-blue-400' :
-                                                log.step.includes('Profiler') ? 'text-purple-400' :
-                                                    log.step.includes('Outreach') ? 'text-amber-400' :
-                                                        log.step.includes('System') ? 'text-gray-400' :
-                                                            'text-[#139187]'
+                                            log.step.includes('Profiler') ? 'text-purple-400' :
+                                                log.step.includes('Outreach') ? 'text-amber-400' :
+                                                    log.step.includes('System') ? 'text-gray-400' :
+                                                        'text-[#139187]'
                                             }`}>
                                             [{log.step}]
                                         </span>
@@ -311,6 +311,7 @@ const FullLogsPanel = ({ logs, isOpen, onToggle }) => {
 }
 
 const WorkflowProgress = ({ logs = [], status = 'RUNNING', isInitializing = false }) => {
+    console.log('[DEBUG] WorkflowProgress component mounted/rendered', { logs, status, isInitializing });
     const [showFullLogs, setShowFullLogs] = useState(false)
 
     const currentStage = useMemo(() => {

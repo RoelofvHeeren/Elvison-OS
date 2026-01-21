@@ -174,6 +174,7 @@ const AgentRunner = () => {
 
     const handleStartRun = async () => {
         // INSTANT FEEDBACK - Show initializing state immediately
+        console.log('[DEBUG] handleStartRun called - setting isInitializing=true');
         setIsInitializing(true)
         setLogs([{
             step: 'System',
@@ -181,6 +182,7 @@ const AgentRunner = () => {
             timestamp: new Date().toISOString()
         }])
         setRunStatus('RUNNING')
+        console.log('[DEBUG] Initial state set:', { isInitializing: true, logsCount: 1, runStatus: 'RUNNING', selectedRunId });
 
         // Validation
         if (!selectedIcp && !localStorage.getItem('onboarding_state')) {
@@ -527,23 +529,43 @@ const AgentRunner = () => {
 
                 {/* Logs Area - New Progress Display */}
                 <div className="flex-1 overflow-hidden">
-                    {!selectedRunId && !isInitializing ? (
-                        <div className="h-full flex flex-col items-center justify-center text-gray-600">
-                            <Bot className="h-16 w-16 opacity-20 mb-4" />
-                            <p>Select a workflow run from the history</p>
-                            <p className="text-xs mt-2">or start a new one.</p>
-                        </div>
-                    ) : runStatus === 'LOADING' && logs.length === 0 && !isInitializing ? (
-                        <div className="h-full flex items-center justify-center">
-                            <Loader2 className="h-8 w-8 text-[#139187] animate-spin" />
-                        </div>
-                    ) : (
-                        <WorkflowProgress
-                            logs={logs}
-                            status={runStatus}
-                            isInitializing={isInitializing}
-                        />
-                    )}
+                    {(() => {
+                        console.log('[DEBUG] Render conditions:', {
+                            selectedRunId,
+                            isInitializing,
+                            runStatus,
+                            logsLength: logs.length,
+                            condition1: !selectedRunId && !isInitializing,
+                            condition2: runStatus === 'LOADING' && logs.length === 0 && !isInitializing
+                        });
+
+                        if (!selectedRunId && !isInitializing) {
+                            console.log('[DEBUG] Showing empty state');
+                            return (
+                                <div className="h-full flex flex-col items-center justify-center text-gray-600">
+                                    <Bot className="h-16 w-16 opacity-20 mb-4" />
+                                    <p>Select a workflow run from the history</p>
+                                    <p className="text-xs mt-2">or start a new one.</p>
+                                </div>
+                            );
+                        } else if (runStatus === 'LOADING' && logs.length === 0 && !isInitializing) {
+                            console.log('[DEBUG] Showing loading spinner');
+                            return (
+                                <div className="h-full flex items-center justify-center">
+                                    <Loader2 className="h-8 w-8 text-[#139187] animate-spin" />
+                                </div>
+                            );
+                        } else {
+                            console.log('[DEBUG] Showing WorkflowProgress');
+                            return (
+                                <WorkflowProgress
+                                    logs={logs}
+                                    status={runStatus}
+                                    isInitializing={isInitializing}
+                                />
+                            );
+                        }
+                    })()}
                 </div>
             </div>
 
