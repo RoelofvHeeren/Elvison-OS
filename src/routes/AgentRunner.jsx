@@ -527,13 +527,13 @@ const AgentRunner = () => {
 
                 {/* Logs Area - New Progress Display */}
                 <div className="flex-1 overflow-hidden">
-                    {!selectedRunId ? (
+                    {!selectedRunId && !isInitializing ? (
                         <div className="h-full flex flex-col items-center justify-center text-gray-600">
                             <Bot className="h-16 w-16 opacity-20 mb-4" />
                             <p>Select a workflow run from the history</p>
                             <p className="text-xs mt-2">or start a new one.</p>
                         </div>
-                    ) : runStatus === 'LOADING' && logs.length === 0 ? (
+                    ) : runStatus === 'LOADING' && logs.length === 0 && !isInitializing ? (
                         <div className="h-full flex items-center justify-center">
                             <Loader2 className="h-8 w-8 text-[#139187] animate-spin" />
                         </div>
