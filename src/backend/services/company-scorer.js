@@ -237,33 +237,29 @@ export class CompanyScorer {
 
     COMPANY: ${companyName}
     WEBSITE: ${website}
-    PROFILE: ${profile.substring(0, 2000)}
+    PROFILE: ${profile.substring(0, 1500)}
 
     ${canadaInstruction}
 
-    CRITICAL FAMILY OFFICE VALIDATION:
-    The user is looking for SINGLE FAMILY OFFICES (SFO) or MULTI-FAMILY OFFICES (MFO) that invest DIRECTLY.
-    
-    YOU MUST DISQUALIFY (Score 1-3) IF THEY ARE:
-    - A Wealth Manager / Financial Advisor (unless they explicitly state a DIRECT Real Estate investment arm with PROPRIETARY CAPITAL).
-    - A Broker / Intermediary / Capital Advisory / Investment Sales Firm (e.g. Marcus & Millichap, CBRE, JLL, Colliers).
-    - A Real Estate Agency (buying/selling individual homes, luxury estates, vineyards, yachts).
-    - An Investment Bank.
-    - A General Private Equity fund (unless specific to a family or HNWIs).
-    - A "Multi-Client Family Office" that just provides services (tax, legal, lifestyle) without a direct investment fund.
-    
-    ONLY SCORE 8+ IF:
-    - They explicitly identify as a Family Office.
-    - OR they use language like "proprietary capital", "family capital", "private investment vehicle", "evergreen capital".
-    - OR they allow direct deals (not just allocating to funds).
+    **STRICT REQUIREMENTS - MUST MEET ALL:**
+    1. Must be an EXPLICIT Single Family Office (SFO) or Multi-Family Office (MFO) - NOT a wealth manager, advisor, or broker
+    2. Must have a DIRECT Real Estate or Private Equity investment arm (not just "alternative investments")
+    3. Must be Canadian-based or have explicit Canadian investment mandate
 
-    SCORING GUIDELINES:
+    **AUTOMATIC DISQUALIFICATION (Score 1-4):**
+    - Wealth managers, financial advisors, insurance companies
+    - Brokers or sales-only firms
+    - Consulting firms or service providers
+    - Firms that only MANAGE money but don't INVEST directly
+    - Unclear or vague investment mandates
+
+    **SCORING (BE STRICT):**
     - **9-10**: Explicitly states SFO/MFO + names specific RE/PE deals or portfolios + Canadian
     - **8**: Clearly SFO/MFO with direct investment mandate + Canadian presence
-    - **6-7**: Likely SFO/MFO but website is vague (Keep for review)
-    - **1-5**: Disqualified based on above criteria
+    - **5-7**: Might be an investor but not explicitly SFO/MFO or unclear if direct investing
+    - **1-4**: Does not meet strict criteria above
 
-    WHEN IN DOUBT, SCORE LOW. Only 8+ scores will be kept automatically.
+    **WHEN IN DOUBT, SCORE LOW.** Only 8+ scores will be kept.
 
     OUTPUT JSON:
     {
@@ -278,30 +274,21 @@ export class CompanyScorer {
 
     COMPANY: ${companyName}
     WEBSITE: ${website}
-    PROFILE: ${profile.substring(0, 2000)}
+    PROFILE: ${profile.substring(0, 1500)}
+
+    EVALUATION RULES:
+    1. **Target**: Private Equity Firms, REITs, Pension Funds, Asset Managers, **Private Investment Firms**, **Holdings Companies**.
+    2. **Key Signals**: "Acquisitions", "Development", "Capital Deployment", "Equity Partner", "Joint Venture", "Co-Invest".
+    3. **Secondary/Optional**: "Assets Under Management (AUM)" (Valid only if tied to Real Estate).
+    4. **Multi-Strategy**: If a firm invests in Tech/Healthcare BUT also Real Estate/Infrastructure, **KEEP THEM** (Score 7-8).
+    5. **Holdings**: "Group" or "Holdings" companies that invest are VALID.
 
     ${canadaInstruction}
 
-    CRITICAL INVESTMENT FIRM VALIDATION:
-    The user is looking for REAL ESTATE INVESTMENT FIRMS, PRIVATE EQUITY FIRMS, or INSTITUTIONAL INVESTORS that INVEST in Real Estate.
-    
-    YOU MUST DISQUALIFY (Score 1-3) IF THEY ARE:
-    - A Pure Broker / Sales-Only Firm (they don't invest, they just transact/advise).
-    - Signals of Brokerage: "Investment Sales", "Capital Markets Advisory", "Debt Placement", "Structuring", "Closing $X in volume", "Representing sellers".
-    - A Service Provider (Law, Tax, Consulting, HR, Marketing).
-    - A Lender (Debt-only, no equity positions).
-    - A Tenant / Occupier (they lease space, don't invest).
-    - A Construction / Development Services Company (Builder, Contractor, Architect).
-    
-    SCORE 6+ IF:
-    - They are a Private Equity / Venture firm with Real Estate as a vertical.
-    - They are a REIT, Asset Manager, or Pension Fund with RE holdings.
-    - They are a "Holdings" or "Group" company with investment mandates.
-    - They mention "Acquisitions", "Capital Deployment", "Portfolio Companies", "Equity Partner". 
-    - NOTE: Do NOT score high just for "AUM" if they are a pure manager/advisor. They must own/deploy equity.
-
-    SECTOR EXCLUSIONS:
-    - IF the company is primarily an "Infrastructure Fund", "Energy Investor", or "Operating Company" (non-real estate) -> DISQUALIFY (Score 2) unless Real Estate is explicitly a major vertical.
+    SCORING GUIDELINES:
+    - **8-10 (Perfect Fit)**: Dedicated REPE, REIT, or large institutional investor${requiresCanada ? ' + Canadian presence' : ''}.
+    - **6-7 (Likely Fit/Keep)**: Generalist PE firm, Holdings company with RE assets. **WHEN IN DOUBT, SCORE 6 TO KEEP.**
+    - **1-5 (Disqualify)**: Pure Service Providers (Law/Tax), Pure Brokers (Sales only), Lenders (Debt only), Tenants${requiresCanada ? ', Non-Canadian without Canadian strategy' : ''}.
 
     OUTPUT JSON:
     {
