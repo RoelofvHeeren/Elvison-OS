@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { safeUUID } from '../utils/security'
 import { PlayCircle, Terminal, CheckCircle, AlertCircle, Loader2, Send, FileText, Bot, Users, StopCircle, Clock, ChevronRight, Activity, RefreshCw, Search, List, History, ChevronLeft } from 'lucide-react'
 import { useIcp } from '../context/IcpContext'
+import WorkflowProgress from '../components/WorkflowProgress'
 
 const STEPS = [
     { id: 'Company Profiler', label: 'Company Profiler' },
@@ -33,6 +34,7 @@ const AgentRunner = () => {
     const [runResult, setRunResult] = useState(null)
     const [runError, setRunError] = useState(null)
     const [currentStep, setCurrentStep] = useState(null)
+    const [isInitializing, setIsInitializing] = useState(false)
 
     // Refs
     const logsEndRef = useRef(null)
@@ -135,15 +137,13 @@ const AgentRunner = () => {
         if (!selectedRunId) return;
 
         // Reset View for new selection
-        // setLogs([]); // Don't clear logs immediately to prevent flicker if we have data cached? No, safer to clear.
-        // Actually, maybe we should fetch first then clear/set? 
-        // For simplicity:
         setLogs([]);
         setRunStatus('LOADING');
         setRunError(null);
         setRunResult(null);
         setCurrentStep(null);
         setIsPolling(true);
+        setIsInitializing(false); // Clear initializing state when switching runs
 
         // Initial Fetch
         fetchRunDetails(selectedRunId).then((data) => {
@@ -173,6 +173,15 @@ const AgentRunner = () => {
     // --- ACTION HANDLERS ---
 
     const handleStartRun = async () => {
+        // INSTANT FEEDBACK - Show initializing state immediately
+        setIsInitializing(true)
+        setLogs([{
+            step: 'System',
+            detail: 'Initializing workflow...',
+            timestamp: new Date().toISOString()
+        }])
+        setRunStatus('RUNNING')
+
         // Validation
         if (!selectedIcp && !localStorage.getItem('onboarding_state')) {
             console.warn("No Strategy selected. Running default.");
@@ -249,6 +258,8 @@ const AgentRunner = () => {
                                 const data = JSON.parse(line.split('\n')[1].replace('data: ', ''));
                                 if (data.runId && !foundRunId) {
                                     foundRunId = true;
+                                    // Clear initializing state now that we have a run ID
+                                    setIsInitializing(false);
                                     // Add to active streams tracking
                                     activeStreamsRef.current[data.runId] = abortController;
                                     // Add to session runs
@@ -274,6 +285,9 @@ const AgentRunner = () => {
 
         } catch (e) {
             console.error("Start run error:", e);
+            setIsInitializing(false);
+            setRunStatus(null);
+            setLogs([]);
             alert("Failed to start workflow: " + e.message);
         }
     }
@@ -511,51 +525,25 @@ const AgentRunner = () => {
                     )}
                 </div>
 
-                {/* Logs Area */}
-                <div className="flex-1 overflow-y-auto p-6 space-y-2 font-mono text-sm scrollbar-thin scrollbar-thumb-white/10">
+                {/* Logs Area - New Progress Display */}
+                <div className="flex-1 overflow-hidden">
                     {!selectedRunId ? (
                         <div className="h-full flex flex-col items-center justify-center text-gray-600">
                             <Bot className="h-16 w-16 opacity-20 mb-4" />
                             <p>Select a workflow run from the history</p>
                             <p className="text-xs mt-2">or start a new one.</p>
                         </div>
-                    ) : logs.length === 0 && runStatus === 'LOADING' ? (
+                    ) : runStatus === 'LOADING' && logs.length === 0 ? (
                         <div className="h-full flex items-center justify-center">
                             <Loader2 className="h-8 w-8 text-[#139187] animate-spin" />
                         </div>
-                    ) : logs.length === 0 ? (
-                        <div className="h-full flex items-center justify-center text-gray-500 text-xs">No logs recorded for this run.</div>
                     ) : (
-                        logs.map((log, i) => (
-                            <div key={i} className="flex gap-4 animate-fade-in group hover:bg-white/5 p-1 -mx-1 rounded">
-                                <span className="shrink-0 text-gray-600 text-[10px] pt-1 w-16 text-right font-mono">
-                                    {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                                </span>
-                                <div className="flex-1 break-words">
-                                    <span className={`font-bold mr-2 text-xs uppercase tracking-wide ${log.step.includes('Finder') ? 'text-blue-400' :
-                                        log.step.includes('Profiler') ? 'text-purple-400' :
-                                            log.step.includes('Outreach') ? 'text-amber-400' :
-                                                log.step.includes('System') ? 'text-gray-400' :
-                                                    'text-[#139187]'
-                                        }`}>[{log.step}]</span>
-                                    <span className="text-gray-300">{log.detail}</span>
-                                </div>
-                            </div>
-                        ))
+                        <WorkflowProgress
+                            logs={logs}
+                            status={runStatus}
+                            isInitializing={isInitializing}
+                        />
                     )}
-                    {runStatus === 'RUNNING' && logs.length > 0 && (
-                        <div className="flex items-center gap-2 text-gray-500 mt-4 pl-20 animate-pulse">
-                            <span className="h-1.5 w-1.5 rounded-full bg-[#139187]"></span>
-                            <span className="text-xs">Processing...</span>
-                        </div>
-                    )}
-                    {runError && (
-                        <div className="mt-4 mx-4 p-4 bg-red-500/10 border border-red-500/20 rounded text-red-400 text-xs font-mono whitespace-pre-wrap">
-                            <div className="font-bold flex items-center gap-2 mb-2"><AlertCircle className="h-4 w-4" /> Execution Failed</div>
-                            {runError}
-                        </div>
-                    )}
-                    <div ref={logsEndRef} />
                 </div>
             </div>
 
