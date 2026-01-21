@@ -30,7 +30,10 @@ const ApolloEnrichmentSchema = z.object({
 const apolloEnricher = new Agent({
     name: "Apollo Enricher",
     instructions: `You are the Apollo Enrichment specialist.
-    GOAL: Enrich a Canadian investor using their LinkedIn URL.
+    GOAL: Find the verified email for a Canadian investor using their LinkedIn URL.
+    STRATEGY: 
+    1. FIRST use 'people_search' with the name and location to find the person's Apollo ID.
+    2. THEN use 'get_person_email' with that ID (or the best match) to get the email.
     CONSTRAINTS: Email only. No phone numbers.
     OUTPUT: Return a JSON object with a 'results' array.`,
     model: "gpt-4o",
@@ -111,34 +114,53 @@ async function huntCanadianInvestors() {
 
                     console.log(`   🎯 Targeting: ${name}`);
 
-                    // 2.2 Enrichment
-                    console.log(`      Calling Apollo for Email...`);
-
-                    // Input for Apollo Agent (Provide more context for better matching)
-                    const input = {
-                        linkedin: linkedinUrl,
-                        name: name,
-                        location: city + ", Canada"
-                    };
+                    // 2.2 Enrichment: Two-Step Agent Flow to force tool usage
+                    // Step A: Search for the Person ID
+                    console.log(`      Running Apollo Search...`);
+                    const searchInput = { name: name, q_organization_domains: city + ", Canada" }; // fuzzy search
 
                     try {
-                        const result = await runner.run(apolloEnricher, [
-                            { role: "user", content: [{ type: "input_text", text: JSON.stringify(input) }] }
+                        let emailFound = null;
+
+                        // Unified Agent with explicit instructions for tool usage
+                        console.log(`      Running Apollo Enrichment (gpt-4o-mini)...`);
+                        const agent = new Agent({
+                            name: "Apollo Worker",
+                            instructions: "You are a tool-using assistant. Your ONLY goal is to find the email. \n" +
+                                "1. Call 'people_search' with `name` and `q_organization_domains` (set to location) to find the ID.\n" +
+                                "2. Call 'get_person_email' with the ID found.\n" +
+                                "3. Return the email in JSON format: { \"email\": \"...\" }.",
+                            model: "gpt-4o-mini",
+                            tools: [apolloMcp]
+                        });
+
+                        const result = await runner.run(agent, [
+                            { role: "user", content: `Find email for: ${name} (Location: ${city}, Canada)` }
                         ]);
 
-                        const enriched = result.finalOutput?.results?.[0];
+                        // Debug: What tools ran?
+                        const toolsUsed = result.steps?.flatMap(s => s.toolCalls?.map(tc => tc.function.name)) || [];
+                        if (toolsUsed.length > 0) console.log(`      Tools: ${toolsUsed.join(" -> ")}`);
 
-                        if (enriched && enriched.email) {
-                            console.log(`      🎉 SUCCESS: ${enriched.email}`);
+                        const outputText = JSON.stringify(result.finalOutput);
+                        const emailMatch = outputText.match(/[\w.-]+@[\w.-]+\.\w+/);
+
+                        if (emailMatch) {
+                            emailFound = emailMatch[0];
+                            console.log(`      🎉 SUCCESS: ${emailFound}`);
+                        } else {
+                            console.log(`      ❌ No email found.`);
+                        }
+
+                        if (emailFound) {
                             apolloCredits++;
-
                             const newLead = {
                                 name: name,
                                 city: city,
-                                email: enriched.email,
+                                email: emailFound,
                                 linkedin: linkedinUrl,
-                                title: enriched.title || "Real Estate Investor",
-                                company: enriched.company_name || "Self-Employed",
+                                title: "Real Estate Investor",
+                                company: "Self-Employed",
                                 snippet: snippet,
                                 enriched_at: new Date().toISOString(),
                                 source: "LinkedIn_Hunt"
@@ -146,13 +168,11 @@ async function huntCanadianInvestors() {
 
                             allLeads.push(newLead);
                             processedEvaluations.add(linkedinUrl);
-
-                            // Save immediately
                             fs.writeFileSync('generated_canadian_leads.json', JSON.stringify(allLeads, null, 2));
                         } else {
-                            console.log(`      ❌ No email found.`);
-                            processedEvaluations.add(linkedinUrl); // Don't try again
+                            processedEvaluations.add(linkedinUrl);
                         }
+
                     } catch (agentErr) {
                         console.error(`      Agent Error: ${agentErr.message}`);
                     }
