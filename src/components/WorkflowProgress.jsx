@@ -311,7 +311,6 @@ const FullLogsPanel = ({ logs, isOpen, onToggle }) => {
 }
 
 const WorkflowProgress = ({ logs = [], status = 'RUNNING', isInitializing = false }) => {
-    console.log('[DEBUG] WorkflowProgress component mounted/rendered', { logs, status, isInitializing });
     const [showFullLogs, setShowFullLogs] = useState(false)
 
     const currentStage = useMemo(() => {
