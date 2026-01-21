@@ -37,6 +37,10 @@ function Companies() {
     // Add Company Modal State
     const [addCompanyModalOpen, setAddCompanyModalOpen] = useState(false);
 
+    // Company Leads Cache (lazy loaded when expanded)
+    const [companyLeads, setCompanyLeads] = useState({});  // { companyName: [leads] }
+    const [loadingLeads, setLoadingLeads] = useState({});  // { companyName: boolean }
+
     const { icps, fetchIcps } = useIcp()
 
     const openResearchModal = (company) => {
@@ -423,11 +427,11 @@ function Companies() {
                 domain: c.domain,
                 website: c.website,
                 profile: c.company_profile,
+                market_intelligence: c.market_intelligence,  // Fix: Include market intelligence data
                 leadCount: parseInt(c.lead_count || 0),
                 fitScore: c.fit_score || 0,
                 icpId: c.icp_id,
-                last_updated: c.last_updated,
-                leads: [] // Empty as we don't load them here anymore
+                last_updated: c.last_updated
             }));
 
             setCompanies(mappedCompanies)
@@ -455,8 +459,41 @@ function Companies() {
         }
     }
 
-    const toggleCompanyExpand = (companyName) => {
-        setExpandedCompany(expandedCompany === companyName ? null : companyName)
+    const toggleCompanyExpand = async (companyName) => {
+        // If collapsing, just toggle
+        if (expandedCompany === companyName) {
+            setExpandedCompany(null);
+            return;
+        }
+
+        // Expanding - set as expanded
+        setExpandedCompany(companyName);
+
+        // Load leads if not already loaded
+        if (!companyLeads[companyName] && !loadingLeads[companyName]) {
+            setLoadingLeads({ ...loadingLeads, [companyName]: true });
+
+            try {
+                // Fetch all leads and filter by company name
+                const response = await fetchLeads({ status: '', page: 1, pageSize: 1000 });
+                const leadsForCompany = (response.data || []).filter(
+                    lead => lead.company_name === companyName
+                );
+
+                setCompanyLeads({
+                    ...companyLeads,
+                    [companyName]: leadsForCompany
+                });
+            } catch (error) {
+                console.error('Failed to load leads for company:', error);
+                setCompanyLeads({
+                    ...companyLeads,
+                    [companyName]: []
+                });
+            } finally {
+                setLoadingLeads({ ...loadingLeads, [companyName]: false });
+            }
+        }
     }
 
     const renderReportSection = (title, content, icon) => {
@@ -1233,7 +1270,7 @@ function Companies() {
                                                     <div className="h-[1px] flex-1 bg-gradient-to-r from-purple-500/20 via-purple-500/20 to-transparent"></div>
                                                 </div>
                                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                                    {company.leads.map((lead) => {
+                                                    {(companyLeads[company.name] || []).map((lead) => {
                                                         const initials = lead.personName?.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || '?'
                                                         return (
                                                             <div key={lead.id} className="group/lead relative flex flex-col p-6 bg-white/[0.03] backdrop-blur-md border border-white/[0.08] rounded-3xl hover:bg-white/[0.07] hover:border-purple-500/30 transition-all duration-500 shadow-2xl shadow-black/40">
