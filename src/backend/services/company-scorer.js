@@ -70,8 +70,61 @@ export class CompanyScorer {
 
                 if (scoreData) {
                     if (scoreData.fit_score < SCORE_THRESHOLD) {
-                        // DELETE the company AND all its leads
-                        console.log(`❌ Deleting company: ${company.company_name} (Score: ${scoreData.fit_score})`);
+                        // 1. CROSS-CHECK: Is it valid for the OTHER category?
+                        // If we are checking FAMILY_OFFICE, check INVESTMENT_FIRM, and vice-versa.
+                        const otherTypeStr = isFamilyOffice ? 'INVESTMENT_FIRM' : 'FAMILY_OFFICE';
+                        const otherScoreData = await this.rescoreLead(company, otherTypeStr, requiresCanada);
+
+                        if (otherScoreData && otherScoreData.fit_score >= SCORE_THRESHOLD) {
+                            // SUCCESS: It's a miscategorized company! RESCUE IT.
+                            console.log(`⚠️  Company ${company.company_name} failed ${typeStr} check but passed ${otherTypeStr}. RESCUING...`);
+
+                            // 2. Find the ID of the 'Other' ICP
+                            // We assume standard names based on the user's setup. 
+                            // Ideally we query this dynamically or pass map, but for now we look up by name pattern.
+                            const targetIcpName = isFamilyOffice ? 'fund' : 'family office';
+                            const { rows: targetIcps } = await query(`
+                                SELECT id FROM icps 
+                                WHERE user_id = $1 
+                                AND (name ILIKE $2 OR name ILIKE $3)
+                                LIMIT 1
+                             `, [company.user_id, `%${targetIcpName}%`, `%${targetIcpName.replace(' ', '%')}%`]);
+
+                            if (targetIcps.length > 0) {
+                                const newIcpId = targetIcps[0].id;
+
+                                // 3. Move leads to the new ICP
+                                await query(`
+                                    UPDATE leads 
+                                    SET icp_id = $1, 
+                                        custom_data = custom_data || $3::jsonb
+                                    WHERE company_name = $2 
+                                    AND user_id = $4
+                                 `, [newIcpId, company.company_name, JSON.stringify({
+                                    fit_score: otherScoreData.fit_score,
+                                    rescued_from_cleanup: true,
+                                    original_icp_id: icpId,
+                                    rescued_at: new Date().toISOString()
+                                }), company.user_id]);
+
+                                // 4. Update Company Type
+                                const newIcpType = isFamilyOffice ? 'ASSET_MANAGER_MULTI_STRATEGY' : 'FAMILY_OFFICE_SINGLE'; // Default approximations
+                                await query(`
+                                    UPDATE companies 
+                                    SET icp_type = $1, fit_score = $2, last_updated = NOW() 
+                                    WHERE company_name = $3 AND user_id = $4
+                                 `, [newIcpType, otherScoreData.fit_score, company.company_name, company.user_id]);
+
+                                results.kept++;
+                                console.log(`✅ Rescued and moved to ICP ID: ${newIcpId}`);
+                                return; // Skip the deletion block
+                            } else {
+                                console.log(`could not find fallback ICP for ${otherTypeStr}, proceeding to delete...`);
+                            }
+                        }
+
+                        // DELETE the company AND all its leads (Only if Cross-Check Failed)
+                        console.log(`❌ Deleting company: ${company.company_name} (Score: ${scoreData.fit_score}) - Failed both checks.`);
 
                         // 1. Get IDs of leads to delete for this company and user
                         const { rows: leadsToDelete } = await query(`
@@ -114,7 +167,6 @@ export class CompanyScorer {
 
                         results.disqualified++;
                     } else {
-                        // Keep - update the score in custom_data for all leads of this company
                         // Must find leads via link table again
                         const { rows: leadsToUpdate } = await query(`
                             SELECT l.id FROM leads l
