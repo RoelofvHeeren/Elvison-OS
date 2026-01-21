@@ -23,6 +23,7 @@ const applySchema = async () => {
 
         await query(`ALTER TABLE workflow_runs ADD COLUMN IF NOT EXISTS icp_id UUID REFERENCES icps(id);`);
         await query(`ALTER TABLE workflow_runs ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id);`);
+        await query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS fund_id UUID REFERENCES funds(id);`);
 
         console.log('✅ Schema applied successfully.');
         process.exit(0);

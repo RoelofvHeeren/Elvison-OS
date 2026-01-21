@@ -56,7 +56,10 @@ export class OutreachService {
                 return this._createSkipResponse(`ICP Type '${icp_type}' is disqualified (Brokerage/Service).`);
             }
 
-            // === 3. RESIDENTIAL INVESTOR RELEVANCE GATE ===
+            // === 3. RESIDENTIAL INVESTOR RELEVANCE GATE (DISABLED) ===
+            // Context: User feedback indicates this is too strict (e.g., rejecting CPP Investments).
+            // We will let the LLM decide via the prompt if it can find a valid angle.
+            /*
             if (!company_profile) {
                 return this._createSkipResponse("No profile available.");
             }
@@ -73,6 +76,7 @@ export class OutreachService {
             if (!hasTier3) {
                 return this._createSkipResponse("Failed Tier 3 Gate: No evidence of direct investing (acquired, portfolio, capital deployed).");
             }
+            */
 
             // === 4. RANDOMIZATION ===
             const opener = OPENERS[Math.floor(Math.random() * OPENERS.length)];
@@ -219,9 +223,10 @@ ${company_profile}
 
     static _createSkipResponse(reason) {
         return {
-            linkedin_message: `[SKIPPED: ${reason}]`,
-            email_subject: `[SKIPPED]`,
-            email_body: `[SKIPPED: ${reason}]`
+            linkedin_message: null, // Don't save "[SKIPPED]" to the DB
+            email_subject: null,
+            email_body: null,
+            skip_reason: reason // status will be 'SKIP'
         };
     }
 }
