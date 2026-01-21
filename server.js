@@ -4039,11 +4039,21 @@ const initDB = async () => {
                 lead_id UUID REFERENCES leads(id) ON DELETE CASCADE,
                 user_id UUID REFERENCES users(id),
                 reason TEXT NOT NULL,
-    original_status VARCHAR(50),
+                original_status VARCHAR(50),
                 new_status VARCHAR(50),
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
             );
+
+            -- Ensure user_id column exists (in case table was created by older version)
+            DO $$ 
+            BEGIN 
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='lead_feedback' AND column_name='user_id') THEN
+                    ALTER TABLE lead_feedback ADD COLUMN user_id UUID REFERENCES users(id);
+                END IF;
+            END $$;
+
             CREATE INDEX IF NOT EXISTS idx_lead_feedback_lead_id ON lead_feedback(lead_id);
+            CREATE INDEX IF NOT EXISTS idx_lead_feedback_user_id ON lead_feedback(user_id);
         `);
 
         // Migration: "Zombie Lead" Cleanup

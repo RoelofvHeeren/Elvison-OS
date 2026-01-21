@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { CalendarDays, Building2, RefreshCw, Trash2, Upload, Filter, Target, Loader, Check, Search, ChevronLeft, ChevronRight, Download, Users } from 'lucide-react'
 import SheetTable from '../components/SheetTable'
 import ImportModal from '../components/ImportModal'
-import { fetchLeads, deleteLead, approveLead, fetchAllLeadIds, fetchRuns } from '../utils/api'
+import { fetchLeads, deleteLead, approveLead, fetchAllLeadIds, fetchRuns, fetchHealth } from '../utils/api'
 import OutreachModal from '../components/OutreachModal'
 import { useIcp } from '../context/IcpContext'
 

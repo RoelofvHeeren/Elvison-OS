@@ -39,6 +39,7 @@ const AgentRunner = () => {
     // Refs
     const logsEndRef = useRef(null)
     const activeStreamsRef = useRef({}) // Map of runId -> AbortController to keep streams alive/cancel them
+    const newlyStartedRunIdRef = useRef(null) // Track the run we just started to avoid race conditions on state reset
 
     // --- INITIALIZATION ---
 
@@ -142,9 +143,10 @@ const AgentRunner = () => {
         if (!selectedRunId) return;
 
         // Check if this is a run we just started in this session
-        const isNewlyStartedRun = sessionRunIds.has(selectedRunId);
+        const isNewlyStartedRun = sessionRunIds.has(selectedRunId) || newlyStartedRunIdRef.current === selectedRunId;
 
-        if (!isNewlyStartedRun) {
+        // Only reset if it's NOT a newly started run AND we aren't currently in an initializing state
+        if (!isNewlyStartedRun && !isInitializing) {
             // Only reset state if selecting a historical run from the list
             setLogs([]);
             setRunStatus('LOADING');
@@ -271,12 +273,26 @@ const AgentRunner = () => {
                                     foundRunId = true;
                                     // Add to active streams tracking
                                     activeStreamsRef.current[data.runId] = abortController;
+                                    // Track as newly started to avoid race condition in useEffect
+                                    newlyStartedRunIdRef.current = data.runId;
                                     // Add to session runs
                                     setSessionRunIds(prev => new Set([...prev, data.runId]));
                                     // Refresh list (will pick up new run)
                                     await fetchRuns();
                                     // Auto-select the new run
                                     setSelectedRunId(data.runId);
+                                }
+                            } else if (line.startsWith('event: log')) {
+                                try {
+                                    const logData = JSON.parse(line.split('\n')[1].replace('data: ', ''));
+                                    setLogs(prev => {
+                                        // Avoid duplicate logs if polling also caught them
+                                        const exists = prev.some(l => l.detail === logData.detail && l.step === logData.step);
+                                        if (exists) return prev;
+                                        return [...prev, logData];
+                                    });
+                                } catch (e) {
+                                    console.warn("Failed to parse stream log", e);
                                 }
                             }
                         }
