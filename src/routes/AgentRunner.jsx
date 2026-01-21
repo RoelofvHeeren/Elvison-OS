@@ -117,6 +117,11 @@ const AgentRunner = () => {
 
                 setLogs(formattedLogs);
 
+                // Clear initializing state once we have real logs from the workflow
+                if (formattedLogs.length > 1) {
+                    setIsInitializing(false);
+                }
+
                 if (formattedLogs.length > 0) {
                     // Determine current step from last log if not completed
                     if (runData.status === 'RUNNING') {
@@ -264,8 +269,6 @@ const AgentRunner = () => {
                                 const data = JSON.parse(line.split('\n')[1].replace('data: ', ''));
                                 if (data.runId && !foundRunId) {
                                     foundRunId = true;
-                                    // Clear initializing state now that we have a run ID
-                                    setIsInitializing(false);
                                     // Add to active streams tracking
                                     activeStreamsRef.current[data.runId] = abortController;
                                     // Add to session runs
