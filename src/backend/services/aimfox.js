@@ -6,6 +6,26 @@ class AimfoxService {
         this.baseUrl = 'https://api.aimfox.com/api/v2';
     }
 
+    /**
+     * PRODUCTION SAFEGUARD: Message Sanity Check
+     * Prevents sending messages that contain error keywords
+     */
+    _messagePassesSanityCheck(message) {
+        if (!message) return true; // Empty is okay
+
+        const lowerMessage = message.toLowerCase();
+        const bannedKeywords = ['skip', 'needs_research', 'needs research', 'error', 'null', 'undefined'];
+
+        for (const keyword of bannedKeywords) {
+            if (lowerMessage.includes(keyword)) {
+                console.error(`[AIMFOX SAFEGUARD] Blocked message containing "${keyword}": ${message.substring(0, 100)}...`);
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     get apiKey() {
         return process.env.AIMFOX_API_KEY;
     }
@@ -47,6 +67,16 @@ class AimfoxService {
         try {
             // Map Elvison lead to Aimfox V2 multiple profiles payload
             const customData = lead.custom_data || {};
+            const connectionRequest = lead.linkedin_message || customData.connection_request || '';
+            const emailMessage = lead.email_body || customData.email_message || '';
+
+            // PRODUCTION SAFEGUARD: Block messages with error keywords
+            if (!this._messagePassesSanityCheck(connectionRequest)) {
+                throw new Error('SAFEGUARD: LinkedIn message contains error keywords and was blocked from sending');
+            }
+            if (!this._messagePassesSanityCheck(emailMessage)) {
+                throw new Error('SAFEGUARD: Email message contains error keywords and was blocked from sending');
+            }
 
             const payload = {
                 type: 'profile_url',

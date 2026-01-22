@@ -5,6 +5,26 @@ class GoHighLevelService {
         this.customFieldCache = null;
     }
 
+    /**
+     * PRODUCTION SAFEGUARD: Message Sanity Check
+     * Prevents sending messages that contain error keywords
+     */
+    _messagePassesSanityCheck(message) {
+        if (!message) return true; // Empty is okay
+
+        const lowerMessage = message.toLowerCase();
+        const bannedKeywords = ['skip', 'needs_research', 'needs research', 'error', 'null', 'undefined'];
+
+        for (const keyword of bannedKeywords) {
+            if (lowerMessage.includes(keyword)) {
+                console.error(`[GHL SAFEGUARD] Blocked message containing "${keyword}": ${message.substring(0, 100)}...`);
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     get apiKey() {
         return process.env.GHL_API_KEY;
     }
@@ -176,6 +196,14 @@ class GoHighLevelService {
         const emailMessage = lead.email_body || customData.email_message || '';
         const connectionRequest = lead.linkedin_message || customData.connection_request || ''; // This maps to "Linkedin Message" based on user context
         const companyProfile = customData.company_profile || '';
+
+        // PRODUCTION SAFEGUARD: Block messages with error keywords
+        if (!this._messagePassesSanityCheck(connectionRequest)) {
+            throw new Error('SAFEGUARD: LinkedIn message contains error keywords and was blocked from sending');
+        }
+        if (!this._messagePassesSanityCheck(emailMessage)) {
+            throw new Error('SAFEGUARD: Email message contains error keywords and was blocked from sending');
+        }
 
         try {
             const payload = {

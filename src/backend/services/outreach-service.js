@@ -58,7 +58,10 @@ const TIER_3_KEYWORDS = [
     'acquired', 'portfolio', 'we invest', 'capital deployed', 'deal', 'deals',
     'co-invest', 'direct investments', 'investment platform', 'holdings',
     'assets under management', 'aum', 'transaction', 'transactions',
-    'deployment', 'invest in', 'invested in'
+    'deployment', 'invest in', 'invested in',
+    // Ticket 6: Family Office softer language
+    'capital allocation', 'principal investments', 'private investments',
+    'real assets', 'platform investments'
 ];
 
 // Banned phrases in final output
@@ -228,7 +231,12 @@ export class OutreachService {
         }
 
         // Tier 1 depends on ICP type
-        const isFamilyOffice = icp_type && icp_type.toUpperCase().includes('FAMILY_OFFICE');
+        // Ticket 1: Fix Family Office detection bug - normalize ICP type properly
+        const icp = (icp_type || '').toUpperCase().replace(/\s|-/g, '_');
+        const isFamilyOffice =
+            icp.includes('FAMILYOFFICE') ||
+            icp.includes('FAMILY_OFFICE') ||
+            (icp.includes('FAMILY') && icp.includes('OFFICE'));
 
         if (!hasTier1) {
             if (isFamilyOffice) {
@@ -293,20 +301,26 @@ export class OutreachService {
      */
     static _generateMessage(company_name, factResult, first_name, person_name, icp_type) {
         try {
-            const isFamilyOffice = icp_type && icp_type.toUpperCase().includes('FAMILY_OFFICE');
+            // Ticket 1: Fix Family Office detection bug
+            const icp = (icp_type || '').toUpperCase().replace(/\s|-/g, '_');
+            const isFamilyOffice =
+                icp.includes('FAMILYOFFICE') ||
+                icp.includes('FAMILY_OFFICE') ||
+                (icp.includes('FAMILY') && icp.includes('OFFICE'));
 
             // Select opening/closing
             const opener = OPENERS[Math.floor(Math.random() * OPENERS.length)];
             const closer = CLOSERS[Math.floor(Math.random() * CLOSERS.length)];
 
             // Build template based on fact type
+            // Ticket 3: Shortened templates to reduce character limit failures
             let messageTemplate;
             if (factResult.fact_type === 'DEAL') {
-                messageTemplate = `Hi {First_name}, ${opener} ${factResult.fact}. We frequently develop similar projects at Fifth Avenue Properties and often partner with groups deploying long-term capital. ${closer}.`;
+                messageTemplate = `Hi {First_name}, ${opener} ${factResult.fact}. We frequently develop similar projects at Fifth Avenue Properties and often partner with long-term capital. ${closer}.`;
             } else if (factResult.fact_type === 'THESIS') {
-                messageTemplate = `Hi {First_name}, ${opener} ${factResult.fact}. We work on similar residential strategies at Fifth Avenue Properties and often partner with groups deploying long-term capital. ${closer}.`;
+                messageTemplate = `Hi {First_name}, ${opener} ${factResult.fact}. We work on similar residential strategies at Fifth Avenue Properties and often partner with long-term investors. ${closer}.`;
             } else if (factResult.fact_type === 'SCALE') {
-                messageTemplate = `Hi {First_name}, ${opener} ${factResult.fact}. We are active in this scale of residential development at Fifth Avenue Properties and often partner with groups deploying long-term capital. ${closer}.`;
+                messageTemplate = `Hi {First_name}, ${opener} ${factResult.fact}. We are active in this scale of residential development at Fifth Avenue Properties and often partner with long-term capital. ${closer}.`;
             } else {
                 // GENERAL fallback
                 messageTemplate = `Hi {First_name}, ${opener} ${company_name}'s focus on the residential sector. We are active developers in this space at Fifth Avenue Properties and thought connecting could be worthwhile.`;
@@ -328,9 +342,10 @@ export class OutreachService {
             // Ensure message is under 300 chars
             if (linkedin_message.length > 300) {
                 METRICS.needs_research_count++;
+                // Ticket 5: Add specific reason for length failures
                 return {
                     outreach_status: 'NEEDS_RESEARCH',
-                    outreach_reason: 'Generated message exceeded 300 character limit',
+                    outreach_reason: `linkedin_too_long:${linkedin_message.length}`,
                     research_fact: factResult.fact,
                     research_fact_type: factResult.fact_type,
                     message_version: 'v5',
@@ -377,11 +392,12 @@ export class OutreachService {
         const combined = (messageResult.linkedin_message + messageResult.email_body).toLowerCase();
 
         // Check for banned phrases
+        // Ticket 5: Add specific reasons for QA failures
         for (const phrase of BANNED_OUTPUT_PHRASES) {
             if (combined.includes(phrase.toLowerCase())) {
                 return {
                     outreach_status: 'NEEDS_RESEARCH',
-                    outreach_reason: `QA FAILED: Banned phrase detected ('${phrase}')`,
+                    outreach_reason: `qa_banned_phrase:${phrase}`,
                     research_fact: messageResult.research_fact,
                     research_fact_type: messageResult.research_fact_type,
                     message_version: messageResult.message_version,
@@ -398,7 +414,7 @@ export class OutreachService {
             if (combined.includes(word.toLowerCase())) {
                 return {
                     outreach_status: 'NEEDS_RESEARCH',
-                    outreach_reason: `QA FAILED: Banned word detected ('${word}')`,
+                    outreach_reason: `qa_banned_word:${word}`,
                     research_fact: messageResult.research_fact,
                     research_fact_type: messageResult.research_fact_type,
                     message_version: messageResult.message_version,

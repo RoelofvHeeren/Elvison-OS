@@ -1,0 +1,49 @@
+{
+  "to_delete": [
+    "Apollo Global Management, Inc",
+    "Aviva Investors",
+    "Bain Capital",
+    "BlackRock",
+    "Blue Owl Capital",
+    "Brookfield Asset Management",
+    "DWS Asset Management",
+    "Fortress Investment Group",
+    "Invesco Ltd",
+    "J.P. Morgan",
+    "KKR",
+    "Neuberger Berman",
+    "Nuveen Real Estate",
+    "Oaktree Capital Management, L.P",
+    "Partners Group",
+    "Pictet",
+    "Schroders",
+    "The Carlyle Group",
+    "TPG",
+    "Alberta Investment Management Corporation (AIMCo)",
+    "CPP Investments | Investissements RPC",
+    "GIC",
+    "HOOPP (Healthcare of Ontario Pension Plan)",
+    "Ontario Teachers Pension Plan",
+    "IG Wealth Management",
+    "SLC Management"
+  ],
+  "to_reprofile": [
+    "Adams Street Partners",
+    "Canderel",
+    "Gordon Brothers",
+    "Harrison Street",
+    "Nicola Institutional Realty Advisors (NIRA)",
+    "Osmington Inc",
+    "Sagard Real Estate",
+    "Starlight Capital",
+    "Thor Equities Group",
+    "Triovest",
+    "Wealhouse Capital Management"
+  ],
+  "stats": {
+    "delete_count": 26,
+    "delete_leads": 72,
+    "reprofile_count": 11,
+    "reprofile_leads": 16
+  }
+}

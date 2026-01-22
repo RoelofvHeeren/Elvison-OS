@@ -1,9 +1,12 @@
-require('dotenv').config();
-const pg = require('pg');
-const { LeadScraperService } = require('./src/backend/services/lead-scraper-service.js');
-const { generateOutreachMessages } = require('./src/backend/services/outreach-service.js');
+import dotenv from 'dotenv';
+import pg from 'pg';
+import { LeadScraperService } from './src/backend/services/lead-scraper-service.js';
+import { OutreachService } from './src/backend/services/outreach-service.js';
 
-const pool = new pg.Pool({
+dotenv.config();
+const { Pool } = pg;
+
+const pool = new Pool({
     connectionString: process.env.DATABASE_URL || process.env.DATABASE_PUBLIC_URL,
     ssl: { rejectUnauthorized: false }
 });
@@ -114,15 +117,15 @@ async function backfillLeads() {
                         }
 
                         // Generate outreach messages
-                        const outreach = await generateOutreachMessages({
+                        const outreach = await OutreachService.createLeadMessages({
                             company_name: lead.company_name,
                             company_profile: lead.company_profile || company.company_profile,
                             person_name: `${lead.first_name} ${lead.last_name}`,
                             first_name: lead.first_name
                         });
 
-                        // Insert lead
-                        await pool.query(`
+                        // Insert lead and get ID
+                        const insertResult = await pool.query(`
                             INSERT INTO leads (
                                 company_name, person_name, email, job_title, linkedin_url,
                                 company_website, company_domain, company_profile,
@@ -130,6 +133,7 @@ async function backfillLeads() {
                                 status, source, created_at, updated_at
                             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), NOW())
                             ON CONFLICT DO NOTHING
+                            RETURNING id
                         `, [
                             lead.company_name,
                             `${lead.first_name} ${lead.last_name}`.trim(),
@@ -145,6 +149,29 @@ async function backfillLeads() {
                             'NEW',
                             'backfill_script'
                         ]);
+
+                        // Link to user if inserted
+                        if (insertResult.rows[0]) {
+                            const newLeadId = insertResult.rows[0].id;
+                            await pool.query(`
+                                INSERT INTO leads_link (lead_id, parent_id, parent_type)
+                                VALUES ($1, $2, 'user')
+                                ON CONFLICT DO NOTHING
+                            `, [newLeadId, '40ac42ec-48bc-4069-864b-c47a02ed9b40']);
+                        } else {
+                            // If lead existed, find it and link it just in case
+                            const existingLead = await pool.query(
+                                'SELECT id FROM leads WHERE email = $1',
+                                [lead.email]
+                            );
+                            if (existingLead.rows[0]) {
+                                await pool.query(`
+                                    INSERT INTO leads_link (lead_id, parent_id, parent_type)
+                                    VALUES ($1, $2, 'user')
+                                    ON CONFLICT DO NOTHING
+                                `, [existingLead.rows[0].id, '40ac42ec-48bc-4069-864b-c47a02ed9b40']);
+                            }
+                        }
 
                         totalAdded++;
                         console.log(`  ✅ Added: ${lead.first_name} ${lead.last_name} (${lead.company_name})`);

@@ -150,9 +150,31 @@ export class LeadScraperService {
 
         // Run batches in parallel with Promise.allSettled (prevents one failure from breaking all)
         // Fix: Pass idempotencyKey with batch suffix to avoid collisions
-        const batchPromises = batches.map((batch, index) => {
+        const batchPromises = batches.map(async (batch, index) => {
             const batchKey = idempotencyKey ? `${idempotencyKey}_batch_${index + 1}` : null;
-            return this._runApolloBatch(batch, filters, index + 1, batchKey, checkCancellation);
+            const result = await this._runApolloBatch(batch, filters, index + 1, batchKey, checkCancellation);
+
+            // Incremental Save Hook - Save immediately to prevent data loss
+            if (filters.onBatchComplete && typeof filters.onBatchComplete === 'function') {
+                try {
+                    // Normalize immediately so we can save
+                    const validLeads = this._normalizeApolloDomainResults(result.valid, companies, filters);
+
+                    // Normalize disqualified too
+                    const disqualifiedLeads = this._normalizeApolloDomainResults(result.disqualified, companies, filters).map((l, i) => ({
+                        ...l,
+                        disqualification_reason: result.disqualified[i].disqualification_reason
+                    }));
+
+                    if (validLeads.length > 0 || disqualifiedLeads.length > 0) {
+                        console.log(`[ApolloDomain] 💾 Incrementally saving ${validLeads.length} valid and ${disqualifiedLeads.length} disqualified leads from Batch ${index + 1}...`);
+                        await filters.onBatchComplete({ valid: validLeads, disqualified: disqualifiedLeads });
+                    }
+                } catch (e) {
+                    console.error(`[ApolloDomain] onBatchComplete failed for batch ${index + 1}:`, e);
+                }
+            }
+            return result;
         });
 
         const results = await Promise.allSettled(batchPromises);

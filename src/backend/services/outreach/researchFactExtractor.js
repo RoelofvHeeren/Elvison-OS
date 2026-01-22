@@ -24,6 +24,16 @@ export class ResearchFactExtractor {
     ];
 
     /**
+     * Ticket 2: Terms that indicate company names, not deal names
+     */
+    static INVALID_DEAL_TERMS = [
+        'capital', 'partners', 'management', 'investments', 'asset management',
+        'corporation', 'company', 'group', 'holdings', 'advisors', 'advisory',
+        'realtors', 'realty', 'brokerage', 'properties', 'ventures', 'equity',
+        'fund', 'funds', 'trust', 'llc', 'inc', 'ltd', 'limited', 'corp'
+    ];
+
+    /**
      * Property type/project keywords to identify named deals
      */
     static PROPERTY_KEYWORDS = [
@@ -113,10 +123,10 @@ export class ResearchFactExtractor {
         const patterns = [
             // "Named [PropertyType]" format
             /([A-Z][a-zA-Z\s]{2,30})\s+(Condo|Condos|Residences|Residence|Apartments|Apartment|Centre|Center|Tower|Towers|Village|Villages|Lofts|Loft|Development|Developments|Estate|Estates|Complex|Complexes|Community|Communities)/gi,
-            
+
             // "The [PropertyType] at [Named Location]" format
             /(?:the)?\s+([A-Z][a-zA-Z\s]{2,30})\s+(?:at|in|on|phase|parcel)\s+([A-Z][a-zA-Z\s]{2,30})/gi,
-            
+
             // Simple capitalized phrases (proper nouns) - 2+ words
             /([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\s+(?:is|features?|includes?|contains?|consists?|development|project|property|asset)/gi
         ];
@@ -125,16 +135,23 @@ export class ResearchFactExtractor {
             const matches = profile.matchAll(pattern);
             for (const match of matches) {
                 const dealName = match[1].trim();
-                
+
                 // Reject placeholder names
                 if (this._isPlaceholder(dealName)) {
                     continue;
                 }
 
+                // Ticket 2: Reject company names that look like deals
+                if (this._looksLikeCompanyNameNotDeal(dealName)) {
+                    continue;
+                }
+
                 // Verify it's a reasonable length and not too generic
                 if (dealName.length > 5 && dealName.length < 100 && !this._isTooGeneric(dealName)) {
+                    // Ticket 4: Trim fact to max length
+                    const trimmedFact = this._trimFact(dealName, 60);
                     return {
-                        fact: dealName,
+                        fact: trimmedFact,
                         fact_type: 'DEAL',
                         confidence: 0.95,
                         reason: 'Named deal/project detected'
@@ -175,8 +192,10 @@ export class ResearchFactExtractor {
                 continue;
             }
 
+            // Ticket 4: Trim fact to max length
+            const trimmedFact = this._trimFact(fact, 110);
             return {
-                fact: fact.trim(),
+                fact: trimmedFact.trim(),
                 fact_type: 'THESIS',
                 confidence: 0.85,
                 reason: 'Strategy/thesis statement extracted'
@@ -202,12 +221,14 @@ export class ResearchFactExtractor {
             const match = profile.match(pattern);
             if (match) {
                 const scaleFact = match[0].trim();
-                
+
                 // Make sure it's actually a large number (not just 2 or 3)
                 const numbers = match[0].match(/\d+/g);
                 if (numbers && Math.max(...numbers.map(n => parseInt(n))) > 100) {
+                    // Ticket 4: Trim fact to max length
+                    const trimmedFact = this._trimFact(scaleFact, 70);
                     return {
-                        fact: scaleFact,
+                        fact: trimmedFact,
                         fact_type: 'SCALE',
                         confidence: 0.90,
                         reason: 'Portfolio scale fact detected'
@@ -243,8 +264,10 @@ export class ResearchFactExtractor {
                     .trim();
 
                 if (focus.length > 10 && focus.length < 200 && !this._isTooGeneric(focus)) {
+                    // Ticket 4: Trim fact to max length
+                    const trimmedFact = this._trimFact(focus, 110);
                     return {
-                        fact: focus,
+                        fact: trimmedFact,
                         fact_type: 'GENERAL',
                         confidence: 0.75,
                         reason: 'General focus statement extracted'
@@ -265,6 +288,14 @@ export class ResearchFactExtractor {
     }
 
     /**
+     * Ticket 2: Check if text looks like a company name, not a deal name
+     */
+    static _looksLikeCompanyNameNotDeal(text) {
+        const lower = text.toLowerCase();
+        return this.INVALID_DEAL_TERMS.some(term => lower.includes(term));
+    }
+
+    /**
      * Check if a string is too generic or lacks substance
      */
     static _isTooGeneric(text) {
@@ -281,7 +312,7 @@ export class ResearchFactExtractor {
         ];
 
         const lower = text.toLowerCase();
-        
+
         // Check if it's just listing generic terms
         const matchCount = genericTerms.filter(term => lower.includes(term)).length;
         if (matchCount > 1) {
@@ -327,6 +358,32 @@ export class ResearchFactExtractor {
             confidence: 0,
             reason: reason
         };
+    }
+
+    /**
+     * Ticket 4: Smart fact trimming that preserves meaning
+     * @param {string} fact - The fact to trim
+     * @param {number} maxLen - Maximum length
+     * @returns {string} Trimmed fact
+     */
+    static _trimFact(fact, maxLen = 110) {
+        if (!fact) return fact;
+        let s = fact.trim();
+
+        // Remove trailing punctuation chains
+        s = s.replace(/[,:;.\s]+$/g, '');
+
+        // Remove leading pronouns, verbs, and articles (NEW: Grammatical improvement)
+        s = s.replace(/^(we|they|he|she|it|our|my|this|that|these|those|the|company|firm)\s+/i, '');
+        s = s.replace(/^(is|are|was|were|has|have|includes|features|focuses\s+on|invests\s+in)\s+/i, '');
+        s = s.replace(/^(a|an|the)\s+/i, ''); // Strip articles if they are now at the start ("is a company" -> "company")
+
+        if (s.length <= maxLen) return s;
+
+        // Cut at nearest word boundary
+        s = s.slice(0, maxLen);
+        s = s.replace(/\s+\S*$/, '');
+        return s;
     }
 }
 

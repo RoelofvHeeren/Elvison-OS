@@ -921,7 +921,27 @@ export const runAgentWorkflow = async (input, config) => {
 
                 // --- 4. Lead Scraping with Disqualified Tracking ---
                 // Pass idempotencyKey to prevent duplicate Apify runs on retries
-                const scrapeFilters = { ...filters, idempotencyKey: idempotencyKey || `wf_${Date.now()} ` };
+                // Incremental Save Hook - Save valid leads immediately after each batch
+                const scrapeFilters = {
+                    ...filters,
+                    idempotencyKey: idempotencyKey || `wf_${Date.now()}`,
+                    onBatchComplete: async ({ valid, disqualified }) => {
+                        if (valid?.length > 0) {
+                            try {
+                                await saveLeadsToDB(valid, userId, icpId, logStep, 'NEW', runId);
+                            } catch (e) {
+                                logStep('Database', `⚠️ Incremental save failed: ${e.message}`);
+                            }
+                        }
+                        if (disqualified?.length > 0) {
+                            try {
+                                await saveLeadsToDB(disqualified, userId, icpId, logStep, 'DISQUALIFIED', runId);
+                            } catch (e) {
+                                // logStep('Database', `⚠️ Incremental disqualified save failed: ${e.message}`);
+                            }
+                        }
+                    }
+                };
                 const scrapeResult = await leadScraper.fetchLeads(masterQualifiedList, scrapeFilters, logStep, checkCancellation);
 
                 // Handle new return structure { leads, disqualified }

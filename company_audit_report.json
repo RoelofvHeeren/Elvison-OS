@@ -1,12 +1,12 @@
 {
-  "audit_date": "2026-01-22T10:41:44.669Z",
-  "total_companies": 92,
+  "audit_date": "2026-01-22T11:03:56.834Z",
+  "total_companies": 63,
   "summary": {
     "good": 0,
     "no_profile": 0,
-    "no_residential": 40,
+    "no_residential": 6,
     "no_investor": 0,
-    "low_fit": 52,
+    "low_fit": 57,
     "missing_website": 0
   },
   "companies": {
@@ -14,202 +14,6 @@
     "issues": {
       "no_profile": [],
       "no_residential_keywords": [
-        {
-          "name": "Apollo Global Management, Inc",
-          "lead_count": 3,
-          "fit_score": 7,
-          "icp_type": "ASSET_MANAGER_MULTI_STRATEGY",
-          "website": "https://apollo.com"
-        },
-        {
-          "name": "Aviva Investors",
-          "lead_count": 3,
-          "fit_score": 8,
-          "icp_type": "ASSET_MANAGER_MULTI_STRATEGY",
-          "website": "https://avivainvestors.com"
-        },
-        {
-          "name": "Bain Capital",
-          "lead_count": 3,
-          "fit_score": 8,
-          "icp_type": "ASSET_MANAGER_MULTI_STRATEGY",
-          "website": "https://baincapital.com"
-        },
-        {
-          "name": "BlackRock",
-          "lead_count": 3,
-          "fit_score": 7,
-          "icp_type": "ASSET_MANAGER_MULTI_STRATEGY",
-          "website": "https://blackrock.com"
-        },
-        {
-          "name": "Blue Owl Capital",
-          "lead_count": 3,
-          "fit_score": 8,
-          "icp_type": "ASSET_MANAGER_MULTI_STRATEGY",
-          "website": "https://blueowl.com"
-        },
-        {
-          "name": "Brookfield Asset Management",
-          "lead_count": 3,
-          "fit_score": 8,
-          "icp_type": "ASSET_MANAGER_MULTI_STRATEGY",
-          "website": "https://brookfield.com"
-        },
-        {
-          "name": "Claridge Inc",
-          "lead_count": 3,
-          "fit_score": 8,
-          "icp_type": "FAMILY_OFFICE_SINGLE",
-          "website": "https://claridgeinc.com"
-        },
-        {
-          "name": "CPP Investments | Investissements RPC",
-          "lead_count": 3,
-          "fit_score": 7,
-          "icp_type": "PENSION",
-          "website": "https://cppinvestments.com"
-        },
-        {
-          "name": "DWS Asset Management",
-          "lead_count": 3,
-          "fit_score": 8,
-          "icp_type": "ASSET_MANAGER_MULTI_STRATEGY",
-          "website": "https://dws.com"
-        },
-        {
-          "name": "GIC",
-          "lead_count": 3,
-          "fit_score": 7,
-          "icp_type": "SOVEREIGN_WEALTH_FUND",
-          "website": "https://gic.com.sg"
-        },
-        {
-          "name": "Harrison Street",
-          "lead_count": 3,
-          "fit_score": 7,
-          "icp_type": "REAL_ESTATE_PRIVATE_EQUITY",
-          "website": "https://harrisonst.com"
-        },
-        {
-          "name": "IG Wealth Management",
-          "lead_count": 3,
-          "fit_score": 7,
-          "icp_type": "ASSET_MANAGER_MULTI_STRATEGY",
-          "website": "https://ig.ca"
-        },
-        {
-          "name": "Invesco Ltd",
-          "lead_count": 3,
-          "fit_score": 7,
-          "icp_type": "ASSET_MANAGER_MULTI_STRATEGY",
-          "website": "https://invesco.com"
-        },
-        {
-          "name": "J.P. Morgan",
-          "lead_count": 3,
-          "fit_score": 9,
-          "icp_type": "ASSET_MANAGER_MULTI_STRATEGY",
-          "website": "https://jpmorgan.com"
-        },
-        {
-          "name": "KKR",
-          "lead_count": 3,
-          "fit_score": 8,
-          "icp_type": "ASSET_MANAGER_MULTI_STRATEGY",
-          "website": "https://kkr.com"
-        },
-        {
-          "name": "KKR Real Estate Select Trust",
-          "lead_count": 3,
-          "fit_score": 8,
-          "icp_type": "REIT_PUBLIC",
-          "website": "https://kkr.com"
-        },
-        {
-          "name": "Neuberger Berman",
-          "lead_count": 3,
-          "fit_score": 7,
-          "icp_type": "ASSET_MANAGER_MULTI_STRATEGY",
-          "website": "https://nb.com"
-        },
-        {
-          "name": "Nuveen Real Estate",
-          "lead_count": 3,
-          "fit_score": 8,
-          "icp_type": "ASSET_MANAGER_MULTI_STRATEGY",
-          "website": "https://nuveen.com"
-        },
-        {
-          "name": "Oaktree Capital Management, L.P",
-          "lead_count": 3,
-          "fit_score": 8,
-          "icp_type": "ASSET_MANAGER_MULTI_STRATEGY",
-          "website": "https://oaktreecapital.com"
-        },
-        {
-          "name": "Ontario Teachers Pension Plan",
-          "lead_count": 3,
-          "fit_score": 9,
-          "icp_type": "PENSION",
-          "website": "https://otpp.com"
-        },
-        {
-          "name": "Partners Group",
-          "lead_count": 3,
-          "fit_score": 8,
-          "icp_type": "REAL_ESTATE_PRIVATE_EQUITY",
-          "website": "https://partnersgroup.com"
-        },
-        {
-          "name": "Pictet",
-          "lead_count": 3,
-          "fit_score": 6,
-          "icp_type": "ASSET_MANAGER_MULTI_STRATEGY",
-          "website": "https://pictet.com"
-        },
-        {
-          "name": "Prologis",
-          "lead_count": 3,
-          "fit_score": 8,
-          "icp_type": "REAL_ESTATE_PRIVATE_EQUITY",
-          "website": "https://prologis.com"
-        },
-        {
-          "name": "Schroders",
-          "lead_count": 3,
-          "fit_score": 7,
-          "icp_type": "ASSET_MANAGER_MULTI_STRATEGY",
-          "website": "https://schroders.com"
-        },
-        {
-          "name": "SLC Management",
-          "lead_count": 3,
-          "fit_score": 9,
-          "icp_type": "ASSET_MANAGER_MULTI_STRATEGY",
-          "website": "https://slcmanagement.com"
-        },
-        {
-          "name": "The Carlyle Group",
-          "lead_count": 3,
-          "fit_score": 7,
-          "icp_type": "ASSET_MANAGER_MULTI_STRATEGY",
-          "website": "https://carlyle.com"
-        },
-        {
-          "name": "TPG",
-          "lead_count": 3,
-          "fit_score": 7,
-          "icp_type": "ASSET_MANAGER_MULTI_STRATEGY",
-          "website": "https://tpg.com"
-        },
-        {
-          "name": "Canderel",
-          "lead_count": 2,
-          "fit_score": 8,
-          "icp_type": "RE_DEVELOPER_OPERATOR",
-          "website": "https://canderel.com"
-        },
         {
           "name": "Nicola Institutional Realty Advisors (NIRA)",
           "lead_count": 2,
@@ -232,39 +36,11 @@
           "website": "https://adamsstreetpartners.com"
         },
         {
-          "name": "Alberta Investment Management Corporation (AIMCo)",
-          "lead_count": 1,
-          "fit_score": 8,
-          "icp_type": "PENSION",
-          "website": "https://aimco.ca"
-        },
-        {
-          "name": "Fortress Investment Group",
-          "lead_count": 1,
-          "fit_score": 8,
-          "icp_type": "ASSET_MANAGER_MULTI_STRATEGY",
-          "website": "https://fortress.com"
-        },
-        {
           "name": "Gordon Brothers",
           "lead_count": 1,
           "fit_score": 7,
           "icp_type": "ASSET_MANAGER_MULTI_STRATEGY",
           "website": "https://gordonbrothers.com"
-        },
-        {
-          "name": "HOOPP (Healthcare of Ontario Pension Plan)",
-          "lead_count": 1,
-          "fit_score": 9,
-          "icp_type": "PENSION",
-          "website": "https://hoopp.com"
-        },
-        {
-          "name": "Osmington Inc",
-          "lead_count": 1,
-          "fit_score": 7,
-          "icp_type": "RE_DEVELOPER_OPERATOR",
-          "website": "https://osmington.com"
         },
         {
           "name": "Starlight Capital",
@@ -274,25 +50,11 @@
           "website": "https://starlightcapital.com"
         },
         {
-          "name": "Thor Equities Group",
-          "lead_count": 1,
-          "fit_score": 7,
-          "icp_type": "RE_DEVELOPER_OPERATOR",
-          "website": "https://thorequities.com"
-        },
-        {
           "name": "Triovest",
           "lead_count": 1,
           "fit_score": 6,
           "icp_type": "REAL_ESTATE_PRIVATE_EQUITY",
           "website": "https://triovest.com"
-        },
-        {
-          "name": "Wealhouse Capital Management",
-          "lead_count": 1,
-          "fit_score": 6,
-          "icp_type": "REAL_ESTATE_PRIVATE_EQUITY",
-          "website": "https://wealhouse.com"
         }
       ],
       "no_investor_keywords": [],
@@ -375,6 +137,13 @@
           "website": "https://dream.ca"
         },
         {
+          "name": "Harrison Street",
+          "lead_count": 3,
+          "fit_score": 7,
+          "icp_type": "REAL_ESTATE_PRIVATE_EQUITY",
+          "website": "https://harrisonst.com"
+        },
+        {
           "name": "Hazelview Investments",
           "lead_count": 3,
           "fit_score": 8,
@@ -429,6 +198,13 @@
           "fit_score": 8,
           "icp_type": "REAL_ESTATE_PRIVATE_EQUITY",
           "website": "https://starwoodcapital.com"
+        },
+        {
+          "name": "Canderel",
+          "lead_count": 2,
+          "fit_score": 8,
+          "icp_type": "RE_DEVELOPER_OPERATOR",
+          "website": "https://canderel.com"
         },
         {
           "name": "Centurion Asset Management",
@@ -613,6 +389,13 @@
           "website": "https://nadg.com"
         },
         {
+          "name": "Osmington Inc",
+          "lead_count": 1,
+          "fit_score": 7,
+          "icp_type": "RE_DEVELOPER_OPERATOR",
+          "website": "https://osmington.com"
+        },
+        {
           "name": "PIMCO Prime Real Estate",
           "lead_count": 1,
           "fit_score": 8,
@@ -648,6 +431,13 @@
           "website": "https://spiraequitypartners.com"
         },
         {
+          "name": "Thor Equities Group",
+          "lead_count": 1,
+          "fit_score": 7,
+          "icp_type": "RE_DEVELOPER_OPERATOR",
+          "website": "https://thorequities.com"
+        },
+        {
           "name": "Trammell Crow Residential",
           "lead_count": 1,
           "fit_score": 7,
@@ -660,6 +450,13 @@
           "fit_score": 8,
           "icp_type": "REAL_ESTATE_PRIVATE_EQUITY",
           "website": "https://unicoprop.com"
+        },
+        {
+          "name": "Wealhouse Capital Management",
+          "lead_count": 1,
+          "fit_score": 6,
+          "icp_type": "REAL_ESTATE_PRIVATE_EQUITY",
+          "website": "https://wealhouse.com"
         }
       ],
       "missing_website": []
