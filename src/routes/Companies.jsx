@@ -588,7 +588,7 @@ function Companies() {
             'Summary', 'Executive Summary', 'General Overview', 'Company Overview', 'Overview',
             'Investment Strategy', 'Investment Approach', 'Strategy',
             'Scale & Geographic Focus', 'Scale', 'Geography', 'Geographic Focus', 'AUM', 'Scale & Geography',
-            'Portfolio Observations', 'Portfolio', 'Deal History', 'Recent Transactions', 'Investments', 'Portfolio Highlights',
+            'Portfolio Observations', 'Portfolio', 'Deal History', 'Recent Transactions', 'Investments', 'Portfolio Highlights', 'Portfolio Overview', 'Transaction History', 'Key Deals',
             'Key Highlights', 'Highlights', 'Key People', 'Management Team', 'Team',
             'Fit Analysis', 'Strategic Fit', 'Fit Score', 'Fit'
         ];
@@ -1271,7 +1271,7 @@ function Companies() {
                                                 </div>
                                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                                     {(companyLeads[company.name] || []).map((lead) => {
-                                                        const initials = lead.personName?.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || '?'
+                                                        const initials = lead.person_name?.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || '?'
                                                         return (
                                                             <div key={lead.id} className="group/lead relative flex flex-col p-6 bg-white/[0.03] backdrop-blur-md border border-white/[0.08] rounded-3xl hover:bg-white/[0.07] hover:border-purple-500/30 transition-all duration-500 shadow-2xl shadow-black/40">
                                                                 <div className="absolute top-0 right-0 p-6 opacity-10 group-hover/lead:opacity-30 transition-opacity">
@@ -1283,9 +1283,9 @@ function Companies() {
                                                                         <span className="text-white font-black text-sm tracking-tighter">{initials}</span>
                                                                     </div>
                                                                     <div className="flex items-center gap-2">
-                                                                        {lead.linkedinUrl && (
+                                                                        {lead.linkedin_url && (
                                                                             <a
-                                                                                href={lead.linkedinUrl}
+                                                                                href={lead.linkedin_url}
                                                                                 target="_blank"
                                                                                 rel="noreferrer"
                                                                                 className="p-2.5 bg-white/5 rounded-xl text-gray-400 hover:text-white hover:bg-purple-500/30 transition-all border border-white/5 shadow-inner"
@@ -1296,8 +1296,8 @@ function Companies() {
                                                                     </div>
                                                                 </div>
                                                                 <div className="min-w-0 relative z-10">
-                                                                    <h4 className="font-bold text-white text-lg tracking-tight truncate mb-1">{lead.personName}</h4>
-                                                                    <p className="text-[10px] font-black text-purple-400 uppercase tracking-[0.2em] truncate mb-6">{lead.jobTitle || 'Business Leader'}</p>
+                                                                    <h4 className="font-bold text-white text-lg tracking-tight truncate mb-1">{lead.person_name}</h4>
+                                                                    <p className="text-[10px] font-black text-purple-400 uppercase tracking-[0.2em] truncate mb-6">{lead.job_title || 'Business Leader'}</p>
                                                                 </div>
                                                                 {lead.email && (
                                                                     <a
