@@ -1032,7 +1032,7 @@ app.post('/api/agent-prompts', requireAuth, async (req, res) => {
 
 import OpenAI from 'openai'
 import { Runner } from "@openai/agents";
-import { OutreachService } from "./src/backend/services/outreach-service.js";
+
 import { createOutreachAgent } from "./src/backend/agent-setup.js";
 
 const openai = new OpenAI({
