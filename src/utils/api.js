@@ -78,6 +78,16 @@ export const enrichLead = async (id) => {
   return data
 }
 
+export const regenerateLead = async (id) => {
+  const { data } = await client.post(`/api/leads/${id}/regenerate`)
+  return data
+}
+
+export const deepEnrichLead = async (id) => {
+  const { data } = await client.post(`/api/leads/${id}/deep-enrich`)
+  return data
+}
+
 // --- WORKFLOWS ---
 
 export const startWorkflow = async (prompt, agentConfigs) => {

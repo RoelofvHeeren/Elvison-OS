@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import PropTypes from 'prop-types'
-import { Trash2 } from 'lucide-react'
+import { Trash2, Building2, Search, RefreshCw } from 'lucide-react'
 
 const columns = [
   { key: 'select', label: '', width: 'w-16' },
@@ -9,18 +9,20 @@ const columns = [
   { key: 'name', label: 'Name', width: 'w-40' },
   { key: 'title', label: 'Title', width: 'w-56' },
   { key: 'company', label: 'Company', width: 'w-44' },
+  { key: 'status', label: 'Status', width: 'w-24' },
   { key: 'email', label: 'Email', width: 'w-56' },
   { key: 'phone', label: 'Phone', width: 'w-40' },
   { key: 'linkedin', label: 'LinkedIn', width: 'w-24' },
-
-  { key: 'website', label: 'Company Website', width: 'w-28' },
+  { key: 'website', label: 'Website', width: 'w-24' },
+  { key: 'reason', label: 'Reason', width: 'w-48' },
+  { key: 'researchFact', label: 'Research Fact', width: 'w-64' },
   { key: 'connectionRequest', label: 'Connection Request', width: 'min-w-[20rem]' },
   { key: 'emailMessage', label: 'Email Message', width: 'min-w-[20rem]' },
   { key: 'companyProfile', label: 'Company Profile', width: 'min-w-[24rem]' },
   { key: 'actions', label: '', width: 'w-10' },
 ]
 
-const SheetTable = ({ rows, loading, error, onDeleteRow, onEnrichRow, selectedLeads, onToggleSelection, onToggleSelectAll, selectAll }) => {
+const SheetTable = ({ rows, loading, error, onDeleteRow, onEnrichRow, onDeepEnrichRow, onRegenerateRow, selectedLeads, onToggleSelection, onToggleSelectAll, selectAll }) => {
   const [editingCell, setEditingCell] = useState(null)
   const [editValue, setEditValue] = useState('')
 
@@ -30,7 +32,6 @@ const SheetTable = ({ rows, loading, error, onDeleteRow, onEnrichRow, selectedLe
   }
 
   const handleCellBlur = () => {
-    // Here you would save the edited value to the backend
     setEditingCell(null)
   }
 
@@ -97,9 +98,10 @@ const SheetTable = ({ rows, loading, error, onDeleteRow, onEnrichRow, selectedLe
             ) : (
               rows.map((row, idx) => (
                 <tr
-                  key={`${row.email}-${idx}`}
+                  key={`${row.id}-${idx}`}
                   className="transition-all duration-200 hover:bg-white/5 group"
                 >
+                  {/* Select */}
                   <td className="px-4 py-3.5">
                     <input
                       type="checkbox"
@@ -108,8 +110,14 @@ const SheetTable = ({ rows, loading, error, onDeleteRow, onEnrichRow, selectedLe
                       className="w-4 h-4 rounded border-gray-600 bg-black/20 text-teal-500 focus:ring-teal-500 cursor-pointer"
                     />
                   </td>
+
+                  {/* Index */}
                   <td className="px-4 py-3.5 text-xs text-gray-500 font-mono">{row.originalIndex || (idx + 1)}</td>
+
+                  {/* Date */}
                   <td className="px-4 py-3.5 text-xs font-medium text-gray-400">{row.date || '—'}</td>
+
+                  {/* Name */}
                   <td
                     className="px-4 py-3.5 text-sm font-semibold text-white tracking-tight cursor-text"
                     onClick={() => handleCellClick(idx, 'name', row.name)}
@@ -127,40 +135,30 @@ const SheetTable = ({ rows, loading, error, onDeleteRow, onEnrichRow, selectedLe
                       row.name || '—'
                     )}
                   </td>
-                  <td
-                    className="px-4 py-3.5 text-xs text-gray-400 cursor-text"
-                    onClick={() => handleCellClick(idx, 'title', row.title)}
-                  >
-                    {editingCell?.rowIdx === idx && editingCell?.colKey === 'title' ? (
-                      <input
-                        type="text"
-                        value={editValue}
-                        onChange={(e) => setEditValue(e.target.value)}
-                        onBlur={handleCellBlur}
-                        autoFocus
-                        className="w-full bg-black/40 border border-teal-500 rounded px-2 py-1 text-xs text-white"
-                      />
-                    ) : (
-                      row.title || '—'
-                    )}
+
+                  {/* Title */}
+                  <td className="px-4 py-3.5 text-xs text-gray-400 truncate max-w-[12rem]">{row.title || '—'}</td>
+
+                  {/* Company */}
+                  <td className="px-4 py-3.5 text-xs font-bold text-gray-300">
+                    <div className="flex items-center gap-2">
+                      <Building2 className="w-3 h-3 text-teal-500/50" />
+                      {row.company || '—'}
+                    </div>
                   </td>
-                  <td
-                    className="px-4 py-3.5 text-xs text-gray-400 cursor-text"
-                    onClick={() => handleCellClick(idx, 'company', row.company)}
-                  >
-                    {editingCell?.rowIdx === idx && editingCell?.colKey === 'company' ? (
-                      <input
-                        type="text"
-                        value={editValue}
-                        onChange={(e) => setEditValue(e.target.value)}
-                        onBlur={handleCellBlur}
-                        autoFocus
-                        className="w-full bg-black/40 border border-teal-500 rounded px-2 py-1 text-xs text-white"
-                      />
-                    ) : (
-                      row.company || '—'
-                    )}
+
+                  {/* Status */}
+                  <td className="px-4 py-3.5">
+                    <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border shadow-sm ${row.status === 'SUCCESS' ? 'bg-teal-500/20 text-teal-400 border-teal-500/30' :
+                      row.status === 'SKIP' ? 'bg-rose-500/20 text-rose-400 border-rose-500/30' :
+                        row.status === 'NEEDS_RESEARCH' ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' :
+                          'bg-gray-500/20 text-gray-400 border-gray-500/30'
+                      }`}>
+                      {row.status}
+                    </span>
                   </td>
+
+                  {/* Email */}
                   <td className="px-4 py-3.5 text-xs text-gray-400">
                     {row.email ? (
                       <a
@@ -169,15 +167,15 @@ const SheetTable = ({ rows, loading, error, onDeleteRow, onEnrichRow, selectedLe
                       >
                         {row.email}
                       </a>
-                    ) : (
-                      '—'
-                    )}
+                    ) : ('—')}
                   </td>
+
+                  {/* Phone */}
                   <td className="px-4 py-3.5 text-xs text-gray-400">
                     {row.phoneNumbers && row.phoneNumbers.length > 0 ? (
                       <div className="flex flex-col gap-1">
-                        {row.phoneNumbers.map((p, idx) => (
-                          <span key={idx} className="block font-mono text-[10px] bg-white/10 text-gray-300 px-1.5 py-0.5 rounded w-fit">
+                        {row.phoneNumbers.map((p, pIdx) => (
+                          <span key={pIdx} className="block font-mono text-[10px] bg-white/10 text-gray-300 px-1.5 py-0.5 rounded w-fit">
                             {p.sanitized_number} ({p.type})
                           </span>
                         ))}
@@ -194,34 +192,42 @@ const SheetTable = ({ rows, loading, error, onDeleteRow, onEnrichRow, selectedLe
                       </button>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-gray-400">
+
+                  {/* LinkedIn */}
+                  <td className="px-4 py-3 text-gray-400 text-xs">
                     {row.linkedin ? (
-                      <a
-                        href={row.linkedin}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-teal-400 underline decoration-teal-500 decoration-2 underline-offset-2 hover:text-teal-300 transition-colors"
-                      >
+                      <a href={row.linkedin} target="_blank" rel="noreferrer" className="text-teal-400 hover:text-teal-300 underline underline-offset-4">
                         Profile
                       </a>
-                    ) : (
-                      '—'
-                    )}
+                    ) : '—'}
                   </td>
-                  <td className="px-4 py-3 text-gray-400">
+
+                  {/* Website */}
+                  <td className="px-4 py-3 text-gray-400 text-xs text-center">
                     {row.website ? (
-                      <a
-                        href={formatWebsiteUrl(row.website)}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-teal-400 underline decoration-teal-500 decoration-2 underline-offset-2 hover:text-teal-300 transition-colors"
-                      >
+                      <a href={formatWebsiteUrl(row.website)} target="_blank" rel="noreferrer" className="text-gray-500 hover:text-teal-400 transition-colors">
                         Visit
                       </a>
+                    ) : '—'}
+                  </td>
+
+                  {/* Reason */}
+                  <td className="px-4 py-3.5 text-[11px] text-gray-400 max-w-[12rem] truncate" title={row.reason}>
+                    {row.reason || '—'}
+                  </td>
+
+                  {/* Research Fact */}
+                  <td className="px-4 py-3.5">
+                    {row.researchFact ? (
+                      <div className="max-w-[16rem] italic text-[11px] text-gray-300 leading-snug truncate" title={row.researchFact}>
+                        "{row.researchFact}"
+                      </div>
                     ) : (
-                      '—'
+                      <span className="text-gray-600 text-[11px]">No fact found</span>
                     )}
                   </td>
+
+                  {/* Connection Request */}
                   <td
                     className="px-4 py-3.5 text-xs text-gray-400 cursor-text"
                     onClick={() => handleCellClick(idx, 'connectionRequest', row.connectionRequest)}
@@ -236,18 +242,13 @@ const SheetTable = ({ rows, loading, error, onDeleteRow, onEnrichRow, selectedLe
                         className="w-full bg-black/40 border border-teal-500 rounded px-2 py-1 text-xs text-white resize-none"
                       />
                     ) : (
-                      <div className="relative group/cell cursor-pointer">
-                        <div className="max-w-xs line-clamp-3 text-[11px] leading-relaxed text-gray-300">
-                          {renderFormattedText(row.connectionRequest)}
-                        </div>
-                        {row.connectionRequest?.length > 50 && (
-                          <span className="text-[10px] text-teal-400 font-bold opacity-0 group-hover/cell:opacity-100 transition-opacity absolute -bottom-1 right-0 bg-black/80 px-1 shadow-sm border border-white/10 rounded">
-                            Click to edit
-                          </span>
-                        )}
+                      <div className="max-w-xs line-clamp-3 text-[11px] text-gray-300 leading-relaxed">
+                        {renderFormattedText(row.connectionRequest)}
                       </div>
                     )}
                   </td>
+
+                  {/* Email Message */}
                   <td
                     className="px-4 py-3.5 text-xs text-gray-400 cursor-text"
                     onClick={() => handleCellClick(idx, 'emailMessage', row.emailMessage)}
@@ -262,18 +263,13 @@ const SheetTable = ({ rows, loading, error, onDeleteRow, onEnrichRow, selectedLe
                         className="w-full bg-black/40 border border-teal-500 rounded px-2 py-1 text-xs text-white resize-none"
                       />
                     ) : (
-                      <div className="relative group/cell cursor-pointer">
-                        <div className="max-w-xs line-clamp-3 text-[11px] leading-relaxed text-gray-300">
-                          {renderFormattedText(row.emailMessage)}
-                        </div>
-                        {row.emailMessage?.length > 50 && (
-                          <span className="text-[10px] text-teal-400 font-bold opacity-0 group-hover/cell:opacity-100 transition-opacity absolute -bottom-1 right-0 bg-black/80 px-1 shadow-sm border border-white/10 rounded">
-                            Click to edit
-                          </span>
-                        )}
+                      <div className="max-w-xs line-clamp-3 text-[11px] text-gray-300 leading-relaxed">
+                        {renderFormattedText(row.emailMessage)}
                       </div>
                     )}
                   </td>
+
+                  {/* Company Profile */}
                   <td
                     className="px-4 py-3.5 text-xs text-gray-400 cursor-text"
                     onClick={() => handleCellClick(idx, 'companyProfile', row.companyProfile)}
@@ -288,66 +284,67 @@ const SheetTable = ({ rows, loading, error, onDeleteRow, onEnrichRow, selectedLe
                         className="w-full bg-black/40 border border-teal-500 rounded px-2 py-1 text-xs text-white resize-none"
                       />
                     ) : (
-                      <div className="relative group/cell cursor-pointer">
-                        <div className="max-w-md line-clamp-4 text-[11px] leading-relaxed text-gray-300">
-                          {renderFormattedText(row.companyProfile)}
-                        </div>
-                        {row.companyProfile?.length > 60 && (
-                          <span className="text-[10px] text-teal-400 font-bold opacity-0 group-hover/cell:opacity-100 transition-opacity absolute -bottom-1 right-0 bg-black/80 px-1 shadow-sm border border-white/10 rounded">
-                            Click to edit
-                          </span>
-                        )}
+                      <div className="max-w-md line-clamp-4 text-[11px] text-gray-300 leading-relaxed">
+                        {renderFormattedText(row.companyProfile)}
                       </div>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-gray-400 flex items-center justify-center">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        if (onDeleteRow) onDeleteRow(row.id)
-                      }}
-                      className="text-gray-500 hover:text-rose-400 transition-colors p-1"
-                      title="Delete Lead"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+
+                  {/* Actions */}
+                  <td className="px-4 py-3 text-gray-400">
+                    <div className="flex items-center gap-2">
+                      {row.status === 'SKIP' && (
+                        <button
+                          onClick={() => onDeepEnrichRow(row.id)}
+                          className="p-1.5 rounded-lg bg-teal-500/10 text-teal-400 hover:bg-teal-500/20 transition-all"
+                          title="Deep Research"
+                        >
+                          <Search className="w-4 h-4" />
+                        </button>
+                      )}
+                      {row.status === 'NEEDS_RESEARCH' && (
+                        <button
+                          onClick={() => onRegenerateRow(row.id)}
+                          className="p-1.5 rounded-lg bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 transition-all"
+                          title="Regenerate Outreach"
+                        >
+                          <RefreshCw className="w-4 h-4" />
+                        </button>
+                      )}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (onDeleteRow) onDeleteRow(row.id)
+                        }}
+                        className="p-1.5 text-gray-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-all"
+                        title="Delete Lead"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))
             )}
           </tbody>
-        </table >
-      </div >
-    </div >
+        </table>
+      </div>
+    </div>
   )
 }
 
 SheetTable.propTypes = {
-  rows: PropTypes.arrayOf(
-    PropTypes.shape({
-      originalIndex: PropTypes.number,
-      date: PropTypes.string,
-      name: PropTypes.string,
-      title: PropTypes.string,
-      company: PropTypes.string,
-      email: PropTypes.string,
-      linkedin: PropTypes.string,
-      website: PropTypes.string,
-      connectionRequest: PropTypes.string,
-      emailMessage: PropTypes.string,
-      companyProfile: PropTypes.string,
-    }),
-  ),
+  rows: PropTypes.arrayOf(PropTypes.any),
   loading: PropTypes.bool,
   error: PropTypes.string,
   onDeleteRow: PropTypes.func,
   onEnrichRow: PropTypes.func,
-}
-
-SheetTable.defaultProps = {
-  rows: [],
-  loading: false,
-  error: '',
+  onDeepEnrichRow: PropTypes.func,
+  onRegenerateRow: PropTypes.func,
+  selectedLeads: PropTypes.any,
+  onToggleSelection: PropTypes.func,
+  onToggleSelectAll: PropTypes.func,
+  selectAll: PropTypes.bool,
 }
 
 export default SheetTable

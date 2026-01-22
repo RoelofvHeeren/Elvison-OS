@@ -48,13 +48,17 @@ const getCurrentStage = (logs, status) => {
     if (status === 'COMPLETED') return 'complete'
     if (status === 'FAILED') return 'error'
 
-    const lastLog = logs[logs.length - 1]
-    const lastStep = lastLog?.step || ''
+    // Iterate BACKWARDS to find the most recent meaningful stage
+    // (Skipping "System" logs that might happen in between)
+    for (let i = logs.length - 1; i >= 0; i--) {
+        const logStep = logs[i]?.step || ''
 
-    // Find matching stage
-    for (const stage of STAGE_DEFINITIONS) {
-        if (stage.matchSteps.some(step => lastStep.includes(step))) {
-            return stage.id
+        // Find matching stage
+        for (const stage of STAGE_DEFINITIONS) {
+            // Check provided match steps
+            if (stage.matchSteps.some(step => logStep.includes(step))) {
+                return stage.id
+            }
         }
     }
 

@@ -239,6 +239,7 @@ export const runAgentWorkflow = async (input, config) => {
                     if (finder.excluded_industries) companyContext.excludedIndustries = finder.excluded_industries;
                     if (finder.icp_description) companyContext.icpDescription = finder.icp_description;
                     if (finder.strictness) companyContext.strictness = finder.strictness;
+                    if (finder.depth) companyContext.depth = finder.depth;
                 }
 
                 // Read Outreach Creator settings (NEW)

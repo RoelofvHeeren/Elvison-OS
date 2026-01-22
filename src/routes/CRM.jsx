@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { CalendarDays, Building2, RefreshCw, Trash2, Upload, Filter, Target, Loader, Check, Search, ChevronLeft, ChevronRight, Download, Users } from 'lucide-react'
 import SheetTable from '../components/SheetTable'
 import ImportModal from '../components/ImportModal'
-import { fetchLeads, deleteLead, approveLead, fetchAllLeadIds, fetchRuns, fetchHealth } from '../utils/api'
+import { fetchLeads, deleteLead, approveLead, fetchAllLeadIds, fetchRuns, fetchHealth, enrichLead, regenerateLead, deepEnrichLead } from '../utils/api'
 import OutreachModal from '../components/OutreachModal'
 import { useIcp } from '../context/IcpContext'
 
@@ -92,7 +92,10 @@ function CRM() {
           emailMessage: lead.email_body || details.email_message || '',
           companyProfile: lead.company_profile_text || details.company_profile || '',
           phoneNumbers: lead.phone_numbers || [],
-          icpId: lead.icp_id || '', // NEW: ICP ID
+          icpId: lead.icp_id || '',
+          status: lead.outreach_status || 'pending',
+          reason: lead.outreach_reason || '',
+          researchFact: lead.research_fact || '',
         };
       })
 
@@ -122,13 +125,40 @@ function CRM() {
 
   const handleEnrichRow = async (id) => {
     try {
-      // Optimistic update or just spinner could be handled in table, but here we reload
       setLoading(true)
-      await import('../utils/api').then(mod => mod.enrichLead(id))
+      await enrichLead(id)
       await fetchRows()
     } catch (err) {
       console.error(err)
       setError('Failed to enrich row')
+      setLoading(false)
+    }
+  }
+
+  const handleRegenerateRow = async (id) => {
+    try {
+      setLoading(true)
+      await regenerateLead(id)
+      await fetchRows()
+    } catch (err) {
+      console.error(err)
+      setError('Failed to regenerate lead')
+      setLoading(false)
+    }
+  }
+
+  const handleDeepEnrichRow = async (id) => {
+    try {
+      setLoading(true)
+      const data = await deepEnrichLead(id)
+      if (data.status === 'success') {
+        // Automatically trigger regeneration after deep enrichment
+        await regenerateLead(id)
+      }
+      await fetchRows()
+    } catch (err) {
+      console.error(err)
+      setError('Deep enrichment failed')
       setLoading(false)
     }
   }
@@ -581,6 +611,8 @@ function CRM() {
           error={error}
           onDeleteRow={handleDeleteRow}
           onEnrichRow={handleEnrichRow}
+          onDeepEnrichRow={handleDeepEnrichRow}
+          onRegenerateRow={handleRegenerateRow}
           selectedLeads={selectedLeads}
           onToggleSelection={toggleLeadSelection}
           onToggleSelectAll={toggleSelectAll}
