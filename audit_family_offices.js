@@ -1,9 +1,12 @@
 /**
- * Family Office Audit & Cleanup Script
+ * Family Office Audit & Reclassification Script (Non-Destructive)
  * 
  * Usage: 
- *   node audit_family_offices.js --dry-run  (View what would be removed)
- *   node audit_family_offices.js --execute  (Actually set status='DISQUALIFIED')
+ *   node audit_family_offices.js --dry-run  (View what would be reclassified)
+ *   node audit_family_offices.js --execute  (Actually update classifications and moves)
+ *   node audit_family_offices.js --report   (Generate audit report)
+ * 
+ * NEW BEHAVIOR: Reclassifies misclassified companies instead of deleting them
  */
 
 import pg from 'pg';
@@ -21,54 +24,54 @@ const pool = new Pool({
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY);
 const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
-// STRICT Family Office Validation Prompt
-const STRICT_FO_PROMPT = `
-You are a strict data auditor for a Real Estate Private Equity firm.
-Your task is to determine if the following company is a **TRUE Single Family Office (SFO)** or **Multi-Family Office (MFO)** that actively invests DIRECTLY in real estate/venture.
-
-We have a problem with "Wealth Managers", "Financial Advisors", "Investment Banks", and "Brokers" slipping through. 
-You must DISQUALIFY them.
+// SMART Family Office Validator (reclassifies instead of rejecting)
+const FO_VALIDATOR_PROMPT = `
+You are a data quality specialist for a real estate investment database.
+Your task: Classify what type of company this actually is.
 
 Company: {company_name}
 Domain: {domain}
-Description/Profile: {description}
+Profile: {description}
 
-**STRICT CRITERIA for PASS:**
-1. Must be a proprietary investment vehicle for a high-net-worth family or families.
-2. Must have language indicating "direct investment", "private capital", "proprietary capital", or "family investment vehicle".
-3. OR be a strictly defined Multi-Family Office that manages *direct* investments (not just asset allocation/advisory).
-
-**CRITERIA for FAIL (DISQUALIFY):**
-- Wealth Management / Wealth Advisory (unless they explicitly state they have a direct RE investment arm)
-- Financial Planning / Tax Services
-- Investment Banking / Brokerage
-- General Private Equity (unless it's a known family vehicle)
-- Real Estate Developer (unless they have a distinct family office arm)
-
-**OUTPUT FORMAT (JSON ONLY):**
+Output ONLY valid JSON:
 {
-    "is_family_office": boolean,
-    "confidence": number (1-10),
-    "reason": "Short explanation of why it passed or failed",
-    "classification": "SFO" | "MFO" | "Wealth Manager" | "Advisor" | "Other"
+    "entity_type": "FAMILY_OFFICE" | "WEALTH_MANAGER" | "INVESTMENT_FUND" | "OPERATOR" | "UNKNOWN",
+    "entity_subtype": "SFO" | "MFO" | "RIA" | "PRIVATE_EQUITY" | "PENSION" | "UNKNOWN",
+    "confidence": 0-10,
+    "reasoning": "Why this classification",
+    "action": "KEEP" | "REVIEW" | "REJECT",
+    "suggested_icp": "FAMILY_OFFICE" | "INVESTMENT_FUND" | "OPERATOR" | "OTHER"
 }
+
+RULES:
+- FAMILY_OFFICE: Proprietary family capital, direct investment
+- WEALTH_MANAGER: Advisory, manages client assets
+- INVESTMENT_FUND: Third-party capital deployment
+- OPERATOR: Real estate developer/operator
+- UNKNOWN: Insufficient info
+
+ACTION:
+- KEEP: High confidence FO, no issues
+- REVIEW: Ambiguous but potentially valuable
+- REJECT: Clearly wrong entity type
 `;
 
 async function audit() {
     const args = process.argv.slice(2);
     const executeMode = args.includes('--execute');
+    const reportMode = args.includes('--report');
 
-    if (!args.includes('--dry-run') && !executeMode) {
-        console.log("⚠️  Please specify mode: --dry-run or --execute");
+    if (!args.includes('--dry-run') && !executeMode && !reportMode) {
+        console.log("⚠️  Please specify mode: --dry-run, --execute, or --report");
         process.exit(1);
     }
 
     try {
         console.log("🔍 Finding 'Family Office' ICPs...");
-        const icpRes = await pool.query(`SELECT id, name FROM icps WHERE name ILIKE '%Family Office%'`);
+        const icpRes = await pool.query(`SELECT id, name, icp_category FROM icps WHERE icp_category = 'FAMILY_OFFICE' OR name ILIKE '%Family Office%'`);
 
         if (icpRes.rows.length === 0) {
-            console.log("No ICPs found with 'Family Office' in the name.");
+            console.log("❌ No Family Office ICPs found.");
             process.exit(0);
         }
 
@@ -76,26 +79,41 @@ async function audit() {
         console.log(`Found ICPs: ${icpRes.rows.map(r => r.name).join(', ')}`);
 
         // Fetch leads/companies associated with these ICPs
-        // Using 'leads' table as primary source
         const leadsRes = await pool.query(`
-            SELECT id, company_name, custom_data 
-            FROM leads 
-            WHERE icp_id = ANY($1) 
-            AND status != 'DISQUALIFIED'
-            ORDER BY created_at DESC
+            SELECT DISTINCT l.id, l.company_name, l.custom_data, c.entity_type, c.fo_status
+            FROM leads l
+            LEFT JOIN companies c ON l.company_name = c.company_name
+            WHERE l.icp_id = ANY($1) 
+            AND l.status != 'DISQUALIFIED'
+            ORDER BY l.created_at DESC
         `, [icpIds]);
 
         console.log(`\n📋 Reviewing ${leadsRes.rows.length} active leads...`);
 
-        let stats = { kept: 0, disqualified: 0, errors: 0 };
+        let stats = { 
+            kept: 0, 
+            reviewed: 0, 
+            reclassified_wm: 0,
+            reclassified_fund: 0,
+            reclassified_op: 0,
+            rejected: 0, 
+            errors: 0 
+        };
 
         for (const lead of leadsRes.rows) {
             const companyName = lead.company_name;
-            const domain = lead.custom_data?.company_domain || 'N/A';
-            const profile = lead.custom_data?.company_profile || lead.custom_data?.description || '';
+            let details = {};
+            if (typeof lead.custom_data === 'string') {
+                try { details = JSON.parse(lead.custom_data); } catch (e) { }
+            } else {
+                details = lead.custom_data || {};
+            }
 
-            // Run Strict Validation
-            const prompt = STRICT_FO_PROMPT
+            const domain = details.company_domain || 'N/A';
+            const profile = details.company_profile || details.description || '';
+
+            // Run Classification
+            const prompt = FO_VALIDATOR_PROMPT
                 .replace('{company_name}', companyName)
                 .replace('{domain}', domain)
                 .replace('{description}', profile.substring(0, 1000));
@@ -105,24 +123,92 @@ async function audit() {
                 const text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
                 const analysis = JSON.parse(text);
 
-                const isPass = analysis.is_family_office === true;
-                const icon = isPass ? '✅' : '❌';
+                // Determine action
+                const icon = analysis.action === 'KEEP' ? '✅' : analysis.action === 'REVIEW' ? '⚠️ ' : '❌';
+                console.log(`${icon} ${companyName.padEnd(30)} [${analysis.entity_type}] -> ${analysis.action}`);
+                
+                if (analysis.action !== 'KEEP') {
+                    console.log(`    Reason: ${analysis.reasoning}`);
+                }
 
-                console.log(`${icon} ${companyName.padEnd(30)} [${analysis.classification}] ${isPass ? '' : '-> DISQUALIFY'}`);
-                if (!isPass) console.log(`    Reason: ${analysis.reason}`);
-
-                if (!isPass) {
-                    stats.disqualified++;
-                    if (executeMode) {
+                // Execute actions
+                if (executeMode) {
+                    if (analysis.action === 'KEEP') {
+                        // Mark as approved
                         await pool.query(`
-                            UPDATE leads 
-                            SET status = 'DISQUALIFIED', 
-                                custom_data = jsonb_set(custom_data, '{audit_reason}', to_jsonb($1::text))
-                            WHERE id = $2
-                        `, [analysis.reason, lead.id]);
+                            UPDATE companies 
+                            SET entity_type = $1, 
+                                entity_subtype = $2, 
+                                entity_confidence = $3,
+                                entity_reason = $4,
+                                fo_status = 'APPROVED',
+                                last_updated = NOW()
+                            WHERE company_name = $5
+                        `, [analysis.entity_type, analysis.entity_subtype, analysis.confidence / 10, analysis.reasoning, companyName]);
+                        stats.kept++;
+                    } 
+                    else if (analysis.action === 'REVIEW') {
+                        // Mark for review
+                        await pool.query(`
+                            UPDATE companies 
+                            SET entity_type = $1, 
+                                entity_subtype = $2, 
+                                entity_confidence = $3,
+                                entity_reason = $4,
+                                fo_status = 'REVIEW',
+                                last_updated = NOW()
+                            WHERE company_name = $5
+                        `, [analysis.entity_type, analysis.entity_subtype, analysis.confidence / 10, analysis.reasoning, companyName]);
+                        stats.reviewed++;
                     }
-                } else {
-                    stats.kept++;
+                    else if (analysis.action === 'REJECT') {
+                        // Move to correct ICP based on entity type
+                        if (analysis.entity_type === 'WEALTH_MANAGER') {
+                            // Find or create wealth manager ICP
+                            const wmIcpRes = await pool.query(
+                                `SELECT id FROM icps WHERE icp_category = 'OTHER' AND name ILIKE '%wealth%' LIMIT 1`
+                            );
+                            if (wmIcpRes.rows.length > 0) {
+                                await pool.query(
+                                    `UPDATE leads SET icp_id = $1 WHERE company_name = $2 AND icp_id = ANY($3)`,
+                                    [wmIcpRes.rows[0].id, companyName, icpIds]
+                                );
+                                stats.reclassified_wm++;
+                            } else {
+                                stats.rejected++;
+                            }
+                        } 
+                        else if (analysis.entity_type === 'INVESTMENT_FUND') {
+                            const fundIcpRes = await pool.query(
+                                `SELECT id FROM icps WHERE icp_category = 'INVESTMENT_FUND' LIMIT 1`
+                            );
+                            if (fundIcpRes.rows.length > 0) {
+                                await pool.query(
+                                    `UPDATE leads SET icp_id = $1 WHERE company_name = $2 AND icp_id = ANY($3)`,
+                                    [fundIcpRes.rows[0].id, companyName, icpIds]
+                                );
+                                stats.reclassified_fund++;
+                            } else {
+                                stats.rejected++;
+                            }
+                        }
+                        else if (analysis.entity_type === 'OPERATOR') {
+                            const opIcpRes = await pool.query(
+                                `SELECT id FROM icps WHERE icp_category = 'OPERATOR' LIMIT 1`
+                            );
+                            if (opIcpRes.rows.length > 0) {
+                                await pool.query(
+                                    `UPDATE leads SET icp_id = $1 WHERE company_name = $2 AND icp_id = ANY($3)`,
+                                    [opIcpRes.rows[0].id, companyName, icpIds]
+                                );
+                                stats.reclassified_op++;
+                            } else {
+                                stats.rejected++;
+                            }
+                        } else {
+                            stats.rejected++;
+                        }
+                    }
                 }
 
             } catch (err) {
@@ -135,12 +221,18 @@ async function audit() {
         }
 
         console.log("\n--- AUDIT COMPLETE ---");
-        console.log(`Kept: ${stats.kept}`);
-        console.log(`Disqualified: ${stats.disqualified}`);
+        console.log(`Kept (FO Approved): ${stats.kept}`);
+        console.log(`Under Review: ${stats.reviewed}`);
+        console.log(`Reclassified as Wealth Manager: ${stats.reclassified_wm}`);
+        console.log(`Reclassified as Investment Fund: ${stats.reclassified_fund}`);
+        console.log(`Reclassified as Operator: ${stats.reclassified_op}`);
+        console.log(`Rejected: ${stats.rejected}`);
         console.log(`Errors: ${stats.errors}`);
 
         if (!executeMode) {
             console.log("\nℹ️  Run with --execute to apply changes.");
+        } else {
+            console.log("\n✅ Audit complete. Classifications updated.");
         }
 
     } catch (err) {

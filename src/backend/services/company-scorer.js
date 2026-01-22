@@ -80,15 +80,14 @@ export class CompanyScorer {
                             console.log(`⚠️  Company ${company.company_name} failed ${typeStr} check but passed ${otherTypeStr}. RESCUING...`);
 
                             // 2. Find the ID of the 'Other' ICP
-                            // We assume standard names based on the user's setup. 
-                            // Ideally we query this dynamically or pass map, but for now we look up by name pattern.
-                            const targetIcpName = isFamilyOffice ? 'fund' : 'family office';
+                            // Use icp_category instead of name matching for reliability
+                            const targetCategory = isFamilyOffice ? 'INVESTMENT_FUND' : 'FAMILY_OFFICE';
                             const { rows: targetIcps } = await query(`
                                 SELECT id FROM icps 
                                 WHERE user_id = $1 
-                                AND (name ILIKE $2 OR name ILIKE $3)
+                                AND (icp_category = $2 OR name ILIKE $3)
                                 LIMIT 1
-                             `, [company.user_id, `%${targetIcpName}%`, `%${targetIcpName.replace(' ', '%')}%`]);
+                             `, [company.user_id, targetCategory, `%${targetCategory.replace('_', '%')}%`]);
 
                             if (targetIcps.length > 0) {
                                 const newIcpId = targetIcps[0].id;
@@ -107,16 +106,25 @@ export class CompanyScorer {
                                     rescued_at: new Date().toISOString()
                                 }), company.user_id]);
 
-                                // 4. Update Company Type
-                                const newIcpType = isFamilyOffice ? 'ASSET_MANAGER_MULTI_STRATEGY' : 'FAMILY_OFFICE_SINGLE'; // Default approximations
+                                // 4. Update Company Type - PRESERVE FO classification, don't downgrade to ASSET_MANAGER
+                                let newIcpType = isFamilyOffice ? 'REAL_ESTATE_PRIVATE_EQUITY' : 'FAMILY_OFFICE_SINGLE';
+                                // If it's currently a FO, preserve that and just mark as REVIEW
+                                if (isFamilyOffice && (company.icp_type === 'FAMILY_OFFICE_SINGLE' || company.icp_type === 'FAMILY_OFFICE_MULTI')) {
+                                    // Keep the FO type, don't downgrade
+                                    newIcpType = company.icp_type;
+                                }
+                                
                                 await query(`
                                     UPDATE companies 
-                                    SET icp_type = $1, fit_score = $2, last_updated = NOW() 
-                                    WHERE company_name = $3 AND user_id = $4
-                                 `, [newIcpType, otherScoreData.fit_score, company.company_name, company.user_id]);
+                                    SET icp_type = $1, 
+                                        fit_score = $2, 
+                                        fo_status = $3,
+                                        last_updated = NOW() 
+                                    WHERE company_name = $4 AND user_id = $5
+                                 `, [newIcpType, otherScoreData.fit_score, 'REVIEW', company.company_name, company.user_id]);
 
                                 results.kept++;
-                                console.log(`✅ Rescued and moved to ICP ID: ${newIcpId}`);
+                                console.log(`✅ Rescued and moved to ICP ID: ${newIcpId} (Type preserved: ${newIcpType})`);
                                 return; // Skip the deletion block
                             } else {
                                 console.log(`could not find fallback ICP for ${otherTypeStr}, proceeding to delete...`);

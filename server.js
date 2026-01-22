@@ -2336,32 +2336,34 @@ app.get('/api/companies/export', requireAuth, async (req, res) => {
         `;
         const params = [req.userId];
 
-        // Apply same filters as main view
+        // Apply same filters as main view using icp_category (not name matching)
         if (icpId) {
-            const { rows: icpRows } = await query('SELECT name FROM icps WHERE id = $1', [icpId]);
-            const icpName = icpRows[0]?.name?.toLowerCase() || '';
+            const { rows: icpRows } = await query('SELECT icp_category FROM icps WHERE id = $1', [icpId]);
+            const icpCategory = icpRows[0]?.icp_category || 'OTHER';
 
-            if (icpName.includes('family office')) {
-                queryText += ` AND c.icp_type IN ('FAMILY_OFFICE_SINGLE', 'FAMILY_OFFICE_MULTI')`;
-            } else if (icpName.includes('fund') || icpName.includes('investment firm')) {
+            if (icpCategory === 'FAMILY_OFFICE') {
+                // Family office: filter by entity_type and fo_status
+                queryText += ` AND (c.entity_type = 'FAMILY_OFFICE' OR c.icp_type IN ('FAMILY_OFFICE_SINGLE', 'FAMILY_OFFICE_MULTI'))`;
+                queryText += ` AND (c.fo_status IN ('APPROVED', 'REVIEW') OR c.fo_status IS NULL)`;
+            } else if (icpCategory === 'INVESTMENT_FUND') {
+                // Investment fund: filter by investment fund types
                 queryText += ` AND (
-                     (
-                         c.icp_type IN (
-                             'REAL_ESTATE_PRIVATE_EQUITY', 
-                             'ASSET_MANAGER_MULTI_STRATEGY',
-                             'PENSION',
-                             'SOVEREIGN_WEALTH_FUND',
-                             'INSURANCE_INVESTOR',
-                             'REIT_PUBLIC',
-                             'INVESTMENT_MANAGER'
-                         )
-                         AND (c.fit_score IS NULL OR c.fit_score >= 4)
+                     c.entity_type IN ('INVESTMENT_FUND', 'PENSION', 'SOVEREIGN', 'REIT')
+                     OR c.icp_type IN (
+                         'REAL_ESTATE_PRIVATE_EQUITY', 
+                         'ASSET_MANAGER_MULTI_STRATEGY',
+                         'PENSION',
+                         'SOVEREIGN_WEALTH_FUND',
+                         'INSURANCE_INVESTOR',
+                         'REIT_PUBLIC',
+                         'INVESTMENT_MANAGER'
                      )
-                     OR (c.icp_type IS NULL) 
-                     OR (c.id IN (SELECT DISTINCT c2.id FROM companies c2 JOIN leads l2 ON c2.company_name = l2.company_name WHERE l2.icp_id = $${params.length + 1}))
                  )`;
-                // Only push param if we used the placeholder
-                if (queryText.includes(`$${params.length + 1}`)) params.push(icpId);
+                queryText += ` AND (c.fit_score IS NULL OR c.fit_score >= 4)`;
+            } else {
+                // Generic: filter by companies linked to this ICP through leads
+                queryText += ` AND c.id IN (SELECT DISTINCT c2.id FROM companies c2 JOIN leads l2 ON c2.company_name = l2.company_name WHERE l2.icp_id = $${params.length + 1})`;
+                params.push(icpId);
             }
         }
 
