@@ -14,7 +14,13 @@ const STAGE_DEFINITIONS = [
         id: 'searching',
         label: 'Company Search',
         description: 'Finding target companies...',
-        matchSteps: ['Company Profiler', 'Company Finder']
+        matchSteps: ['Company Finder']
+    },
+    {
+        id: 'profiling',
+        label: 'Company Profiling',
+        description: 'Analyzing companies...',
+        matchSteps: ['Company Profiler']
     },
     {
         id: 'finding_leads',

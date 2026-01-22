@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * Extract JSON from text - strips markdown fences
+ * Extract JSON from text - strips markdown fences and extra text
  * Duplicated here to ensure this module is self-contained for contract enforcement
  */
 function extractJson(text) {
@@ -9,10 +9,20 @@ function extractJson(text) {
     // Handle objects/arrays directly
     if (typeof text !== 'string') return JSON.stringify(text);
 
-    return text
-        .replace(/```json/g, "")
-        .replace(/```/g, "")
+    // Remove markdown code blocks
+    let cleaned = text
+        .replace(/```json\s*/g, "")
+        .replace(/```\s*/g, "")
         .trim();
+
+    // Try to find JSON object or array in the text
+    // Look for { ... } or [ ... ]
+    const jsonMatch = cleaned.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
+    if (jsonMatch) {
+        cleaned = jsonMatch[0];
+    }
+
+    return cleaned;
 }
 
 /**

@@ -684,7 +684,29 @@ export const runAgentWorkflow = async (input, config) => {
                 }
 
                 try {
-                    logStep('Company Profiler', `Analyzing ${candidate.companyName || candidate.company_name} (${candidate.domain})...`);
+                    // CRITICAL: Double-check against excluded list before profiling
+                    const candidateName = candidate.companyName || candidate.company_name;
+                    const candidateDomain = (candidate.domain || '').toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0].trim();
+
+                    // Check if already in excluded names
+                    const isExcludedByName = excludedNames.some(name =>
+                        name.toLowerCase() === candidateName.toLowerCase() ||
+                        normalizeCompanyName(name) === normalizeCompanyName(candidateName)
+                    );
+
+                    // Check if already in excluded domains
+                    const isExcludedByDomain = excludedDomains.some(exDomain => {
+                        const d = exDomain.toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0].trim();
+                        return d && candidateDomain && (d === candidateDomain || d.endsWith('.' + candidateDomain) || candidateDomain.endsWith('.' + d));
+                    });
+
+                    if (isExcludedByName || isExcludedByDomain) {
+                        logStep('Company Profiler', `⏭️ Skipping ${candidateName} (already in database)`);
+                        totalDisqualified++;
+                        continue;
+                    }
+
+                    logStep('Company Profiler', `Analyzing ${candidateName} (${candidate.domain})...`);
 
                     // 3a. SMART SCRAPING
                     let finalContent = "";
