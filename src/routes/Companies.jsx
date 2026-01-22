@@ -536,34 +536,40 @@ function Companies() {
         const normalizeHeader = (header) => {
             const lower = header.toLowerCase().trim();
 
-            // Summary variations
-            if (lower.includes('summary') || lower.includes('overview') || lower === 'about') {
-                return 'Summary';
+            // 1. Portfolio Observations (PRIORITY: Check first to prevent 'Portfolio Overview' matching 'Overview')
+            if (lower.includes('portfolio') || lower.includes('deal history') || lower.includes('deals') ||
+                lower.includes('transactions') || lower.includes('investments') || lower.includes('holdings') ||
+                lower.includes('transaction history') || lower.includes('key deals')) {
+                return 'Portfolio Observations';
             }
-            // Investment Strategy variations
+
+            // 2. Investment Strategy
             if (lower.includes('investment strategy') || lower.includes('investment approach') ||
-                lower.includes('strategy') && !lower.includes('fit')) {
+                (lower.includes('strategy') && !lower.includes('fit'))) {
                 return 'Investment Strategy';
             }
-            // Scale & Geographic Focus variations
+
+            // 3. Scale & Geographic Focus
             if (lower.includes('scale') || lower.includes('geographic') || lower.includes('geography') ||
                 lower.includes('aum') || lower.includes('assets under management') || lower.includes('locations')) {
                 return 'Scale & Geographic Focus';
             }
-            // Portfolio Observations variations
-            if (lower.includes('portfolio') || lower.includes('deal history') || lower.includes('deals') ||
-                lower.includes('transactions') || lower.includes('investments') || lower.includes('holdings')) {
-                return 'Portfolio Observations';
-            }
-            // Key Highlights variations
+
+            // 4. Key Highlights
             if (lower.includes('highlight') || lower.includes('key people') || lower.includes('management') ||
                 lower.includes('team') || lower.includes('leadership') || lower.includes('key facts')) {
                 return 'Key Highlights';
             }
-            // Fit Analysis variations
+
+            // 5. Fit Analysis
             if (lower.includes('fit') || lower.includes('analysis') || lower.includes('alignment') ||
                 lower.includes('match') || lower.includes('score')) {
                 return 'Fit Analysis';
+            }
+
+            // 6. Summary (Catch-all for Overview/About, check LAST)
+            if (lower.includes('summary') || lower.includes('overview') || lower === 'about' || lower.includes('about us')) {
+                return 'Summary';
             }
 
             return null; // Not a recognized section header
