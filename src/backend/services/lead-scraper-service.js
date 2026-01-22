@@ -148,16 +148,37 @@ export class LeadScraperService {
 
         console.log(`[ApolloDomain] Processing ${cleanDomains.length} domains in ${batches.length} batches (limit 10/run)...`);
 
-        // Run batches in parallel
+        // Run batches in parallel with Promise.allSettled (prevents one failure from breaking all)
         // Fix: Pass idempotencyKey with batch suffix to avoid collisions
-        const results = await Promise.all(batches.map((batch, index) => {
+        const batchPromises = batches.map((batch, index) => {
             const batchKey = idempotencyKey ? `${idempotencyKey}_batch_${index + 1}` : null;
             return this._runApolloBatch(batch, filters, index + 1, batchKey, checkCancellation);
-        }));
+        });
+
+        const results = await Promise.allSettled(batchPromises);
+
+        // Process results, handling both fulfilled and rejected promises
+        const successfulResults = [];
+        const failedBatches = [];
+
+        results.forEach((result, index) => {
+            if (result.status === 'fulfilled') {
+                successfulResults.push(result.value);
+            } else {
+                console.error(`[ApolloDomain] Batch ${index + 1} failed:`, result.reason?.message || result.reason);
+                failedBatches.push(index + 1);
+                // Push empty result so we don't lose other batches
+                successfulResults.push({ valid: [], disqualified: [] });
+            }
+        });
+
+        if (failedBatches.length > 0) {
+            logStep('Lead Finder', `⚠️ ${failedBatches.length} batch(es) failed: ${failedBatches.join(', ')}. Continuing with successful batches.`);
+        }
 
         // Aggregate results
-        const rawValid = results.flatMap(r => r.valid);
-        const rawDisqualified = results.flatMap(r => r.disqualified);
+        const rawValid = successfulResults.flatMap(r => r.valid);
+        const rawDisqualified = successfulResults.flatMap(r => r.disqualified);
 
         console.log(`[ApolloDomain] Retrieved ${rawValid.length} valid leads and ${rawDisqualified.length} disqualified.`);
 
