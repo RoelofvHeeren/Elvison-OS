@@ -13,6 +13,8 @@ import { OptimizationService } from './src/backend/optimizer.js'
 import { enrichLeadWithPhone } from './src/backend/workflow.js'
 import multer from 'multer'
 import { parse } from 'csv-parse/sync'
+import { OutreachService } from './src/backend/services/outreach-service.js'
+import { CompanyProfiler } from './src/backend/services/company-profiler.js'
 
 dotenv.config()
 
@@ -3548,6 +3550,9 @@ app.post('/api/agents/run', requireAuth, async (req, res) => {
         res.write(`event: run_id\ndata: ${JSON.stringify({ runId })} \n\n`)
         res.write(`event: log\ndata: { "step": "System", "detail": "Workflow initialized. Run ID: ${runId}", "timestamp": "${new Date().toISOString()}" } \n\n`)
 
+        // Immediate Keep-Alive / Feedback
+        res.write(`event: log\ndata: { "step": "System", "detail": "Preparing workflow resources (loading exclusion lists)...", "timestamp": "${new Date().toISOString()}" } \n\n`)
+
     } catch (err) {
         console.error('Failed to init run:', err)
         res.write(`event: error\ndata: { "message": "Database initialization failed: ${err.message}" } \n\n`)
@@ -4159,6 +4164,97 @@ app.post('/api/leads/:id/enrich-phone', requireAuth, async (req, res) => {
     } catch (err) {
         console.error('Enrichment failed:', err)
         res.status(500).json({ error: 'Enrichment failed' })
+    }
+})
+
+// Regenerate Lead Messages
+app.post('/api/leads/:id/regenerate', requireAuth, async (req, res) => {
+    const { id } = req.params
+    try {
+        // 1. Get Lead
+        const { rows } = await query('SELECT * FROM leads WHERE id = $1', [id])
+        if (rows.length === 0) return res.status(404).json({ error: 'Lead not found' })
+
+        const lead = rows[0]
+        let website = '';
+        try {
+            const cd = typeof lead.custom_data === 'string' ? JSON.parse(lead.custom_data) : (lead.custom_data || {});
+            website = cd.company_website || '';
+        } catch (e) { }
+
+        // 2. Call Outreach Service
+        console.log(`Regenerating messages for lead ${id}...`)
+        const result = await OutreachService.createLeadMessages({
+            id: lead.id,
+            company_name: lead.company_name,
+            company_profile: lead.company_profile,
+            website: website,
+            icp_type: '',
+        })
+
+        // 3. Update DB
+        const { rows: updatedRows } = await query(
+            `UPDATE leads 
+             SET 
+                outreach_status = $1,
+                outreach_reason = $2,
+                linkedin_message = $3,
+                email_body = $4,
+                research_fact = $5,
+                research_fact_type = $6,
+                profile_quality_score = $7,
+                message_version = $8,
+                updated_at = NOW() 
+             WHERE id = $9 RETURNING *`,
+            [
+                result.outreach_status,
+                result.outreach_reason,
+                result.linkedin_message,
+                result.email_body,
+                result.research_fact,
+                result.research_fact_type,
+                Math.round(result.profile_quality_score || 0),
+                'v5.1-UI',
+                id
+            ]
+        )
+
+        res.json({ success: true, lead: updatedRows[0] })
+    } catch (err) {
+        console.error('Regeneration failed:', err)
+        res.status(500).json({ error: 'Regeneration failed' })
+    }
+})
+
+// Deep Enrich Company (from Lead)
+app.post('/api/leads/:id/deep-enrich', requireAuth, async (req, res) => {
+    const { id } = req.params
+    try {
+        // 1. Get Lead
+        const { rows } = await query('SELECT * FROM leads WHERE id = $1', [id])
+        if (rows.length === 0) return res.status(404).json({ error: 'Lead not found' })
+
+        const lead = rows[0]
+        let domain = lead.company_domain || (lead.company_website ? lead.company_website : '');
+
+        if (!domain) {
+            // Try to extract from custom_data
+            try {
+                const cd = typeof lead.custom_data === 'string' ? JSON.parse(lead.custom_data) : (lead.custom_data || {});
+                domain = cd.company_website || '';
+            } catch (e) { }
+        }
+
+        if (!domain) return res.status(400).json({ error: 'Lead has no domain for enrichment' })
+
+        // 2. Call CompanyProfiler
+        console.log(`Deep enriching company for lead ${id} (${domain})...`)
+        const result = await CompanyProfiler.enrichByDomain(domain, lead.company_name)
+
+        res.json({ success: true, ...result })
+    } catch (err) {
+        console.error('Deep enrichment failed:', err)
+        res.status(500).json({ error: err.message || 'Deep enrichment failed' })
     }
 })
 
