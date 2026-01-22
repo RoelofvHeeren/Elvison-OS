@@ -317,6 +317,9 @@ export const runAgentWorkflow = async (input, config) => {
         const excludedNames = await getExcludedCompanyNames(userId);
         const excludedDomains = await getExcludedDomains(userId);
         const normalizedExcludedNames = new Set(excludedNames.map(normalizeCompanyName).filter(Boolean));
+
+        logStep('System', `📋 Loaded exclusion list: ${excludedNames.length} companies, ${excludedDomains.length} domains`);
+
         const leadScraper = new LeadScraperService();
         let masterQualifiedList = [];
         let totalDiscovered = 0;
@@ -537,11 +540,12 @@ export const runAgentWorkflow = async (input, config) => {
                                 const normName = normalizeCompanyName(name);
                                 const domain = (c.domain || '').toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0].trim();
 
-                                // Aggressive Skip Check
+                                // Check 1: Name-based duplicate detection
                                 const isDuplicateName = scrapedNamesSet.has(name) ||
                                     excludedNames.includes(name) ||
                                     [...normalizedExcludedNames].some(ex => normName.startsWith(ex) || ex.startsWith(normName));
 
+                                // Check 2: Domain-based duplicate detection (more aggressive)
                                 const isDuplicateDomain = excludedDomains.some(exDomain => {
                                     const d = exDomain.toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0].trim();
                                     return d && domain && (d === domain || d.endsWith('.' + domain) || domain.endsWith('.' + d));
@@ -551,7 +555,9 @@ export const runAgentWorkflow = async (input, config) => {
                                 });
 
                                 if (isDuplicateName || isDuplicateDomain) {
-                                    // console.log(`[Discovery] ⏭️ Skipping variant: ${name} (${domain || 'no domain'})`);
+                                    const reason = isDuplicateName ? 'name match' : 'domain match';
+                                    logStep('Company Finder', `⏭️ Skipping ${name} (${reason}, already in database)`);
+                                    totalDisqualified++;
                                     return false;
                                 }
                                 return true;
