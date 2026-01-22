@@ -1,6 +1,27 @@
-import { GeminiModel, extractJson } from './gemini.js';
+/**
+ * Outreach Service V5
+ * 
+ * Strict outreach generation with deterministic facts and reliable gating.
+ * 
+ * Contract:
+ * - outreach_status: "SUCCESS" | "SKIP" | "NEEDS_RESEARCH" | "ERROR"
+ * - If status != "SUCCESS", all message fields are null
+ * - Message facts use strict alignment (no inventing)
+ * - Banned phrases never appear in output
+ * 
+ * Gating Flow:
+ * 1. Disqualified ICP types -> SKIP
+ * 2. No profile -> SKIP
+ * 3. Tier 2 (Residential keywords) required -> SKIP if missing
+ * 4. Tier 1 (Investor keywords) by ICP type -> SKIP or NEEDS_RESEARCH
+ * 5. Research fact extraction -> NEEDS_RESEARCH if unusable
+ * 6. Message generation -> SUCCESS or NEEDS_RESEARCH (on QA failure)
+ */
 
-// V4.5 CONSTANTS (10/10 Standard)
+import { GeminiModel, extractJson } from './gemini.js';
+import ResearchFactExtractor from './outreach/researchFactExtractor.js';
+
+// Constants
 const OPENERS = [
     "I came across",
     "I was looking at",
@@ -11,231 +32,436 @@ const OPENERS = [
 const CLOSERS = [
     "thought connecting could be worthwhile",
     "thought it could be useful to connect",
-    "worth connecting if there’s overlap",
+    "worth connecting if there's overlap",
     "thought it made sense to connect"
 ];
 
-// Tier 1: Investor Intent
+// Tier 1: Investor Intent (required for most)
 const TIER_1_KEYWORDS = [
     'invests', 'investment', 'acquires', 'acquisition', 'fund', 'strategy',
     'co invest', 'co-invest', 'joint venture', 'portfolio', 'asset management',
-    'private equity', 'real estate equity', 'LP', 'GP', 'partner capital'
+    'private equity', 'real estate equity', 'lp', 'gp', 'partner capital',
+    'investing', 'capital deployment', 'deploy capital'
 ];
 
-// Tier 2: Residential Relevance
+// Tier 2: Residential Relevance (MANDATORY)
 const TIER_2_KEYWORDS = [
-    'residential', 'multi suite', 'multi-suite', 'purpose built rental',
-    'rental housing', 'multifamily', 'multi-family', 'apartments', 'housing',
-    'condo', 'condominium', 'condo development', 'student housing', 'senior living', 'SFR', 'single family rental'
+    'residential', 'multifamily', 'multi-family', 'multi family', 'multi-suite',
+    'apartment', 'apartments', 'purpose built rental', 'purpose-built rental',
+    'rental housing', 'housing', 'condo', 'condominium', 'condo development',
+    'student housing', 'senior living', 'sfr', 'single family rental',
+    'apartment community', 'residential community', 'residential development'
 ];
 
-// Tier 3: Direct Investing Evidence (The "Real Investor" Gate)
+// Tier 3: Direct Investing Evidence
 const TIER_3_KEYWORDS = [
-    'acquired', 'portfolio', 'we invest', 'capital deployed',
+    'acquired', 'portfolio', 'we invest', 'capital deployed', 'deal', 'deals',
     'co-invest', 'direct investments', 'investment platform', 'holdings',
-    'assets under management', 'aum' // Allowed as evidence of scale/investing, just not as the hook
+    'assets under management', 'aum', 'transaction', 'transactions',
+    'deployment', 'invest in', 'invested in'
 ];
 
-const BANNED_OUTPUT_WORDS = [
-    'AUM', 'offices', 'global reach', 'international', 'years in business',
-    'award', 'congrats', 'impressed', 'synergies', 'quick call', 'hop on a call',
-    'Head of', 'Managing Director', 'CEO', 'Principal'
+// Banned phrases in final output
+const BANNED_OUTPUT_PHRASES = [
+    'global reach',
+    'years in business',
+    'impressed',
+    'congrats',
+    'synergies',
+    'quick call',
+    'hop on a call',
+    'schedule a call',
+    'in your role as',
+    'as ceo'
 ];
+
+// Banned words for stricter filtering
+const BANNED_OUTPUT_WORDS = [
+    'aum', 'offices', 'international', 'award'
+];
+
+// Metrics collector
+const METRICS = {
+    success_count: 0,
+    skip_count: 0,
+    needs_research_count: 0,
+    error_count: 0,
+    skip_reasons: {},
+    needs_research_reasons: {}
+};
 
 export class OutreachService {
-    static async createLeadMessages({ company_name, website, company_profile, fit_score, icp_type, first_name, person_name }) {
+    /**
+     * Main generation method - strict contract enforcement
+     */
+    static async createLeadMessages({
+        company_name,
+        website,
+        company_profile,
+        fit_score,
+        icp_type,
+        first_name,
+        person_name
+    }) {
         try {
-            // === 1. MANDATORY LEAD QUALIFICATION GATE ===
-            // 2.2 Disallowed company types (AUTO SKIP)
-            const SKIP_TYPES = [
-                'BROKERAGE', 'ADVISORY', 'CONSULTING', 'AGENCY',
-                'SERVICE', 'TECH', 'VENDOR', 'PROPERTY_MANAGEMENT'
-            ];
+            // === Gate 1: Disqualified ICP Types ===
+            const skipResponse = this._checkDisqualifiedICP(icp_type);
+            if (skipResponse) return skipResponse;
 
-            if (icp_type && SKIP_TYPES.some(t => icp_type.toUpperCase().includes(t))) {
-                return this._createSkipResponse(`ICP Type '${icp_type}' is disqualified (Brokerage/Service).`);
+            // === Gate 2: Profile Required ===
+            if (!company_profile || company_profile.trim().length === 0) {
+                return this._createGatedResponse('SKIP', 'no_profile_available', 'No company profile provided');
             }
 
-            // === 3. RESIDENTIAL INVESTOR RELEVANCE GATE (DISABLED) ===
-            // Context: User feedback indicates this is too strict (e.g., rejecting CPP Investments).
-            // We will let the LLM decide via the prompt if it can find a valid angle.
-            /*
-            if (!company_profile) {
-                return this._createSkipResponse("No profile available.");
+            // === Gate 3 & 4: Tier Gating (Residential + Investor Keywords) ===
+            const tierResponse = this._checkTierGates(company_profile, icp_type);
+            if (tierResponse) return tierResponse;
+
+            // === Step 1: Extract Research Fact (Deterministic) ===
+            const factResult = ResearchFactExtractor.extract(
+                company_profile,
+                company_name,
+                icp_type
+            );
+
+            // If fact extraction failed or returned nothing
+            if (!factResult.fact) {
+                return this._createGatedResponse(
+                    'NEEDS_RESEARCH',
+                    factResult.reason.replace(/\s+/g, '_').toLowerCase(),
+                    factResult.reason
+                );
             }
 
-            const profileLower = company_profile.toLowerCase();
-            const hasTier1 = TIER_1_KEYWORDS.some(k => profileLower.includes(k.toLowerCase()));
-            const hasTier2 = TIER_2_KEYWORDS.some(k => profileLower.includes(k.toLowerCase()));
-            const hasTier3 = TIER_3_KEYWORDS.some(k => profileLower.includes(k.toLowerCase()));
+            // === Step 2: Generate Message ===
+            // At this point we have a valid research fact
+            const messageResult = this._generateMessage(
+                company_name,
+                factResult,
+                first_name,
+                person_name,
+                icp_type
+            );
 
-            if (!hasTier1 || !hasTier2) {
-                return this._createSkipResponse("Failed Keyword Gate: Needs clear Investor + Residential keywords.");
+            // Message generation failed
+            if (messageResult.outreach_status !== 'SUCCESS') {
+                return messageResult;
             }
 
-            if (!hasTier3) {
-                return this._createSkipResponse("Failed Tier 3 Gate: No evidence of direct investing (acquired, portfolio, capital deployed).");
+            // === Step 3: Post-Generation QA ===
+            const qaResult = this._performQA(messageResult);
+            if (qaResult.outreach_status !== 'SUCCESS') {
+                return qaResult;
             }
-            */
 
-            // === 4. RANDOMIZATION ===
+            // === Success! Return complete message ===
+            METRICS.success_count++;
+            return {
+                outreach_status: 'SUCCESS',
+                outreach_reason: null,
+                research_fact: factResult.fact,
+                research_fact_type: factResult.fact_type,
+                message_version: 'v5',
+                profile_quality_score: factResult.confidence,
+                linkedin_message: qaResult.linkedin_message,
+                email_subject: qaResult.email_subject,
+                email_body: qaResult.email_body
+            };
+
+        } catch (error) {
+            console.error('[OutreachService] Unexpected error:', error);
+            METRICS.error_count++;
+            return this._createGatedResponse(
+                'ERROR',
+                'generation_failed',
+                `Unexpected error: ${error.message}`
+            );
+        }
+    }
+
+    /**
+     * Gate 1: Check for disqualified ICP types
+     */
+    static _checkDisqualifiedICP(icp_type) {
+        const SKIP_TYPES = [
+            'BROKERAGE', 'ADVISORY', 'CONSULTING', 'AGENCY',
+            'SERVICE', 'TECH', 'VENDOR', 'PROPERTY_MANAGEMENT'
+        ];
+
+        if (icp_type && SKIP_TYPES.some(t => icp_type.toUpperCase().includes(t))) {
+            const reason = `icp_type_disqualified`;
+            return this._createGatedResponse(
+                'SKIP',
+                reason,
+                `ICP Type '${icp_type}' is disqualified (Brokerage/Service/Advisory).`
+            );
+        }
+
+        return null;
+    }
+
+    /**
+     * Gates 3 & 4: Check tier requirements
+     */
+    static _checkTierGates(profile, icp_type) {
+        const profileLower = profile.toLowerCase();
+        const hasTier1 = TIER_1_KEYWORDS.some(k => profileLower.includes(k.toLowerCase()));
+        const hasTier2 = TIER_2_KEYWORDS.some(k => profileLower.includes(k.toLowerCase()));
+        const hasTier3 = TIER_3_KEYWORDS.some(k => profileLower.includes(k.toLowerCase()));
+
+        // Tier 2 is MANDATORY - no residential keywords = SKIP
+        if (!hasTier2) {
+            const reason = 'tier_2_missing';
+            METRICS.skip_reasons[reason] = (METRICS.skip_reasons[reason] || 0) + 1;
+            METRICS.skip_count++;
+            return {
+                outreach_status: 'SKIP',
+                outreach_reason: 'No residential keywords found (Tier 2)',
+                research_fact: null,
+                research_fact_type: null,
+                message_version: 'v5',
+                profile_quality_score: null,
+                linkedin_message: null,
+                email_subject: null,
+                email_body: null
+            };
+        }
+
+        // Tier 1 depends on ICP type
+        const isFamilyOffice = icp_type && icp_type.toUpperCase().includes('FAMILY_OFFICE');
+
+        if (!hasTier1) {
+            if (isFamilyOffice) {
+                // Family offices: missing investor keywords = NEEDS_RESEARCH (not SKIP)
+                const reason = 'tier_1_missing_family_office';
+                METRICS.needs_research_reasons[reason] = (METRICS.needs_research_reasons[reason] || 0) + 1;
+                METRICS.needs_research_count++;
+                return {
+                    outreach_status: 'NEEDS_RESEARCH',
+                    outreach_reason: 'Family office with vague investor language - needs manual research',
+                    research_fact: null,
+                    research_fact_type: null,
+                    message_version: 'v5',
+                    profile_quality_score: null,
+                    linkedin_message: null,
+                    email_subject: null,
+                    email_body: null
+                };
+            } else {
+                // Investment firms: missing investor keywords = SKIP
+                const reason = 'tier_1_missing';
+                METRICS.skip_reasons[reason] = (METRICS.skip_reasons[reason] || 0) + 1;
+                METRICS.skip_count++;
+                return {
+                    outreach_status: 'SKIP',
+                    outreach_reason: 'No investor keywords found (Tier 1)',
+                    research_fact: null,
+                    research_fact_type: null,
+                    message_version: 'v5',
+                    profile_quality_score: null,
+                    linkedin_message: null,
+                    email_subject: null,
+                    email_body: null
+                };
+            }
+        }
+
+        // Tier 3: If missing, route to NEEDS_RESEARCH (not SKIP)
+        if (!hasTier3) {
+            const reason = 'tier_3_missing';
+            METRICS.needs_research_reasons[reason] = (METRICS.needs_research_reasons[reason] || 0) + 1;
+            METRICS.needs_research_count++;
+            return {
+                outreach_status: 'NEEDS_RESEARCH',
+                outreach_reason: 'No direct investing evidence found - needs deeper research',
+                research_fact: null,
+                research_fact_type: null,
+                message_version: 'v5',
+                profile_quality_score: null,
+                linkedin_message: null,
+                email_subject: null,
+                email_body: null
+            };
+        }
+
+        // All tiers passed
+        return null;
+    }
+
+    /**
+     * Generate the outreach message
+     */
+    static _generateMessage(company_name, factResult, first_name, person_name, icp_type) {
+        try {
+            const isFamilyOffice = icp_type && icp_type.toUpperCase().includes('FAMILY_OFFICE');
+
+            // Select opening/closing
             const opener = OPENERS[Math.floor(Math.random() * OPENERS.length)];
             const closer = CLOSERS[Math.floor(Math.random() * CLOSERS.length)];
 
-            // === 5. SELECT PROMPT BASED ON ICP ===
-            const isFamilyOffice = icp_type && icp_type.toUpperCase().includes('FAMILY_OFFICE');
-
-            let PROMPT_INSTRUCTIONS = "";
-
-            if (isFamilyOffice) {
-                PROMPT_INSTRUCTIONS = `
-You are writing outreach on behalf of Roelof van Heeren at Fifth Avenue Properties.
-TARGET: A Single or Multi-Family Office.
-TONE: Extremely discrete, direct, peer-to-peer. NO sales fluff.
-Instructions:
-1. Identify if they are an SFO or MFO.
-2. Extract ONE research fact (Deal > Thesis).
-3. If they are a Family Office, DO NOT treat them like a large institutional fund (avoid "institutional" jargon if possible).
-`;
+            // Build template based on fact type
+            let messageTemplate;
+            if (factResult.fact_type === 'DEAL') {
+                messageTemplate = `Hi {First_name}, ${opener} ${factResult.fact}. We frequently develop similar projects at Fifth Avenue Properties and often partner with groups deploying long-term capital. ${closer}.`;
+            } else if (factResult.fact_type === 'THESIS') {
+                messageTemplate = `Hi {First_name}, ${opener} ${factResult.fact}. We work on similar residential strategies at Fifth Avenue Properties and often partner with groups deploying long-term capital. ${closer}.`;
+            } else if (factResult.fact_type === 'SCALE') {
+                messageTemplate = `Hi {First_name}, ${opener} ${factResult.fact}. We are active in this scale of residential development at Fifth Avenue Properties and often partner with groups deploying long-term capital. ${closer}.`;
             } else {
-                PROMPT_INSTRUCTIONS = `
-You are writing outreach on behalf of Roelof van Heeren at Fifth Avenue Properties.
-TARGET: An Institutional Investment Firm (PE, REIT, Pension).
-TONE: Professional, competent, peer-to-peer.
-Instructions:
-1. Extract ONE research fact (Deal > Thesis).
-`;
+                // GENERAL fallback
+                messageTemplate = `Hi {First_name}, ${opener} ${company_name}'s focus on the residential sector. We are active developers in this space at Fifth Avenue Properties and thought connecting could be worthwhile.`;
             }
 
-            const MASTER_PROMPT = `
-${PROMPT_INSTRUCTIONS}
+            // Format names
+            const actualFirstName = first_name || (person_name ? person_name.split(' ')[0] : 'there');
 
-CORE RULES:
-- Use the provided company_profile as the only source of truth.
-- Apply mandatory gating: skip brokerages, advisory firms, agencies.
-- Extract exactly one research fact using this hierarchy: 
-    1. Named deal/project/asset (Specific name like "Alpine Village")
-    2. Residential investment thesis (e.g. "ground up multifamily in Texas")
-    3. Residential portfolio scale (e.g. "22,000 apartment units")
-    4. General residential focus
-- BANNED FACTS: AUM, global reach, number of offices, years in business, awards, transaction volume.
-- NEVER invent deals or use placeholders like "123 Main Street".
+            // Replace placeholders
+            const linkedin_message = messageTemplate
+                .replace(/{First_name}/g, actualFirstName)
+                .replace(/{Company_Name}/g, company_name);
 
-TEMPLATE LOGIC (STRICT):
-You must classify the extracted fact as either "DEAL" (specific named asset/project) or "THESIS" (general strategy/market focus).
+            // Email body (same as LinkedIn + intro)
+            const email_body = `Hi ${actualFirstName},\n\n${linkedin_message}\n\nIf it makes sense, I'm happy to share more information about our current projects.\n\nBest regards,\nRoelof van Heeren\nFifth Avenue Properties`;
 
-IF FACT_TYPE = "DEAL":
-Use this exact structure:
-"Hi {First_name}, ${opener} {extracted_fact}. We frequently develop similar projects at Fifth Avenue Properties and often partner with groups deploying long-term capital. ${closer}."
+            const email_subject = `Introduction | Residential Development`;
 
-IF FACT_TYPE = "THESIS":
-Use this exact structure:
-"Hi {First_name}, ${opener} {extracted_fact}. We work on similar residential strategies at Fifth Avenue Properties and often partner with groups deploying long-term capital. ${closer}."
-
-FALLBACK (If no specific deal/thesis/scale found):
-Use this structure:
-"Hi {First_name}, ${opener} {Company_Name}'s focus on the residential sector. We are active developers in this space at Fifth Avenue Properties and thought connecting could be worthwhile."
-
-NO OTHER VARIATIONS. DO NOT MIX MATCH.
-
-OUTPUT FORMAT (JSON ONLY):
-{
-  "status": "SUCCESS",
-  "skip_reason": "string",
-  "research_fact_type": "DEAL" | "THESIS" | "SCALE" | "GENERAL",
-  "research_fact": "string",
-  "linkedin_message": "string",
-  "email_subject": "string",
-  "email_body": "string"
-}
-
-EMAIL RULES:
-Subject: Introduction | Residential Development (Canada)
-Body:
-Hi {First_name},
-${opener} {Company_Name} and {research_fact}.
-[Insert Alignment Sentence based on FACT_TYPE logic here]
-If it makes sense, I’m happy to share more information about our current projects.
-Best regards,
-Roelof van Heeren
-Fifth Avenue Properties
-`;
-
-            const inputContext = `
-Company: ${company_name}
-Profile:
-"""
-${company_profile}
-"""
-`;
-
-            // === 6. CALL LLM ===
-            const apiKey = process.env.GOOGLE_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-            const model = new GeminiModel(apiKey, 'gemini-2.0-flash');
-
-            const response = await model.getResponse({
-                systemInstructions: MASTER_PROMPT,
-                input: inputContext
-            });
-
-            const outputItem = response.output.find(i => i.type === 'message');
-            const outputText = outputItem?.content?.[0]?.text;
-
-            if (!outputText) throw new Error("No output from model");
-
-            let result;
-            try {
-                result = JSON.parse(extractJson(outputText));
-            } catch (e) {
-                throw new Error("Invalid JSON from model");
-            }
-
-            if (result.status === 'SKIP') {
-                // FALLBACK: Force a generic message if the AI tried to skip
+            // Ensure message is under 300 chars
+            if (linkedin_message.length > 300) {
+                METRICS.needs_research_count++;
                 return {
-                    linkedin_message: `Hi {First_name}, I came across {Company_Name}'s work in the residential space. We develop similar projects at Fifth Avenue Properties and thought connecting could be worthwhile.`,
-                    email_subject: `Introduction | Residential Development`,
-                    email_body: `Hi {First_name},\n\nI came across {Company_Name} and your work in the residential sector.\n\nAt Fifth Avenue Properties, we focus on similar development strategies, which is why I thought it could make sense to connect.\n\nIf it makes sense, I'm happy to share more information about our current projects.\n\nBest regards,\nRoelof van Heeren\nFifth Avenue Properties`
+                    outreach_status: 'NEEDS_RESEARCH',
+                    outreach_reason: 'Generated message exceeded 300 character limit',
+                    research_fact: factResult.fact,
+                    research_fact_type: factResult.fact_type,
+                    message_version: 'v5',
+                    profile_quality_score: factResult.confidence,
+                    linkedin_message: null,
+                    email_subject: null,
+                    email_body: null
                 };
             }
 
-            // === 7. REPLACE PLACEHOLDERS WITH ACTUAL VALUES ===
-            const actualFirstName = first_name || (person_name ? person_name.split(' ')[0] : 'there');
-
-            result.linkedin_message = result.linkedin_message
-                .replace(/{First_name}/g, actualFirstName)
-                .replace(/{Company_Name}/g, company_name);
-
-            result.email_body = result.email_body
-                .replace(/{First_name}/g, actualFirstName)
-                .replace(/{Company_Name}/g, company_name);
-
-            // === 8. POST GENERATION QA ===
-            const checkString = (result.linkedin_message + result.email_body).toLowerCase();
-            const violation = BANNED_OUTPUT_WORDS.find(word => checkString.includes(word.toLowerCase()));
-
-            if (violation) {
-                return this._createSkipResponse(`QA FAILED: Banned word detected ('${violation}')`);
-            }
-
-            return result;
+            return {
+                outreach_status: 'SUCCESS',
+                outreach_reason: null,
+                research_fact: factResult.fact,
+                research_fact_type: factResult.fact_type,
+                message_version: 'v5',
+                profile_quality_score: factResult.confidence,
+                linkedin_message,
+                email_subject,
+                email_body
+            };
 
         } catch (error) {
-            console.error('[OutreachService] generation failed:', error);
+            console.error('[OutreachService] Message generation error:', error);
+            METRICS.error_count++;
             return {
-                linkedin_message: "[GENERATION_FAILED]",
-                email_subject: "Error",
-                email_body: `Generation failed: ${error.message}`
+                outreach_status: 'ERROR',
+                outreach_reason: 'Message generation failed',
+                research_fact: factResult.fact,
+                research_fact_type: factResult.fact_type,
+                message_version: 'v5',
+                profile_quality_score: factResult.confidence,
+                linkedin_message: null,
+                email_subject: null,
+                email_body: null
             };
         }
     }
 
-    static _createSkipResponse(reason) {
+    /**
+     * Post-generation QA: Check for banned phrases
+     */
+    static _performQA(messageResult) {
+        const combined = (messageResult.linkedin_message + messageResult.email_body).toLowerCase();
+
+        // Check for banned phrases
+        for (const phrase of BANNED_OUTPUT_PHRASES) {
+            if (combined.includes(phrase.toLowerCase())) {
+                return {
+                    outreach_status: 'NEEDS_RESEARCH',
+                    outreach_reason: `QA FAILED: Banned phrase detected ('${phrase}')`,
+                    research_fact: messageResult.research_fact,
+                    research_fact_type: messageResult.research_fact_type,
+                    message_version: messageResult.message_version,
+                    profile_quality_score: messageResult.profile_quality_score,
+                    linkedin_message: null,
+                    email_subject: null,
+                    email_body: null
+                };
+            }
+        }
+
+        // Check for banned words
+        for (const word of BANNED_OUTPUT_WORDS) {
+            if (combined.includes(word.toLowerCase())) {
+                return {
+                    outreach_status: 'NEEDS_RESEARCH',
+                    outreach_reason: `QA FAILED: Banned word detected ('${word}')`,
+                    research_fact: messageResult.research_fact,
+                    research_fact_type: messageResult.research_fact_type,
+                    message_version: messageResult.message_version,
+                    profile_quality_score: messageResult.profile_quality_score,
+                    linkedin_message: null,
+                    email_subject: null,
+                    email_body: null
+                };
+            }
+        }
+
+        // QA passed
+        return messageResult;
+    }
+
+    /**
+     * Create a gated response (SKIP, NEEDS_RESEARCH, ERROR)
+     */
+    static _createGatedResponse(status, reason, reasonText) {
+        if (status === 'SKIP') {
+            METRICS.skip_count++;
+            METRICS.skip_reasons[reason] = (METRICS.skip_reasons[reason] || 0) + 1;
+        } else if (status === 'NEEDS_RESEARCH') {
+            METRICS.needs_research_count++;
+            METRICS.needs_research_reasons[reason] = (METRICS.needs_research_reasons[reason] || 0) + 1;
+        } else if (status === 'ERROR') {
+            METRICS.error_count++;
+        }
+
         return {
-            linkedin_message: null, // Don't save "[SKIPPED]" to the DB
+            outreach_status: status,
+            outreach_reason: reasonText || reason,
+            research_fact: null,
+            research_fact_type: null,
+            message_version: 'v5',
+            profile_quality_score: null,
+            linkedin_message: null,
             email_subject: null,
-            email_body: null,
-            skip_reason: reason // status will be 'SKIP'
+            email_body: null
         };
     }
+
+    /**
+     * Get metrics summary for logging/observability
+     */
+    static getMetrics() {
+        return {
+            ...METRICS,
+            total_generated: METRICS.success_count + METRICS.skip_count + METRICS.needs_research_count + METRICS.error_count
+        };
+    }
+
+    /**
+     * Reset metrics
+     */
+    static resetMetrics() {
+        METRICS.success_count = 0;
+        METRICS.skip_count = 0;
+        METRICS.needs_research_count = 0;
+        METRICS.error_count = 0;
+        METRICS.skip_reasons = {};
+        METRICS.needs_research_reasons = {};
+    }
 }
+
+export default OutreachService;
