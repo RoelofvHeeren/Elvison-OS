@@ -9,8 +9,18 @@ const WEALTH_MANAGER_HEURISTICS = [
     /wealth\s+management/i,
     /financial\s+planning/i,
     /our\s+clients/i,
-    /RIA/i,
+    /RIA\b/i, // strict word boundary
+    /registered\s+investment\s+adviser/i,
     /registered\s+investment\s+advisor/i,
+    /FINRA/i,
+    /Form\s+ADV/i,
+    /private\s+wealth/i,
+    /wealth\s+advisor/i,
+    /family\s+office\s+services/i,
+    /relationship\s+manager/i,
+    /portfolio\s+manager/i,
+    /assets\s+under\s+management\s+for\s+clients/i,
+    /financial\s+advisory/i,
     /fiduciary/i,
     /retirement\s+planning/i,
     /insurance\s+solutions/i,
@@ -21,7 +31,13 @@ const WEALTH_MANAGER_HEURISTICS = [
     /wealth\s+advisors?/i,
     /private\s+banking/i,
     /trust\s+services/i,
-    /estate\s+planning/i
+    /estate\s+planning/i,
+    // Service CTAs - Strong signal of a service firm
+    /become\s+a\s+client/i,
+    /our\s+services/i,
+    /schedule\s+(a\s+)?consultation/i,
+    /client\s+login/i,
+    /start\s+your\s+journey/i
 ];
 
 const INVESTMENT_FUND_HEURISTICS = [
@@ -62,7 +78,7 @@ const FAMILY_OFFICE_POSITIVE_SIGNALS = [
  */
 export function isWealthManagerHeuristic(companyText = '', domain = '') {
     const combined = `${companyText} ${domain}`.toLowerCase();
-    
+
     // Check against wealth manager patterns
     for (const pattern of WEALTH_MANAGER_HEURISTICS) {
         if (pattern.test(combined)) {
@@ -73,7 +89,7 @@ export function isWealthManagerHeuristic(companyText = '', domain = '') {
             };
         }
     }
-    
+
     return {
         is_wealth_manager: false,
         confidence: 0.0,
@@ -86,7 +102,7 @@ export function isWealthManagerHeuristic(companyText = '', domain = '') {
  */
 export function isInvestmentFundHeuristic(companyText = '', domain = '') {
     const combined = `${companyText} ${domain}`.toLowerCase();
-    
+
     for (const pattern of INVESTMENT_FUND_HEURISTICS) {
         if (pattern.test(combined)) {
             return {
@@ -96,7 +112,7 @@ export function isInvestmentFundHeuristic(companyText = '', domain = '') {
             };
         }
     }
-    
+
     return {
         is_investment_fund: false,
         confidence: 0.0,
@@ -111,13 +127,13 @@ export function isInvestmentFundHeuristic(companyText = '', domain = '') {
 export function hasFamilyOfficeSignals(companyText = '', domain = '') {
     const combined = `${companyText} ${domain}`.toLowerCase();
     const signals = [];
-    
+
     for (const pattern of FAMILY_OFFICE_POSITIVE_SIGNALS) {
         if (pattern.test(combined)) {
             signals.push(pattern.source);
         }
     }
-    
+
     return {
         has_fo_signals: signals.length > 0,
         signal_count: signals.length,
@@ -148,7 +164,7 @@ export function runFamilyOfficeFirewall(companyName = '', companyText = '', doma
             cost: 'free'
         };
     }
-    
+
     // Step 2: Check for obvious investment fund (unless it's family capital)
     const ifCheck = isInvestmentFundHeuristic(companyText, domain);
     if (ifCheck.is_investment_fund) {
@@ -163,7 +179,7 @@ export function runFamilyOfficeFirewall(companyName = '', companyText = '', doma
             };
         }
     }
-    
+
     // Step 3: Check for positive FO signals
     const foSignals = hasFamilyOfficeSignals(companyText, domain);
     if (foSignals.has_fo_signals) {
@@ -175,7 +191,7 @@ export function runFamilyOfficeFirewall(companyName = '', companyText = '', doma
             cost: 'free'
         };
     }
-    
+
     // Step 4: Uncertain - needs LLM classification
     return {
         decision: 'UNCERTAIN',

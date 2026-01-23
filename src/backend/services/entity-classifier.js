@@ -18,55 +18,50 @@ You are a strict entity classifier for real estate investment discovery.
 Analyze the company information and output ONLY valid JSON matching this schema:
 
 {
-    "entity_type": "FAMILY_OFFICE|WEALTH_MANAGER|INVESTMENT_FUND|OPERATOR|REIT|UNKNOWN",
-    "entity_subtype": "SFO|MFO|FAMILY_CAPITAL|RIA|PRIVATE_EQUITY|PENSION|SOVEREIGN|UNKNOWN",
+    "entity_type": "FAMILY_OFFICE_SFO|FAMILY_OFFICE_MFO_PRINCIPAL|FAMILY_OFFICE_CAPITAL_VEHICLE|WEALTH_MANAGER_MFO|WEALTH_MANAGER|INVESTMENT_FUND|SERVICE_PROVIDER|OPERATOR|REIT|UNKNOWN",
     "confidence": 0.0-1.0,
     "signals_positive": ["signal1", "signal2"],
     "signals_negative": ["signal1", "signal2"],
     "reason": "Explanation"
 }
 
-STRICT RULES:
+STRICT CLASSIFICATION RULES (PROBABILISTIC SIGNALS):
 
-1. FAMILY_OFFICE classification requires:
-   - Proprietary capital (not client money)
-   - Evidence of direct investment capability
-   - NOT primarily providing advisory/management services
-   - Subtypes: SFO (single family), MFO (multi-family), FAMILY_CAPITAL (fund-like structure)
+1. FAMILY_OFFICE_SFO (Approved):
+   - Single Family Office.
+   - Signals: "family office for the X family", "investing the capital of the X family".
 
-2. WEALTH_MANAGER rejection triggers if ANY of:
-   - "wealth management" language
-   - "our clients" or "client assets"
-   - "financial planning" or "financial advice"
-   - RIA (Registered Investment Advisor)
-   - "private banking" or "trust services"
-   
-3. INVESTMENT_FUND classification if:
-   - Explicitly manages third-party capital
-   - Registered investment company
-   - Fund structure apparent
-   - Exception: FAMILY_CAPITAL subtype may have fund-like structure but FO origin
+2. FAMILY_OFFICE_MFO_PRINCIPAL (Approved):
+   - Multi-Family Office acting as a PRINCIPAL INVESTOR.
+   - Signals: "direct investments", "principal capital", "co-invest", "balance sheet".
+   - MUST show evidence of investing OWN/PARTNERS' money, not just managing client accounts.
 
-4. OPERATOR classification if:
-   - Primarily develops/operates property
-   - Not primarily an investor
-   - Subtypes: Real estate developer, property manager
+3. FAMILY_OFFICE_CAPITAL_VEHICLE (Approved):
+   - Holding Company or Investment Office.
+   - Doesn't strictly say "family office" but invests proprietary capital.
+   - Signals: "private investment office", "family capital", "generational capital", "holding company".
 
-5. REIT classification if:
-   - Publicly traded REIT structure
-   - Real estate investment trust
+4. WEALTH_MANAGER_MFO (REJECT):
+   - Calls itself "Multi-Family Office" but is effectively a Wealth Manager.
+   - Signals: "comprehensive wealth solutions", "legacy planning", "trust services", "fiduciary", "serving HNW families".
+   - CTA: "Become a client".
 
-6. UNKNOWN if:
-   - Insufficient information
-   - Ambiguous signals
-   - Contradictory evidence
-   - confidence < 0.6
+5. WEALTH_MANAGER (REJECT):
+   - Standard RIA / Financial Planner.
+   - Signals: "financial planning", "retirement", "client portal", "AUM for clients".
+
+6. INVESTMENT_FUND (REJECT):
+   - PE Firm or Fund Manager raising 3rd party LP capital.
+   - Signals: "Fund I", "Fund II", "Investors Login", "Capital Raising".
+
+7. SERVICE_PROVIDER (REJECT):
+   - Consultants, OCIOs, Software, Legal.
+   - Signals: "Outsourced CIO", "Fund Administration", "Consulting".
 
 OUTPUT RULES:
-- Output ONLY the JSON object
-- No markdown, no explanations, no wrapping
-- confidence must be between 0.0 and 1.0
-- signals_positive and signals_negative must be arrays of strings
+- Output ONLY the JSON object.
+- Use "signals_positive" for evidence of PROPRIETARY/DIRECT investment.
+- Use "signals_negative" for evidence of ADVISORY/SERVICE model.
 `;
 
 /**
@@ -76,7 +71,7 @@ OUTPUT RULES:
 export async function classifyEntity(companyName, companyText = '', domain = '') {
     // Step 1: Run free firewall heuristics first
     const firewall = runFamilyOfficeFirewall(companyName, companyText, domain);
-    
+
     if (firewall.decision === 'REJECT') {
         return {
             entity_type: firewall.entity_type,
@@ -89,7 +84,7 @@ export async function classifyEntity(companyName, companyText = '', domain = '')
             cost: 'free'
         };
     }
-    
+
     if (firewall.decision === 'PASS') {
         return {
             entity_type: firewall.entity_type,
@@ -102,7 +97,7 @@ export async function classifyEntity(companyName, companyText = '', domain = '')
             cost: 'free'
         };
     }
-    
+
     // Step 2: Run AI classification for UNCERTAIN cases
     const prompt = `
 ${ENTITY_CLASSIFICATION_SCHEMA}
@@ -113,12 +108,12 @@ Profile: ${companyText.substring(0, 2000)}
 
 Classify this company:
 `;
-    
+
     try {
         const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
         const result = await model.generateContent(prompt);
         const text = result.response.text().trim();
-        
+
         // Parse JSON response
         let classification;
         try {
@@ -133,13 +128,13 @@ Classify this company:
                 throw new Error('Invalid JSON response from model');
             }
         }
-        
+
         return {
             ...classification,
             source: 'llm_classification',
             cost: 'gemini_call'
         };
-        
+
     } catch (err) {
         console.error('Entity classification error:', err);
         return {
@@ -189,12 +184,12 @@ Approved: score >= 6
 Review: score 4-5
 Rejected: score <= 3
 `;
-    
+
     try {
         const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
         const result = await model.generateContent(prompt);
         const text = result.response.text().trim();
-        
+
         let scoreData;
         try {
             scoreData = JSON.parse(text);
@@ -206,13 +201,13 @@ Rejected: score <= 3
                 throw new Error('Invalid JSON response');
             }
         }
-        
+
         return {
             ...scoreData,
             source: 'fo_match_scorer',
             cost: 'gemini_call'
         };
-        
+
     } catch (err) {
         console.error('FO match scoring error:', err);
         return {
@@ -237,7 +232,7 @@ Rejected: score <= 3
 export async function classifyAndScoreFO(companyName, companyProfile = '', domain = '', geography = '') {
     // Step A: Entity Classification (hard gate)
     const classification = await classifyEntity(companyName, companyProfile, domain);
-    
+
     // Early rejection if not FO
     if (classification.entity_type !== 'FAMILY_OFFICE' && classification.entity_type !== 'UNKNOWN') {
         return {
@@ -247,9 +242,9 @@ export async function classifyAndScoreFO(companyName, companyProfile = '', domai
             reason: `Not a family office: ${classification.entity_type}`,
             fo_status: 'REJECTED',
             cost: classification.cost
-    };
+        };
     }
-    
+
     // For UNKNOWN with high enough confidence, might try to score anyway
     if (classification.entity_type === 'UNKNOWN') {
         if (classification.confidence < 0.6) {
@@ -264,11 +259,11 @@ export async function classifyAndScoreFO(companyName, companyProfile = '', domai
         }
         // If confidence >= 0.6, try scoring
     }
-    
+
     // Step B: FO Match Scoring (soft gate)
     const isSFO = classification.entity_subtype === 'SFO' || classification.entity_subtype === 'UNKNOWN';
     const score = await scoreFOMatch(companyName, companyProfile, geography, isSFO);
-    
+
     // Determine final fo_status
     let fo_status = 'UNKNOWN';
     if (score.recommendation === 'APPROVED' || score.match_score >= 6) {
@@ -278,7 +273,7 @@ export async function classifyAndScoreFO(companyName, companyProfile = '', domai
     } else {
         fo_status = 'REJECTED';
     }
-    
+
     return {
         classification,
         score,

@@ -42,7 +42,9 @@ const CompanyProfilerSchema = z.object({
         company_name: z.string(),
         domain: z.string(),
         company_profile: z.string(),
-        match_score: z.number().min(0).max(10).describe("Relevance score 0-10")
+        match_score: z.number().min(0).max(10).describe("Relevance score 0-10"),
+        entity_type: z.string().optional().describe("Strict classification: FAMILY_OFFICE_SFO, FAMILY_OFFICE_MFO_PRINCIPAL, WEALTH_MANAGER, etc."),
+        entity_subtype: z.string().optional()
     }))
 });
 
@@ -822,16 +824,13 @@ export const runAgentWorkflow = async (input, config) => {
                         Structure the company_profile into a "Proper Report" using these Markdown headers:
                         
                         # Summary
-                        (2-3 sentences about core business and scale)
+                        (2-3 sentences about core business and scale. Explicitly state if SFO or MFO.)
                         
                         # Investment Strategy 
                         (Detailed breakdown of their approach, target asset classes, and GP/LP status)
                         
-                        # Scale & Geographic Focus
-                        (AUM, office locations, and history)
-                        
-                        # Portfolio Observations
-                        (Key insights about their existing portfolio or previous similar deals)
+                        # Entity Classification
+                        (Rationale for why this is a Principal Investor and not a Wealth Manager)
 
                         # Key Highlights
                         - Use bullet points for critical stats or unique edges.
@@ -842,9 +841,18 @@ export const runAgentWorkflow = async (input, config) => {
                         SCORING CRITERIA (0-10):
                         - 10: Perfect fit (${companyContext.keyAttributes || "Clear match"})
                         - 1: Poor fit (${companyContext.redFlags || "Mismatch"})
+
+                        STRICT ENTITY TYPES (Choose One):
+                        - FAMILY_OFFICE_SFO (Approved)
+                        - FAMILY_OFFICE_MFO_PRINCIPAL (Approved)
+                        - FAMILY_OFFICE_CAPITAL_VEHICLE (Approved)
+                        - WEALTH_MANAGER_MFO (Reject)
+                        - WEALTH_MANAGER (Reject)
+                        - INVESTMENT_FUND (Reject)
+                        - SERVICE_PROVIDER (Reject)
                         
                         OUTPUT JSON:
-                        {"results": [{"company_name": "${candidate.companyName || candidate.company_name}", "domain": "${candidate.domain}", "company_profile": "...", "match_score": 8}]}
+                        {"results": [{"company_name": "...", "domain": "...", "company_profile": "...", "match_score": 8, "entity_type": "FAMILY_OFFICE_SFO", "entity_subtype": "SFO"}]}
                         `;
 
                     const profilerRes = await runGeminiAgent({
@@ -874,13 +882,23 @@ export const runAgentWorkflow = async (input, config) => {
                     // Filter by score (using parameterized threshold)
                     for (const company of analyzed) {
                         const isHighQuality = (company.match_score || 0) >= scoreThreshold;
+
+                        // Map flatten entity_type to nested structure for Apollo Gate compatibility
+                        const enrichedCompany = {
+                            ...company,
+                            classification: {
+                                entity_type: company.entity_type || 'UNKNOWN',
+                                entity_subtype: company.entity_subtype
+                            }
+                        };
+
                         if (isHighQuality) {
-                            masterQualifiedList.push(company);
+                            masterQualifiedList.push(enrichedCompany);
                             scrapedNamesSet.add(company.company_name);
-                            logStep('Company Profiler', `✅ Qualified: ${company.company_name} (Score: ${company.match_score}/10, Threshold: ${scoreThreshold})`);
+                            logStep('Company Profiler', `✅ Qualified: ${company.company_name} (Type: ${company.entity_type}, Score: ${company.match_score})`);
                         } else {
                             totalDisqualified++;
-                            logStep('Company Profiler', `🗑️ Dropped: ${company.company_name} (Score: ${company.match_score}/10, Threshold: ${scoreThreshold})`);
+                            logStep('Company Profiler', `🗑️ Dropped: ${company.company_name} (Score: ${company.match_score}, Type: ${company.entity_type})`);
                         }
                     }
 
@@ -913,6 +931,47 @@ export const runAgentWorkflow = async (input, config) => {
                 stats: { total: 0, searchStats, cost: costTracker.getSummary() },
                 error: "Discovery failed: No qualified companies found."
             };
+        }
+
+        // --- APOLLO GATE: Strict Filtering for Family Offices ---
+        // Only allow APPROVED Entity Types to proceed to Apollo
+        // This prevents Wealth Managers from leaking into the lead pool
+
+        // Define Approved Types (Must match entity-classifier.js)
+        const APOLLO_APPROVED_TYPES = [
+            'FAMILY_OFFICE_SFO',
+            'FAMILY_OFFICE_MFO_PRINCIPAL',
+            'FAMILY_OFFICE_CAPITAL_VEHICLE',
+            'FAMILY_OFFICE' // Legacy
+        ];
+
+        // Is this an FO run?
+        const isFORun = (companyContext.icpDescription || "").toLowerCase().includes("family office") ||
+            (companyContext.name || "").toLowerCase().includes("family office");
+
+        if (isFORun) {
+            const originalCount = masterQualifiedList.length;
+
+            // Check if we have entity_type data (might describe if using dummy data or new classifier)
+            // If classification exists, filter. If not (old data), warn but proceed.
+            const hasClassificationData = masterQualifiedList.some(c => c.classification?.entity_type);
+
+            if (hasClassificationData) {
+                logStep('Apollo Gate', `🛡️ Enforcing strict FO filter on ${originalCount} companies...`);
+
+                masterQualifiedList = masterQualifiedList.filter(c => {
+                    const type = c.classification?.entity_type;
+                    const approved = APOLLO_APPROVED_TYPES.includes(type);
+
+                    if (!approved) {
+                        logStep('Apollo Gate', `⛔ Blocking ${c.company_name} (Type: ${type}) - Not a Principal Investor`);
+                        totalDisqualified++;
+                    }
+                    return approved;
+                });
+
+                logStep('Apollo Gate', `✅ Allowed ${masterQualifiedList.length} Principal Investors to proceed (Blocked ${originalCount - masterQualifiedList.length} Wealth Managers/Funds)`);
+            }
         }
 
         // --- Phase 2: Consolidated Lead Scraping (ONE Pass) ---
