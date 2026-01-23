@@ -1229,10 +1229,9 @@ ${JSON.stringify(batch.map(l => ({
                             connection_request: update.connection_request || original.connection_request
                         };
                     } else {
-                        // FALLBACK: If OpenAI/Gemini dropped the lead, regenerate locally to avoid data loss
-                        processedLead.email_subject = `Introduction | Residential Development`;
-                        processedLead.email_message = `Hi ${original.first_name},\n\nI came across ${original.company_name} and your residential focus.\n\nAt Fifth Avenue Properties, we work on similar strategies, which is why I thought it could make sense to connect.\n\nBest regards,\nRoelof van Heeren\nFifth Avenue Properties`;
-                        processedLead.connection_request = `Hi ${original.first_name}, I came across ${original.company_name}'s residential focus. We work on similar strategies at Fifth Avenue Properties and thought connecting could be worthwhile.`;
+                        // AI failed to generate message -> Flag for Manual Review
+                        processedLead.status = 'MANUAL_REVIEW';
+                        processedLead.disqualification_reason = 'AI Generation Failed - Needs Manual Review';
                     }
 
                     // SAFETY: Enforce 300-char hard limit

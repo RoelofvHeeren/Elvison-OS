@@ -5,6 +5,7 @@ import SheetTable from '../components/SheetTable'
 import ImportModal from '../components/ImportModal'
 import { fetchLeads, deleteLead, approveLead, fetchAllLeadIds, fetchRuns, fetchHealth, enrichLead, regenerateLead, deepEnrichLead } from '../utils/api'
 import OutreachModal from '../components/OutreachModal'
+import LeadReviewModal from '../components/LeadReviewModal'
 import { useIcp } from '../context/IcpContext'
 
 function CRM() {
@@ -18,6 +19,9 @@ function CRM() {
   const [health, setHealth] = useState({ sheet: 'pending', agent: 'pending' })
   const [isImportOpen, setIsImportOpen] = useState(false)
   const [isOutreachOpen, setIsOutreachOpen] = useState(false)
+  const [isReviewOpen, setIsReviewOpen] = useState(false)
+  const [reviewLead, setReviewLead] = useState(null)
+  const [activeTab, setActiveTab] = useState('all') // 'all', 'review', 'ready'
 
   // Selection state
   const [selectedLeads, setSelectedLeads] = useState(new Set())
@@ -145,6 +149,11 @@ function CRM() {
       setError('Failed to regenerate lead')
       setLoading(false)
     }
+  }
+
+  const handleReviewRow = (lead) => {
+    setReviewLead(lead)
+    setIsReviewOpen(true)
   }
 
   const handleDeepEnrichRow = async (id) => {
@@ -370,7 +379,19 @@ function CRM() {
         ? row.name?.toLowerCase().includes(filters.name.toLowerCase())
         : true
       const matchesIcp = filters.icpId ? row.icpId === filters.icpId : true
-      const matchesRun = filters.runId ? row.runId === filters.runId : true // Though server handles this mostly
+      const matchesRun = filters.runId ? row.runId === filters.runId : true
+
+      // Tab Filtering
+      let matchesTab = true;
+      if (activeTab === 'review') {
+        matchesTab = row.status === 'MANUAL_REVIEW';
+      } else if (activeTab === 'ready') {
+        matchesTab = ['approved', 'success', 'new'].includes(row.status?.toLowerCase());
+        // Also exclude manual review?
+        matchesTab = matchesTab && row.status !== 'MANUAL_REVIEW';
+      }
+
+      return matchesDate && matchesCompany && matchesName && matchesIcp && matchesRun && matchesTab
 
       // Server now strictly filters out SKIPPED and low-score leads, so no client-side override needed
       return matchesDate && matchesCompany && matchesName && matchesIcp && matchesRun
@@ -467,6 +488,38 @@ function CRM() {
               </Link>
             </div>
           </div>
+        </div>
+
+
+        {/* Tabs */}
+        <div className="flex items-center gap-1 bg-white/5 backdrop-blur-md p-1 rounded-xl border border-white/10 w-fit">
+          <button
+            onClick={() => setActiveTab('all')}
+            className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all ${activeTab === 'all'
+                ? 'bg-teal-500 text-black shadow-lg shadow-teal-500/20'
+                : 'text-gray-400 hover:text-white hover:bg-white/5'
+              }`}
+          >
+            All Leads
+          </button>
+          <button
+            onClick={() => setActiveTab('review')}
+            className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all flex items-center gap-2 ${activeTab === 'review'
+                ? 'bg-purple-500 text-white shadow-lg shadow-purple-500/20'
+                : 'text-gray-400 hover:text-white hover:bg-white/5'
+              }`}
+          >
+            Manual Review
+          </button>
+          <button
+            onClick={() => setActiveTab('ready')}
+            className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all ${activeTab === 'ready'
+                ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/20'
+                : 'text-gray-400 hover:text-white hover:bg-white/5'
+              }`}
+          >
+            Confirmed for Outreach
+          </button>
         </div>
 
         {/* Stats Grid */}
@@ -613,6 +666,7 @@ function CRM() {
           onEnrichRow={handleEnrichRow}
           onDeepEnrichRow={handleDeepEnrichRow}
           onRegenerateRow={handleRegenerateRow}
+          onReviewRow={handleReviewRow}
           selectedLeads={selectedLeads}
           onToggleSelection={toggleLeadSelection}
           onToggleSelectAll={toggleSelectAll}
@@ -669,6 +723,16 @@ function CRM() {
             // fetchRows()
             setSelectedLeads(new Set())
             setSelectAll(false)
+          }}
+        />
+
+        <LeadReviewModal
+          isOpen={isReviewOpen}
+          onClose={() => setIsReviewOpen(false)}
+          lead={reviewLead}
+          onComplete={async () => {
+            await fetchRows()
+            setIsReviewOpen(false)
           }}
         />
       </div>

@@ -83,6 +83,11 @@ export const regenerateLead = async (id) => {
   return data
 }
 
+export const regenerateLeadWithInstructions = async (id, instructions) => {
+  const { data } = await client.post(`/api/leads/${id}/regenerate`, { instructions })
+  return data
+}
+
 export const deepEnrichLead = async (id) => {
   const { data } = await client.post(`/api/leads/${id}/deep-enrich`)
   return data

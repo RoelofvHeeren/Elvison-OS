@@ -4190,6 +4190,7 @@ app.post('/api/leads/:id/regenerate', requireAuth, async (req, res) => {
             company_profile: lead.company_profile,
             website: website,
             icp_type: '',
+            instructions: req.body.instructions
         })
 
         // 3. Update DB

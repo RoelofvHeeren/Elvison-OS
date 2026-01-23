@@ -311,6 +311,15 @@ const SheetTable = ({ rows, loading, error, onDeleteRow, onEnrichRow, onDeepEnri
                           <RefreshCw className="w-4 h-4" />
                         </button>
                       )}
+                      {row.status === 'MANUAL_REVIEW' && (
+                        <button
+                          onClick={() => onReviewRow(row)}
+                          className="px-3 py-1.5 rounded-lg bg-purple-500/10 text-purple-400 hover:bg-purple-500/20 border border-purple-500/20 transition-all font-bold text-xs"
+                          title="Review Lead"
+                        >
+                          Review
+                        </button>
+                      )}
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
@@ -341,6 +350,7 @@ SheetTable.propTypes = {
   onEnrichRow: PropTypes.func,
   onDeepEnrichRow: PropTypes.func,
   onRegenerateRow: PropTypes.func,
+  onReviewRow: PropTypes.func,
   selectedLeads: PropTypes.any,
   onToggleSelection: PropTypes.func,
   onToggleSelectAll: PropTypes.func,
