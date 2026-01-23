@@ -755,18 +755,20 @@ export const runAgentWorkflow = async (input, config) => {
 
                         **AUTOMATIC DISQUALIFICATION (Score 1-4):**
                         - Wealth managers, financial advisors, insurance companies
-                        - Brokers or sales-only firms
+                        - Brokers, capital markets advisors, or sales-only firms (e.g. Marcus & Millichap)
+                        - Investment banks or placement agents
                         - Consulting firms or service providers
-                        - Firms that only MANAGE money but don't INVEST directly
+                        - Firms that say they "serve family offices" or "partner with family offices" but are NOT one themselves.
+                        - Firms that only MANAGE money for clients but don't INVEST their own principal capital
                         - Unclear or vague investment mandates
 
                         **SCORING (BE STRICT):**
                         - **9-10**: Explicitly states SFO/MFO + names specific RE/PE deals or portfolios + Canadian
                         - **8**: Clearly SFO/MFO with direct investment mandate + Canadian presence
-                        - **5-7**: Might be an investor but not explicitly SFO/MFO or unclear if direct investing
-                        - **1-4**: Does not meet strict criteria above
+                        - **5-7**: Might be an investor but not explicitly SFO/MFO or unclear if direct investing. (DISQUALIFY if unsure)
+                        - **1-4**: Service providers, brokers, advisors.
 
-                        **WHEN IN DOUBT, SCORE LOW.** Only 8+ scores will be kept.`;
+                        **WHEN IN DOUBT, SCORE LOW (1-4).** We only want ACTUAL Family Offices, not the ecosystem around them.`;
                     } else if (isInvestmentFirmSearch) {
                         strictnessInstructions = `
                         EVALUATION RULES:
@@ -1103,7 +1105,7 @@ OUTPUT FORMAT: Return JSON array with email and match_score:
         // --- Outreach Generation ---
         logStep('Outreach Creator', `Drafting messages for ${globalLeads.length} leads in batches...`);
         let finalLeads = [];
-        const BATCH_SIZE = 20;
+        const BATCH_SIZE = 5;
 
         for (let i = 0; i < globalLeads.length; i += BATCH_SIZE) {
             const batch = globalLeads.slice(i, i + BATCH_SIZE);
@@ -1218,6 +1220,7 @@ ${JSON.stringify(batch.map(l => ({
                     let processedLead = { ...original };
                     const update = outreachMap.get(original.email);
 
+
                     if (update) {
                         processedLead = {
                             ...original,
@@ -1225,6 +1228,11 @@ ${JSON.stringify(batch.map(l => ({
                             email_subject: update.email_subject || original.email_subject,
                             connection_request: update.connection_request || original.connection_request
                         };
+                    } else {
+                        // FALLBACK: If OpenAI/Gemini dropped the lead, regenerate locally to avoid data loss
+                        processedLead.email_subject = `Introduction | Residential Development`;
+                        processedLead.email_message = `Hi ${original.first_name},\n\nI came across ${original.company_name} and your residential focus.\n\nAt Fifth Avenue Properties, we work on similar strategies, which is why I thought it could make sense to connect.\n\nBest regards,\nRoelof van Heeren\nFifth Avenue Properties`;
+                        processedLead.connection_request = `Hi ${original.first_name}, I came across ${original.company_name}'s residential focus. We work on similar strategies at Fifth Avenue Properties and thought connecting could be worthwhile.`;
                     }
 
                     // SAFETY: Enforce 300-char hard limit
