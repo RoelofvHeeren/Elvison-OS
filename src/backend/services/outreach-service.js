@@ -113,6 +113,9 @@ export class OutreachService {
         fit_score,
         icp_type,
         first_name,
+        person_name,
+        instructions
+    }) {
         // === Handle Custom Instructions (Manual Review Mode) ===
         if (instructions) {
             return this._generateCustomMessage(
@@ -124,67 +127,67 @@ export class OutreachService {
             );
         }
 
-// === Step 1: Extract Research Fact (Deterministic) ===
-const factResult = ResearchFactExtractor.extract(
-    company_profile,
-    company_name,
-    icp_type
-);
+        // === Step 1: Extract Research Fact (Deterministic) ===
+        const factResult = ResearchFactExtractor.extract(
+            company_profile,
+            company_name,
+            icp_type
+        );
 
-// If fact extraction failed or returned nothing
-if (!factResult.fact) {
-    return this._createGatedResponse(
-        'NEEDS_RESEARCH',
-        factResult.reason.replace(/\s+/g, '_').toLowerCase(),
-        factResult.reason
-    );
-}
+        // If fact extraction failed or returned nothing
+        if (!factResult.fact) {
+            return this._createGatedResponse(
+                'NEEDS_RESEARCH',
+                factResult.reason.replace(/\s+/g, '_').toLowerCase(),
+                factResult.reason
+            );
+        }
 
-// === Step 2: Generate Message ===
-// At this point we have a valid research fact
-const messageResult = this._generateMessage(
-    company_name,
-    factResult,
-    first_name,
-    person_name,
-    icp_type
-);
+        // === Step 2: Generate Message ===
+        // At this point we have a valid research fact
+        const messageResult = this._generateMessage(
+            company_name,
+            factResult,
+            first_name,
+            person_name,
+            icp_type
+        );
 
-// Message generation failed
-if (messageResult.outreach_status !== 'SUCCESS') {
-    return messageResult;
-}
+        // Message generation failed
+        if (messageResult.outreach_status !== 'SUCCESS') {
+            return messageResult;
+        }
 
-// === Step 3: Post-Generation QA ===
-const qaResult = this._performQA(messageResult);
-if (qaResult.outreach_status !== 'SUCCESS') {
-    return qaResult;
-}
+        // === Step 3: Post-Generation QA ===
+        const qaResult = this._performQA(messageResult);
+        if (qaResult.outreach_status !== 'SUCCESS') {
+            return qaResult;
+        }
 
-// === Success! Return complete message ===
-METRICS.success_count++;
-return {
-    outreach_status: 'SUCCESS',
-    outreach_reason: null,
-    research_fact: factResult.fact,
-    research_fact_type: factResult.fact_type,
-    message_version: 'v5',
-    profile_quality_score: factResult.confidence,
-    linkedin_message: qaResult.linkedin_message,
-    email_subject: qaResult.email_subject,
-    email_body: qaResult.email_body
-};
+        // === Success! Return complete message ===
+        METRICS.success_count++;
+        return {
+            outreach_status: 'SUCCESS',
+            outreach_reason: null,
+            research_fact: factResult.fact,
+            research_fact_type: factResult.fact_type,
+            message_version: 'v5',
+            profile_quality_score: factResult.confidence,
+            linkedin_message: qaResult.linkedin_message,
+            email_subject: qaResult.email_subject,
+            email_body: qaResult.email_body
+        };
 
-        } catch (error) {
-    console.error('[OutreachService] Unexpected error:', error);
-    METRICS.error_count++;
-    return this._createGatedResponse(
-        'ERROR',
-        'generation_failed',
-        `Unexpected error: ${error.message}`
-    );
-}
+    } catch(error) {
+        console.error('[OutreachService] Unexpected error:', error);
+        METRICS.error_count++;
+        return this._createGatedResponse(
+            'ERROR',
+            'generation_failed',
+            `Unexpected error: ${error.message}`
+        );
     }
+}
 
     /**
      * Gate 1: Check for disqualified ICP types
