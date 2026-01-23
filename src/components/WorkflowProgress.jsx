@@ -8,7 +8,7 @@ const STAGE_DEFINITIONS = [
         id: 'initializing',
         label: 'Initializing',
         description: 'Preparing workflow...',
-        matchSteps: ['System', 'Initialization']
+        matchSteps: ['Initialization']
     },
     {
         id: 'searching',
