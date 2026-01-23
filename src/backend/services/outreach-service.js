@@ -30,15 +30,24 @@ const OPENERS = [
 ];
 
 const CLOSERS = [
-    "thought connecting could be worthwhile",
-    "thought it could be useful to connect",
-    "worth connecting if there's overlap",
-    "thought it made sense to connect"
+    "Thought connecting could be worthwhile",
+    "Thought it could be useful to connect",
+    "Worth connecting if there's overlap",
+    "Thought it made sense to connect"
+];
+
+// Openers for full sentences (propositions) -> "I noticed that..."
+const CLAUSE_OPENERS = [
+    "I saw that",
+    "I read that",
+    "I noticed that",
+    "I see that"
 ];
 
 // Tier 1: Investor Intent (required for most)
+// Tier 1: Investor Intent (required for most)
 const TIER_1_KEYWORDS = [
-    'invests', 'investment', 'acquires', 'acquisition', 'fund', 'strategy',
+    'invest', 'invests', 'investment', 'acquires', 'acquisition', 'fund', 'strategy',
     'co invest', 'co-invest', 'joint venture', 'portfolio', 'asset management',
     'private equity', 'real estate equity', 'lp', 'gp', 'partner capital',
     'investing', 'capital deployment', 'deploy capital'
@@ -58,7 +67,7 @@ const TIER_3_KEYWORDS = [
     'acquired', 'portfolio', 'we invest', 'capital deployed', 'deal', 'deals',
     'co-invest', 'direct investments', 'investment platform', 'holdings',
     'assets under management', 'aum', 'transaction', 'transactions',
-    'deployment', 'invest in', 'invested in',
+    'deployment', 'invest in', 'invested in', 'invests in', 'invests directly',
     // Ticket 6: Family Office softer language
     'capital allocation', 'principal investments', 'private investments',
     'real assets', 'platform investments'
@@ -309,18 +318,27 @@ export class OutreachService {
                 (icp.includes('FAMILY') && icp.includes('OFFICE'));
 
             // Select opening/closing
-            const opener = OPENERS[Math.floor(Math.random() * OPENERS.length)];
+            // Ticket 4: Use grammatically correct opener based on fact type
+            // THESIS facts are usually full sentences ("Forum invests in..."), so they need "that" openers
+            let opener;
+            if (factResult.fact_type === 'THESIS') {
+                opener = CLAUSE_OPENERS[Math.floor(Math.random() * CLAUSE_OPENERS.length)];
+            } else {
+                opener = OPENERS[Math.floor(Math.random() * OPENERS.length)];
+            }
+
             const closer = CLOSERS[Math.floor(Math.random() * CLOSERS.length)];
 
             // Build template based on fact type
             // Ticket 3: Shortened templates to reduce character limit failures
+            // V5.1 Optimization 6: Add "Fund Structure / JV Posture" micro-hook
             let messageTemplate;
             if (factResult.fact_type === 'DEAL') {
-                messageTemplate = `Hi {First_name}, ${opener} ${factResult.fact}. We frequently develop similar projects at Fifth Avenue Properties and often partner with long-term capital. ${closer}.`;
+                messageTemplate = `Hi {First_name}, ${opener} ${factResult.fact}. We frequently develop similar projects at Fifth Avenue Properties and often partner with LP or co-GP capital. ${closer}.`;
             } else if (factResult.fact_type === 'THESIS') {
                 messageTemplate = `Hi {First_name}, ${opener} ${factResult.fact}. We work on similar residential strategies at Fifth Avenue Properties and often partner with long-term investors. ${closer}.`;
             } else if (factResult.fact_type === 'SCALE') {
-                messageTemplate = `Hi {First_name}, ${opener} ${factResult.fact}. We are active in this scale of residential development at Fifth Avenue Properties and often partner with long-term capital. ${closer}.`;
+                messageTemplate = `Hi {First_name}, ${opener} ${factResult.fact}. We are active in this scale of residential development at Fifth Avenue Properties and often partner with LP or co-GP capital. ${closer}.`;
             } else {
                 // GENERAL fallback
                 messageTemplate = `Hi {First_name}, ${opener} ${company_name}'s focus on the residential sector. We are active developers in this space at Fifth Avenue Properties and thought connecting could be worthwhile.`;

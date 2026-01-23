@@ -91,16 +91,17 @@ export class ResearchFactExtractor {
             return namedDeal;
         }
 
-        // === Priority 2: Thesis/Strategy Lines ===
-        const thesis = this._extractThesis(profile, profileLower);
-        if (thesis) {
-            return thesis;
-        }
-
-        // === Priority 3: Scale Facts ===
+        // === Priority 2: Scale Facts (Promoted based on user feedback) ===
+        // Specific numbers ("178 units", "$3.8B AUM") are better than generic strategies
         const scale = this._extractScale(profile, profileLower);
         if (scale) {
             return scale;
+        }
+
+        // === Priority 3: Thesis/Strategy Lines ===
+        const thesis = this._extractThesis(profile, profileLower, companyName);
+        if (thesis) {
+            return thesis;
         }
 
         // === Priority 4: General Focus ===
@@ -113,6 +114,28 @@ export class ResearchFactExtractor {
         return this._noResult('No usable research fact found in profile');
     }
 
+    // ... (skipped _extractNamedDeal) ...
+
+    /**
+     * Priority 3: Extract thesis/strategy statement
+     * Looks for sentences containing strategy keywords
+     */
+    static _extractThesis(profile, profileLower, companyName) {
+        // ... (existing code inside _extractThesis needs to pass companyName to trimFact) ...
+        // We'll trust the existing method signature update or handle it in the next tool call for specific method updates 
+        // actually I need to rewrite extract() fully here to change the order.
+
+        // Let's just return the re-ordered extract method here since I selected the whole block? 
+        // No, I need to match the target content exactly. 
+        // I will replace `extract` method entirely.
+    }
+
+    // RETHINKING: The Previous tool call asked to replace specific lines.
+    // I will use replace_file_content to swap the order in `extract` and update `_trimFact`.
+
+    // Let's do `extract` first.
+
+
     /**
      * Priority 1: Extract named deal/project/asset
      * Looks for proper nouns followed by property keywords
@@ -120,21 +143,30 @@ export class ResearchFactExtractor {
      */
     static _extractNamedDeal(profile, profileLower) {
         // Look for capitalized phrases (proper nouns) followed by property keywords
+        // FIXED: Enforce strict capitalization [A-Z] and remove 'i' flag to prevent matching lowercase sentence fragments
         const patterns = [
-            // "Named [PropertyType]" format
-            /([A-Z][a-zA-Z\s]{2,30})\s+(Condo|Condos|Residences|Residence|Apartments|Apartment|Centre|Center|Tower|Towers|Village|Villages|Lofts|Loft|Development|Developments|Estate|Estates|Complex|Complexes|Community|Communities)/gi,
+            // 1. "Named [PropertyType]" format (e.g. "Alpine Village", "Skyline Tower")
+            // Captures the FULL phrase (Group 1) by including the property type in the capturing group or matching it whole.
+            // We'll capture the whole match here.
+            /([A-Z][a-z0-9]+(?:\s+[A-Z][a-z0-9]+)*\s+(?:Condos?|Residences?|Apartments?|Centre|Center|Towers?|Villages?|Lofts?|Developments?|Estates?|Complex(?:es)?|Communit(?:y|ies)|Plaza|Square|Gardens?|Park|Resort|Hotel))/g,
 
-            // "The [PropertyType] at [Named Location]" format
-            /(?:the)?\s+([A-Z][a-zA-Z\s]{2,30})\s+(?:at|in|on|phase|parcel)\s+([A-Z][a-zA-Z\s]{2,30})/gi,
+            // 2. "The [Name] at [Location]" format
+            /(?:The|the)?\s+([A-Z][a-z0-9]+(?:\s+[A-Z][a-z0-9]+)*)\s+(?:at|in|on|phase|parcel)\s+([A-Z][a-z0-9]+(?:\s+[A-Z][a-z0-9]+)*)/g,
 
-            // Simple capitalized phrases (proper nouns) - 2+ words
-            /([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\s+(?:is|features?|includes?|contains?|consists?|development|project|property|asset)/gi
+            // 3. Simple capitalized phrases (proper nouns) - 2+ words followed by a definition verb or noun
+            // e.g. "Alpine Village is...", "Alpine Village features..."
+            /([A-Z][a-z0-9]+(?:\s+[A-Z][a-z0-9]+)+)\s+(?:is|features?|includes?|contains?|consists?|development|project|property|asset)/g
         ];
 
         for (const pattern of patterns) {
             const matches = profile.matchAll(pattern);
             for (const match of matches) {
-                const dealName = match[1].trim();
+                let dealName = match[1].trim();
+
+                // For pattern 2, combine the parts: "The X at Y"
+                if (match.length > 2 && match[2]) {
+                    dealName = `${match[1]} at ${match[2]}`;
+                }
 
                 // Reject placeholder names
                 if (this._isPlaceholder(dealName)) {
@@ -164,11 +196,10 @@ export class ResearchFactExtractor {
     }
 
     /**
-     * Priority 2: Extract thesis/strategy statement
+     * Priority 2 (formerly 3): Extract thesis/strategy statement
      * Looks for sentences containing strategy keywords
-     * Example: "focuses on ground-up multifamily in Texas"
      */
-    static _extractThesis(profile, profileLower) {
+    static _extractThesis(profile, profileLower, companyName) {
         // Split into sentences
         const sentences = profile.match(/[^.!?]+[.!?]+/g) || [];
 
@@ -185,7 +216,7 @@ export class ResearchFactExtractor {
                 .trim()
                 .replace(/^[A-Z][a-z]+:\s*/, '') // Remove "Caption: " prefix
                 .replace(/^-\s*/, '') // Remove "- " prefix
-                .substring(0, 150); // Limit to 150 chars
+                .substring(0, 200); // Allow more length initially
 
             // Reject if it's too generic or contains banned phrases
             if (this._isTooGeneric(fact) || this._hasBannedPhrase(fact)) {
@@ -193,7 +224,7 @@ export class ResearchFactExtractor {
             }
 
             // Ticket 4: Trim fact to max length
-            const trimmedFact = this._trimFact(fact, 110);
+            const trimmedFact = this._trimFact(fact, 140, companyName);
             return {
                 fact: trimmedFact.trim(),
                 fact_type: 'THESIS',
@@ -205,6 +236,63 @@ export class ResearchFactExtractor {
         return null;
     }
 
+    // ... (skipped unrelated methods) ...
+
+    /**
+     * Ticket 4: Smart fact trimming that preserves meaning
+     * @param {string} fact - The fact to trim
+     * @param {number} maxLen - Maximum length
+     * @param {string} companyName - Company name for pronoun replacement
+     * @returns {string} Trimmed fact
+     */
+    static _trimFact(fact, maxLen = 140, companyName = '') {
+        if (!fact) return fact;
+        let s = fact.trim();
+
+        // Remove leading punctuation/whitespace
+        s = s.replace(/^[,:;.\s]+/, '');
+
+        // FIXED: Convert first-person pronouns to Company Name or "They"
+        // "We invest..." -> "Forum Asset Management invests..."
+        if (companyName) {
+            // Remove "The" from company name if it's in the string already to avoid double "The"
+            const cleanCompany = companyName.replace(/^The\s+/i, '');
+            s = s.replace(/^We\s+/i, `${cleanCompany} `);
+            s = s.replace(/^Our\s+/i, `${cleanCompany}'s `);
+        } else {
+            s = s.replace(/^We\s+/i, 'They ');
+            s = s.replace(/^Our\s+/i, 'Their ');
+        }
+
+        // Remove "is a company that" fluff if present at start
+        s = s.replace(/^(is|are)\s+(a|an)\s+(company|firm|developer|investor)\s+(that|which)\s+/i, '');
+
+        if (s.length <= maxLen) {
+            // Remove trailing punctuation
+            return s.replace(/[,:;.\s]+$/g, '');
+        }
+
+        // CUTTING LOGIC:
+        // Cut at maxLen
+        let clipped = s.slice(0, maxLen);
+
+        // Try to cut at the last sentence boundary if possible
+        const lastPeriod = clipped.lastIndexOf('.');
+        if (lastPeriod > maxLen * 0.5) {
+            return clipped.slice(0, lastPeriod).replace(/[,:;.\s]+$/g, '');
+        }
+
+        // Try to cut at the last comma or conjunction to keep a verified clause
+        // e.g. "invests in multifamily, industrial, and office" -> "invests in multifamily, industrial"
+        const lastComma = clipped.lastIndexOf(',');
+        if (lastComma > maxLen * 0.6) {
+            return clipped.slice(0, lastComma).replace(/[,:;.\s]+$/g, '');
+        }
+
+        // Fallback: Cut at last word boundary
+        return clipped.replace(/\s+\S*$/, '').replace(/[,:;.\s]+$/g, '');
+    }
+
     /**
      * Priority 3: Extract scale facts
      * Looks for numbers followed by scale keywords
@@ -212,9 +300,10 @@ export class ResearchFactExtractor {
      */
     static _extractScale(profile, profileLower) {
         // Match number + scale keyword pattern
+        // V5.1 Optimization: Allow 1-2 words between number and unit (e.g. "5,000 multifamily units")
         const patterns = [
-            /([0-9,]+(?:\.[0-9]+)?)\s*(?:\+|plus|over|approximately|~)\s*([0-9,]+)\s*(units|unit|properties|property|buildings|building|homes|home|suites|suite)/gi,
-            /([0-9,]+(?:\.[0-9]+)?)\s*(units|unit|properties|property|buildings|building|homes|home|suites|suite|bedrooms|beds|apartments|apartment|condos|condo)/gi
+            /([0-9,]+(?:\.[0-9]+)?)\s*(?:\+|plus|over|approximately|~)\s*(?:[a-zA-Z-]+\s+){0,2}(units|unit|properties|property|buildings|building|homes|home|suites|suite)/gi,
+            /([0-9,]+(?:\.[0-9]+)?)\s*(?:[a-zA-Z-]+\s+){0,2}(units|unit|properties|property|buildings|building|homes|home|suites|suite|bedrooms|beds|apartments|apartment|condos|condo)/gi
         ];
 
         for (const pattern of patterns) {
@@ -223,7 +312,9 @@ export class ResearchFactExtractor {
                 const scaleFact = match[0].trim();
 
                 // Make sure it's actually a large number (not just 2 or 3)
-                const numbers = match[0].match(/\d+/g);
+                // Remove commas before parsing to handle "5,000" correctly
+                const cleanNumberStr = match[0].replace(/,/g, '');
+                const numbers = cleanNumberStr.match(/\d+/g);
                 if (numbers && Math.max(...numbers.map(n => parseInt(n))) > 100) {
                     // Ticket 4: Trim fact to max length
                     const trimmedFact = this._trimFact(scaleFact, 70);
@@ -320,7 +411,8 @@ export class ResearchFactExtractor {
         }
 
         // If it's too vague (only contains "company" or "firm" + nothing specific)
-        if (lower.length < 20) {
+        // Fixed: Lowered threshold from 20 to 5 to allow valid deal names like "A B Tower"
+        if (lower.length <= 5) {
             return true;
         }
 
@@ -364,26 +456,55 @@ export class ResearchFactExtractor {
      * Ticket 4: Smart fact trimming that preserves meaning
      * @param {string} fact - The fact to trim
      * @param {number} maxLen - Maximum length
+     * @param {string} companyName - Company name for pronoun replacement
      * @returns {string} Trimmed fact
      */
-    static _trimFact(fact, maxLen = 110) {
+    static _trimFact(fact, maxLen = 140, companyName = '') {
         if (!fact) return fact;
         let s = fact.trim();
 
-        // Remove trailing punctuation chains
-        s = s.replace(/[,:;.\s]+$/g, '');
+        // Remove leading punctuation/whitespace
+        s = s.replace(/^[,:;.\s]+/, '');
 
-        // Remove leading pronouns, verbs, and articles (NEW: Grammatical improvement)
-        s = s.replace(/^(we|they|he|she|it|our|my|this|that|these|those|the|company|firm)\s+/i, '');
-        s = s.replace(/^(is|are|was|were|has|have|includes|features|focuses\s+on|invests\s+in)\s+/i, '');
-        s = s.replace(/^(a|an|the)\s+/i, ''); // Strip articles if they are now at the start ("is a company" -> "company")
+        // FIXED: Convert first-person pronouns to Company Name or "They"
+        // "We invest..." -> "Forum Asset Management invests..."
+        if (companyName) {
+            // Remove "The" from company name if it's in the string already to avoid double "The"
+            const cleanCompany = companyName.replace(/^The\s+/i, '');
+            s = s.replace(/^We\s+/i, `${cleanCompany} `);
+            s = s.replace(/^Our\s+/i, `${cleanCompany}'s `);
+        } else {
+            s = s.replace(/^We\s+/i, 'They ');
+            s = s.replace(/^Our\s+/i, 'Their ');
+        }
 
-        if (s.length <= maxLen) return s;
+        // Remove "is a company that" fluff if present at start
+        s = s.replace(/^(is|are)\s+(a|an)\s+(company|firm|developer|investor)\s+(that|which)\s+/i, '');
 
-        // Cut at nearest word boundary
-        s = s.slice(0, maxLen);
-        s = s.replace(/\s+\S*$/, '');
-        return s;
+        if (s.length <= maxLen) {
+            // Remove trailing punctuation
+            return s.replace(/[,:;.\s]+$/g, '');
+        }
+
+        // CUTTING LOGIC:
+        // Cut at maxLen
+        let clipped = s.slice(0, maxLen);
+
+        // Try to cut at the last sentence boundary if possible
+        const lastPeriod = clipped.lastIndexOf('.');
+        if (lastPeriod > maxLen * 0.5) {
+            return clipped.slice(0, lastPeriod).replace(/[,:;.\s]+$/g, '');
+        }
+
+        // Try to cut at the last comma or conjunction to keep a verified clause
+        // e.g. "invests in multifamily, industrial, and office" -> "invests in multifamily, industrial"
+        const lastComma = clipped.lastIndexOf(',');
+        if (lastComma > maxLen * 0.6) {
+            return clipped.slice(0, lastComma).replace(/[,:;.\s]+$/g, '');
+        }
+
+        // Fallback: Cut at last word boundary
+        return clipped.replace(/\s+\S*$/, '').replace(/[,:;.\s]+$/g, '');
     }
 }
 
