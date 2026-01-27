@@ -82,19 +82,21 @@ The system slots the extracted fact into a rigid template structure.
 
 **Grammar Rules:**
 *   **Openers**:
-    *   For **PROPER NOUNS** (Deals): *"I came across...", "I noticed..."*
-    *   For **SENTENCES** (Thesis): *"I read that...", "I saw that..."* (This prevents "I noticed Forum invests..." which sounds choppy).
+    *   For **PROPER NOUNS** (Deals/Scale): *"I came across...", "I noticed..."*
+    *   For **SENTENCES** (Thesis): *"I read that...", "I saw that..."* 
 *   **Closers**:
-    *   Randomly rotates: *"Thought connecting could be worthwhile."*, *"Worth connecting if there's overlap."* (Always capitalized).
+    *   Randomly rotates: *"Thought connecting could be worthwhile."*, *"Worth connecting if there's overlap."* (Always starts with a capital letter).
 
 **The Final Output (LinkedIn):**
-```text
-Hi [First Name], 
+LinkedIn messages are strictly under 300 characters.
 
-[Opener] [Research Fact]. [Connection Hook]. [Closer].
-```
+*   **DEAL Template**: *"Hi [Name], [Opener] [Research Fact]. We frequently develop similar projects at Fifth Avenue Properties and often partner with LP or co-GP capital. [Closer]."*
+*   **SCALE Template**: *"Hi [Name], [Opener] [Research Fact]. We are active in this scale of residential development at Fifth Avenue Properties and often partner with LP or co-GP capital. [Closer]."*
+*   **THESIS Template**: *"Hi [Name], [Opener] [Research Fact]. We work on similar residential strategies at Fifth Avenue Properties and often partner with long-term investors. [Closer]."*
 
 **The Final Output (Email):**
+Email messages include the LinkedIn hook plus an invitation for more info.
+
 ```text
 Hi [First Name],
 
@@ -114,22 +116,23 @@ Before saving, the generated message runs through a final check.
 
 1.  **Length Check**: Must be under 300 characters (for LinkedIn).
 2.  **Banned Phrase Check**: If the *generated* text contains prohibited words, it fails to **NEEDS_RESEARCH**.
-    *   **Banned**: `international`, `global reach`, `years in business`, `congrats`, `impressed`.
+    *   **Banned**: `international`, `global reach`, `years in business`, `congrats`, `impressed`, `AUM`.
     *   **Why?**: These often indicate the extraction grabbed generic marketing fluff instead of a real fact.
 
 ---
 
 ## 6. NEEDS_RESEARCH Workflow
 When a lead is flagged as `NEEDS_RESEARCH`:
-1.  **Status**: Saved to DB with status `NEEDS_RESEARCH` and a specific reason (e.g., `tier_3_missing`).
-2.  **Queue**: Automatically added to the Manual Review Queue.
-3.  **Action**: Eligible for "Deep Enrich" button in UI -> triggers scraping of portfolio/team pages to find missing data.
-4.  **Regeneration**: Can be regenerated after manual or automated profile updates.
+1.  **Status**: Saved to DB with status `MANUAL_REVIEW` and `outreach_status = 'NEEDS_RESEARCH'`.
+2.  **Queue**: Automatically added to the Manual Review Queue in the UI.
+3.  **Action**: Eligible for "Deep Enrich" button in UI -> triggers detailed scraping of portfolio/team pages.
+4.  **Regeneration**: Messages can be regenerated after profile updates or with manual instructions.
 
 ---
 
 ## Summary of V5.1 Updates
-*   **AUM Banned**: Removed 'AUM' from scale extraction to avoid policy flags.
+*   **Fact Priority**: Strictly `Deals -> Scale -> Thesis -> General`.
+*   **AUM Banned**: Removed 'AUM' and 'assets under management' from all extraction and QA checks.
 *   **Micro-Hooks**: Added *"partner with LP or co-GP capital"* to Deal/Scale templates.
-*   **Fund Structure**: "We/You" Grammar fix now safely replaces "We invest" with "[Company] invests".
-*   **Strict Priorities**: Defines `Deals -> Scale -> Thesis -> General` order.
+*   **Grammar Fix**: "We/Our" replacing logic now uses `companyName` more effectively at the start of facts.
+*   **Separate Templates**: Documented clear distinction between LinkedIn and Email output structures.

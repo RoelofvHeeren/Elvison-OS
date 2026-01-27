@@ -66,7 +66,7 @@ const TIER_2_KEYWORDS = [
 const TIER_3_KEYWORDS = [
     'acquired', 'portfolio', 'we invest', 'capital deployed', 'deal', 'deals',
     'co-invest', 'direct investments', 'investment platform', 'holdings',
-    'assets under management', 'aum', 'transaction', 'transactions',
+    'transaction', 'transactions',
     'deployment', 'invest in', 'invested in', 'invests in', 'invests directly',
     // Ticket 6: Family Office softer language
     'capital allocation', 'principal investments', 'private investments',
@@ -329,15 +329,20 @@ export class OutreachService {
             const closer = CLOSERS[Math.floor(Math.random() * CLOSERS.length)];
 
             // Build template based on fact type
-            // Ticket 3: Shortened templates to reduce character limit failures
-            // V5.1 Optimization 6: Add "Fund Structure / JV Posture" micro-hook
+            // Ticket 3: Enhanced Micro-Hooks for Deal/Scale/Thesis
+            // V5.2: Dynamic tone and structure adjustments
             let messageTemplate;
+            const investorHook = "often partner with LP or co-GP capital";
+
             if (factResult.fact_type === 'DEAL') {
-                messageTemplate = `Hi {First_name}, ${opener} ${factResult.fact}. We frequently develop similar projects at Fifth Avenue Properties and often partner with LP or co-GP capital. ${closer}.`;
-            } else if (factResult.fact_type === 'THESIS') {
-                messageTemplate = `Hi {First_name}, ${opener} ${factResult.fact}. We work on similar residential strategies at Fifth Avenue Properties and often partner with long-term investors. ${closer}.`;
+                // DEAL: Specificity wins. "We develop similar projects..."
+                messageTemplate = `Hi {First_name}, ${opener} ${factResult.fact}. We have experience developing comparable projects at Fifth Avenue Properties and ${investorHook}. ${closer}.`;
             } else if (factResult.fact_type === 'SCALE') {
-                messageTemplate = `Hi {First_name}, ${opener} ${factResult.fact}. We are active in this scale of residential development at Fifth Avenue Properties and often partner with LP or co-GP capital. ${closer}.`;
+                // SCALE: Capacity focus. "At your scale..."
+                messageTemplate = `Hi {First_name}, ${opener} ${factResult.fact}. Given your portfolio scale, we believe our co-GP opportunities at Fifth Avenue Properties would align well. ${closer}.`;
+            } else if (factResult.fact_type === 'THESIS') {
+                // THESIS: Alignment focus. "Work on similar strategies..."
+                messageTemplate = `Hi {First_name}, ${opener} ${factResult.fact}. We execute on similar residential strategies at Fifth Avenue Properties and connect well with long-term capital partners. ${closer}.`;
             } else {
                 // GENERAL fallback
                 messageTemplate = `Hi {First_name}, ${opener} ${company_name}'s focus on the residential sector. We are active developers in this space at Fifth Avenue Properties and thought connecting could be worthwhile.`;
