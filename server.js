@@ -1648,6 +1648,17 @@ app.post('/api/companies/:companyName/regenerate-outreach', async (req, res) => 
 
         const company = rows[0];
 
+        // Extract portfolio deals from custom_data
+        let portfolioDeals = [];
+        try {
+            const customData = typeof company.custom_data === 'string'
+                ? JSON.parse(company.custom_data)
+                : (company.custom_data || {});
+            portfolioDeals = customData.portfolio_deals || [];
+        } catch (e) {
+            console.warn('[Regenerate] Failed to parse custom_data:', e.message);
+        }
+
         // Import OutreachService dynamically
         const { OutreachService } = await import('./src/backend/services/outreach-service.js');
 
@@ -1657,7 +1668,9 @@ app.post('/api/companies/:companyName/regenerate-outreach', async (req, res) => 
             website: company.website,
             company_profile: company.company_profile,
             fit_score: company.fit_score,
-            icp_type: company.icp_type
+            icp_type: company.icp_type,
+            portfolio_deals: portfolioDeals,
+            investment_thesis: company.investment_thesis
         });
 
         // Update in database
@@ -2773,7 +2786,7 @@ app.get('/api/leads/export', requireAuth, async (req, res) => {
 // Approve Lead (Restore from Logbook)
 app.post('/api/leads/:id/approve', requireAuth, async (req, res) => {
     const { id } = req.params;
-    const { reason } = req.body;
+    const { reason, updates } = req.body;
     if (!reason || !reason.trim()) return res.status(400).json({ error: 'Reason required' });
     try {
         // 1. Fetch Lead
@@ -2792,53 +2805,68 @@ app.post('/api/leads/:id/approve', requireAuth, async (req, res) => {
             [rows[0].id, req.userId]
         );
 
-        // 2. Generate Outreach
-        // Need configs to get custom instructions
-        const promptRes = await query('SELECT system_prompt FROM agent_prompts WHERE agent_id = $1 AND user_id = $2', ['outreach_creator', req.userId]);
-        const customInstructions = promptRes.rows[0]?.system_prompt;
+        // 2. Determine Outreach Updates
+        // If updates (manual edits) are provided, use them. Otherwise, generate new ones.
+        let finalUpdates = {};
 
-        const runner = new Runner();
-        const agent = createOutreachAgent(customInstructions); // Tools default to empty for now
-        const service = new OutreachService(runner);
+        if (updates && (updates.linkedin_message || updates.email_message || updates.email_subject)) {
+            console.log(`Using manual updates for approved lead ${id}`);
+            finalUpdates = {
+                connection_request: updates.linkedin_message,
+                email_message: updates.email_message || lead.email_message,
+                email_subject: updates.email_subject || lead.email_subject
+            };
+        } else {
+            console.log(`Generating NEW outreach for approved lead ${id}...`);
+            // Existing Generation Logic
+            const promptRes = await query('SELECT system_prompt FROM agent_prompts WHERE agent_id = $1 AND user_id = $2', ['outreach_creator', req.userId]);
+            const customInstructions = promptRes.rows[0]?.system_prompt;
 
-        // Normalize lead for Agent
-        const leadForAgent = {
-            date_added: new Date().toISOString(),
-            first_name: lead.person_name?.split(' ')[0] || '',
-            last_name: lead.person_name?.split(' ').slice(1).join(' ') || '',
-            company_name: lead.company_name,
-            title: lead.job_title,
-            email: lead.email,
-            linkedin_url: lead.linkedin_url,
-            company_website: lead.custom_data?.company_website || '',
-            company_profile: lead.custom_data?.company_profile || ''
-        };
+            const runner = new Runner();
+            const agent = createOutreachAgent(customInstructions);
+            const service = new OutreachService(runner);
 
-        console.log(`Generating outreach for approved lead ${id}...`);
-        const enrichedLeads = await service.generateOutreach([leadForAgent], agent, (msg) => console.log(`[Approval] ${msg}`));
+            const leadForAgent = {
+                date_added: new Date().toISOString(),
+                first_name: lead.person_name?.split(' ')[0] || '',
+                last_name: lead.person_name?.split(' ').slice(1).join(' ') || '',
+                company_name: lead.company_name,
+                title: lead.job_title,
+                email: lead.email,
+                linkedin_url: lead.linkedin_url,
+                company_website: lead.custom_data?.company_website || '',
+                company_profile: lead.custom_data?.company_profile || ''
+            };
 
-        let updates = { status: 'NEW', source_notes: 'Approved from Logbook' };
-        if (enrichedLeads.length > 0) {
-            const result = enrichedLeads[0];
-            if (result.email_message) updates.email_message = result.email_message;
-            if (result.connection_request) updates.connection_request = result.connection_request;
+            const enrichedLeads = await service.generateOutreach([leadForAgent], agent, (msg) => console.log(`[Approval] ${msg}`));
+
+            if (enrichedLeads.length > 0) {
+                const result = enrichedLeads[0];
+                finalUpdates.email_message = result.email_message;
+                finalUpdates.connection_request = result.connection_request;
+                finalUpdates.email_subject = result.email_subject;
+            }
         }
 
         // 3. Update DB
-        // Update status
-        await query('UPDATE leads SET status = $1 WHERE id = $2', ['NEW', id]);
+        // Update status AND outreach fields in the main table
+        await query(`
+            UPDATE leads 
+            SET status = 'NEW', 
+                connection_request = COALESCE($1, connection_request),
+                email_message = COALESCE($2, email_message),
+                email_subject = COALESCE($3, email_subject),
+                updated_at = NOW()
+            WHERE id = $4
+        `, [finalUpdates.connection_request, finalUpdates.email_message, finalUpdates.email_subject, id]);
 
-        // Update custom_data with message
-        if (enrichedLeads.length > 0) {
-            const r = enrichedLeads[0];
-            const newCustomData = {
-                ...lead.custom_data,
-                email_message: r.email_message,
-                connection_request: r.connection_request,
-                restored_at: new Date().toISOString()
-            };
-            await query('UPDATE leads SET custom_data = $1 WHERE id = $2', [newCustomData, id]);
-        }
+        // Also update custom_data for legacy compatibility / redundancy
+        const newCustomData = {
+            ...lead.custom_data,
+            ...finalUpdates,
+            restored_at: new Date().toISOString()
+        };
+        await query('UPDATE leads SET custom_data = $1 WHERE id = $2', [newCustomData, id]);
 
         res.json({ success: true });
 
@@ -4177,9 +4205,11 @@ app.post('/api/leads/:id/regenerate', requireAuth, async (req, res) => {
 
         const lead = rows[0]
         let website = '';
+        let portfolioDeals = [];
         try {
             const cd = typeof lead.custom_data === 'string' ? JSON.parse(lead.custom_data) : (lead.custom_data || {});
             website = cd.company_website || '';
+            portfolioDeals = cd.portfolio_deals || [];
         } catch (e) { }
 
         // 2. Call Outreach Service
@@ -4189,8 +4219,10 @@ app.post('/api/leads/:id/regenerate', requireAuth, async (req, res) => {
             company_name: lead.company_name,
             company_profile: lead.company_profile,
             website: website,
-            icp_type: '',
-            instructions: req.body.instructions
+            icp_type: lead.icp_type || '',
+            instructions: req.body.instructions,
+            portfolio_deals: portfolioDeals,
+            investment_thesis: lead.investment_thesis
         })
 
         // 3. Update DB

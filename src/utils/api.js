@@ -53,8 +53,8 @@ export const deleteCompany = async (id) => {
   return data
 }
 
-export const approveLead = async (id, reason) => {
-  const { data } = await client.post(`/api/leads/${id}/approve`, { reason })
+export const approveLead = async (id, reason, updates = {}) => {
+  const { data } = await client.post(`/api/leads/${id}/approve`, { reason, updates })
   return data
 }
 

@@ -94,7 +94,11 @@ export default function LeadReviewModal({ isOpen, onClose, lead, onComplete }) {
             // I'll add a warning or try to add update support later.
             // Or just use `approveLead` and maybe pass `updates` object if server supports?
 
-            await approveLead(lead.id, 'Manual Review Approved')
+            await approveLead(lead.id, 'Manual Review Approved', {
+                linkedin_message: formData.linkedin_message,
+                email_subject: formData.email_subject,
+                email_message: formData.email_body // Match schema field name
+            })
             onComplete()
             onClose()
         } catch (err) {

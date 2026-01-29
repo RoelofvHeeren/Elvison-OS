@@ -1,7 +1,7 @@
-import { scanSiteStructure, scrapeSpecificPages } from './apify.js';
-import { OutreachService } from './outreach-service.js';
+import { scanSiteStructure, scrapeSpecificPages, scrapeCompanyWebsite } from './apify.js';
 import { query } from '../../../db/index.js';
 import { CircuitBreaker } from '../../utils/circuit-breaker.js';
+import LLMFunnelProfiler from './llm-funnel-profiler.js';
 
 // Circuit breaker for Apify to prevent cascading failures
 const apifyBreaker = new CircuitBreaker({
@@ -30,110 +30,172 @@ export const CompanyProfiler = {
 
         // Execute via Circuit Breaker
         return await apifyBreaker.execute(async () => {
-            // 1. Scan Structure
-            const scanResult = await scanSiteStructure(domain, APIFY_TOKEN);
-            if (!scanResult || scanResult.links.length === 0) {
-                // Not a fatal error, just no links - don't trip breaker
-                console.warn(`[Profiler] No links found for ${domain}`);
-                throw new Error('No links found during site scan');
+            try {
+                // 1. Scan Structure (Local First)
+                const scanResult = await scanSiteStructure(domain, APIFY_TOKEN);
+                const discoveredLinks = scanResult?.links || [];
+
+                if (discoveredLinks.length === 0) {
+                    return { status: 'failed', reason: 'No links discovered during scan' };
+                }
+
+                // --- STAGE 1: IDENTITY QUALIFICATION ---
+                console.log(`[Profiler] Stage 1: Selecting identity pages for verification...`);
+                const identityUrls = await LLMFunnelProfiler.filterIdentityPages(discoveredLinks, companyName, icpType);
+
+                if (identityUrls.length === 0) {
+                    return { status: 'failed', reason: 'Could not identify core About/Strategy pages' };
+                }
+
+                console.log(`[Profiler] Stage 1: Scraping identity pages (${identityUrls.length})...`);
+                const identityContent = await scrapeSpecificPages(identityUrls, APIFY_TOKEN);
+
+                console.log(`[Profiler] Stage 1: Reasoning on qualification...`);
+                const qualification = await LLMFunnelProfiler.qualifyCompany(identityContent, companyName, icpType);
+
+                if (!qualification.is_qualified) {
+                    console.log(`[Profiler] ❌ DISQUALIFIED: ${qualification.reason}`);
+
+                    // Mark as disqualified in DB
+                    await query(
+                        `UPDATE leads 
+                         SET status = 'DISQUALIFIED', 
+                             custom_data = COALESCE(custom_data, '{}'::jsonb) || $1::jsonb,
+                             updated_at = NOW()
+                         WHERE company_name ILIKE $2 OR custom_data::text LIKE $3`,
+                        [
+                            JSON.stringify({
+                                qualification_reason: qualification.reason,
+                                entity_type: qualification.entity_type,
+                                qualification_confidence: qualification.confidence,
+                                disqualified_at: new Date().toISOString()
+                            }),
+                            `%${companyName}%`,
+                            `%${domain}%`
+                        ]
+                    );
+
+                    return { status: 'disqualified', reason: qualification.reason };
+                }
+
+                console.log(`[Profiler] ✅ QUALIFIED (${qualification.entity_type}): Proceeding to Deep Audit...`);
+
+                // --- STAGE 2: DEEP AUDIT ---
+                // Select Relevant Pages for Portfolio/Deals
+                let targetUrls = await LLMFunnelProfiler.filterRelevantPages(discoveredLinks, companyName, icpType);
+
+                // DEEP DISCOVERY: If we have Hubs (Real Estate, Portfolio), scrape them for DEEP LINKS
+                const hubs = discoveredLinks.filter(l =>
+                    /real-estate|portfolio|asset-management|projects|investments/i.test(l) &&
+                    !l.includes('login') && !l.includes('contact')
+                ).slice(0, 5);
+
+                if (hubs.length > 0) {
+                    console.log(`[Profiler] Deep Discovery: Scanning ${hubs.length} hubs for specific project/deal links...`);
+                    const hubContent = await scrapeSpecificPages(hubs, APIFY_TOKEN);
+
+                    // Extract all internal absolute links from hub content
+                    const domainPattern = domain.replace(/^www\./, '').replace('.', '\\.');
+                    const deepLinkRegex = new RegExp(`https?://[^\\s)"]*${domainPattern}[^\\s)"]*`, 'gi');
+                    const deepLinks = [...new Set(hubContent.match(deepLinkRegex) || [])];
+
+                    if (deepLinks.length > 0) {
+                        console.log(`[Profiler] Found ${deepLinks.length} deep links. Aggregating for final selection...`);
+                        const updatedLinks = [...new Set([...discoveredLinks, ...deepLinks])];
+                        targetUrls = await LLMFunnelProfiler.filterRelevantPages(updatedLinks, companyName, icpType);
+                    }
+                }
+
+                // If still empty, use Search Discovery as fallback
+                if (targetUrls.length === 0) {
+                    console.warn(`[Profiler] Recursive discovery yielding no pages. Trying Search Discovery...`);
+                    targetUrls = await LLMFunnelProfiler.discoverPagesViaSearch(domain, companyName);
+                }
+
+                // Final Scrape
+                let content = "";
+                if (targetUrls.length > 0) {
+                    console.log(`[Profiler] Scraping ${targetUrls.length} prioritized pages (Deep Audit)...`);
+                    const prioritizedUrls = [...new Set(targetUrls)].sort((a, b) => {
+                        const priorityKeywords = ['portfolio', 'real-estate', 'projects', 'deals', 'strategy', 'criteria', 'investments', 'properties'];
+                        const aLower = a.toLowerCase();
+                        const bLower = b.toLowerCase();
+                        const aScore = priorityKeywords.some(k => aLower.includes(k)) ? 0 : 1;
+                        const bScore = priorityKeywords.some(k => bLower.includes(k)) ? 0 : 1;
+                        return aScore - bScore;
+                    });
+                    content = await scrapeSpecificPages(prioritizedUrls, APIFY_TOKEN);
+                } else {
+                    console.warn(`[Profiler] No targeted deep URLs found. Falling back to homepage crawl...`);
+                    content = await scrapeCompanyWebsite(domain, APIFY_TOKEN);
+                }
+
+                // 4. Extract Facts & Generate Profile (LLM Funnel - Stage 2)
+                console.log(`[Profiler] Extracting facts and generating profile...`);
+                const [outreachFacts, generatedProfile] = await Promise.all([
+                    LLMFunnelProfiler.extractOutreachFacts(content, companyName, icpType),
+                    LLMFunnelProfiler.generateCompanyProfile(content, companyName, icpType)
+                ]);
+
+                // 5. Update Database
+                const finalProfile = generatedProfile || content.slice(0, 5000);
+
+                await query(
+                    `UPDATE leads 
+                     SET company_profile = $1, 
+                         investment_thesis = $2,
+                         custom_data = jsonb_set(
+                             jsonb_set(
+                                 jsonb_set(
+                                     COALESCE(custom_data, '{}'::jsonb),
+                                     '{portfolio_deals}',
+                                     $3::jsonb
+                                 ),
+                                 '{managed_funds}',
+                                 $4::jsonb
+                             ),
+                             '{recent_news}',
+                             $5::jsonb
+                         ),
+                         updated_at = NOW(),
+                         outreach_status = 'NEEDS_RESEARCH',
+                         outreach_reason = 'profile_enriched_pending_regen'
+                     WHERE company_name ILIKE $6 OR custom_data::text LIKE $7`,
+                    [
+                        finalProfile,
+                        outreachFacts?.investment_thesis || null,
+                        JSON.stringify(outreachFacts?.portfolio_deals || []),
+                        JSON.stringify(outreachFacts?.managed_funds || []),
+                        JSON.stringify(outreachFacts?.recent_news || []),
+                        `%${companyName}%`,
+                        `%${domain}%`
+                    ]
+                );
+
+                console.log(`[Profiler] Successfully enriched ${companyName}`);
+
+                return {
+                    status: 'success',
+                    data: {
+                        company_profile: finalProfile,
+                        custom_data: {
+                            investment_thesis: outreachFacts?.investment_thesis || "",
+                            portfolio_deals: outreachFacts?.portfolio_deals || [],
+                            managed_funds: outreachFacts?.managed_funds || [],
+                            recent_news: outreachFacts?.recent_news || []
+                        }
+                    }
+                };
+            } catch (e) {
+                // Re-throw critical system errors to trip breaker
+                if (e.message.includes('timeout') || e.message.includes('ECONNREFUSED') || e.code >= 500) {
+                    throw e;
+                }
+                // Determine if it's a content error or unknown error
+                console.error(`[Profiler] Non-critical error for ${domain}: ${e.message}`);
+                return { status: 'failed', reason: e.message };
             }
-
-            // 2. Select Pages (ICP-Aware)
-            const filtered = this._selectBestPages(scanResult.links, companyName, icpType);
-            console.log(`[Profiler] Selected ${filtered.length} pages for ${companyName}`);
-
-            if (filtered.length === 0) {
-                throw new Error('No relevant pages found to scrape');
-            }
-
-            // 3. Scrape
-            const content = await scrapeSpecificPages(filtered, APIFY_TOKEN);
-            if (!content || content.length < 500) {
-                throw new Error('Insufficient content scraped from site');
-            }
-
-            // 4. Update Database for all leads of this company
-            // Append explicit timestamp to verify freshness
-            const profileHeader = `[Enriched: ${new Date().toISOString()}]\n\n`;
-
-            await query(
-                `UPDATE leads 
-                 SET company_profile = $1, 
-                     updated_at = NOW(),
-                     outreach_status = 'NEEDS_RESEARCH',
-                     outreach_reason = 'profile_enriched_pending_regen'
-                 WHERE company_name ILIKE $2 OR custom_data::text LIKE $3`,
-                [profileHeader + content, `%${companyName}%`, `%${domain}%`]
-            );
-
-            return {
-                contentLength: content.length,
-                pageCount: filtered.length,
-                status: 'success'
-            };
         });
-    },
-
-    /**
-     * Internal Page Selection Logic (ICP-Aware)
-     */
-    _selectBestPages(links, companyName, icpType) {
-        const lowerIcp = (icpType || '').toLowerCase();
-        let priorityPatterns = [];
-
-        // BASE PATTERNS (Apply to all)
-        const basePatterns = [
-            /about|company|who-we-are|profile|history/i,
-            /team|leadership|management|executive|people/i,
-            /contact/i
-        ];
-
-        // ICP-SPECIFIC PATTERNS
-        if (lowerIcp.includes('family')) {
-            // Family Office Focus
-            priorityPatterns = [
-                ...basePatterns,
-                /family|history|legacy|philanthropy/i,
-                /investments|direct|holdings|assets|portfolio/i,
-                /strategy|philosophy|criteria/i
-            ];
-        } else if (lowerIcp.includes('fund') || lowerIcp.includes('private equity')) {
-            // Fund Focus
-            priorityPatterns = [
-                ...basePatterns,
-                /fund|strategy|criteria|thesis|approach/i,
-                /portfolio|companies|investments|track-record/i
-            ];
-        } else {
-            // Real Estate Developer / Operator Focus (Default)
-            priorityPatterns = [
-                ...basePatterns,
-                /portfolio|projects|properties|assets|real-estate|developments|communities/i,
-                /strategy|approach|investment|thesis|philosophy/i,
-                /residential|multifamily|housing/i
-            ];
-        }
-
-        let priority = links.filter(l => priorityPatterns.some(p => p.test(l)));
-
-        // Remove junk (PDFs, Login, Legal)
-        priority = priority.filter(l =>
-            !/news|press|career|job|legal|privacy|login|signin|portal|events|media|report|download|\.pdf$/i.test(l)
-        );
-
-        // Deduplicate
-        priority = [...new Set(priority)];
-
-        // Limit to 40
-        if (priority.length > 40) priority = priority.slice(0, 40);
-
-        // Fallback: Just return homepage and a few others if none matched
-        if (priority.length < 3) {
-            // Return top 10 unique links that aren't obviously junk
-            return links.filter(l => !/login|signin|privacy/i.test(l)).slice(0, 10);
-        }
-
-        return priority;
     },
 
     /**

@@ -492,7 +492,7 @@ export const performGoogleSearch = async (query, token, checkCancellation = null
     }
 
     try {
-        const gemini = new GeminiModel(apiKey, 'gemini-2.0-flash-exp'); // Use flash-exp or 2.0-flash for search support
+        const gemini = new GeminiModel(apiKey, 'gemini-2.0-flash'); // Use stable 2.0-flash
 
         const prompt = `
         Please search for the following query: "${cleanQuery}"
@@ -614,6 +614,37 @@ export const scanSiteStructure = async (domain, token = null, checkCancellation 
 
         if (response) {
             const $ = cheerio(response.data);
+
+            // If body is empty or just says "Enable JS", try to find __NEXT_DATA__
+            const nextDataText = $('script#__NEXT_DATA__').html();
+            if (nextDataText) {
+                try {
+                    const parsed = JSON.parse(nextDataText);
+                    console.log(`[Local Scraper] Detected Next.js data. Extracting routes...`);
+
+                    // Recursive function to find all "slug" and "linkExternal" strings
+                    const extractSlugs = (obj) => {
+                        if (!obj) return;
+                        if (typeof obj === 'object') {
+                            for (const key in obj) {
+                                if (key === 'slug' && typeof obj[key] === 'string') {
+                                    links.add(`https://${domain}/${obj[key]}`);
+                                } else if (key === 'linkExternal' && typeof obj[key] === 'string' && obj[key].includes(domain)) {
+                                    links.add(obj[key]);
+                                }
+                                extractSlugs(obj[key]);
+                            }
+                        } else if (Array.isArray(obj)) {
+                            obj.forEach(extractSlugs);
+                        }
+                    };
+                    extractSlugs(parsed);
+                    console.log(`[Local Scraper] Extracted ${links.size} links from Next.js data.`);
+                } catch (e) {
+                    console.warn(`[Local Scraper] Failed to parse Next.js data: ${e.message}`);
+                }
+            }
+
             $('script, style, noscript, nav, footer, header, svg, img').remove();
             text = $('body').text().replace(/\s+/g, ' ').substring(0, 5000);
 
@@ -622,17 +653,49 @@ export const scanSiteStructure = async (domain, token = null, checkCancellation 
                 const href = $(el).attr('href');
                 if (href && !href.startsWith('#') && !href.startsWith('mailto:') && !href.startsWith('tel:')) {
                     if (href.startsWith('/') || href.includes(baseUrl)) {
-                        // Skip external or archival domains
-                        if (href.includes('archive.org') || href.includes('facebook.com') || href.includes('twitter.com') ||
-                            href.includes('linkedin.com') || href.includes('instagram.com') || href.includes('youtube.com')) {
-                            return;
-                        }
-
                         const fullUrl = href.startsWith('/') ? `${url.startsWith('https') ? 'https://' : 'http://'}${baseUrl}${href}` : href;
                         links.add(fullUrl.split('#')[0].split('?')[0].replace(/\/$/, ''));
                     }
                 }
             });
+        }
+
+        // 1.1 RENDERED FALLBACK: If homepage local scan found NO links (common for SPAs)
+        if (links.size === 0 && token) {
+            try {
+                console.log(`[Local Scraper] Homepage scan empty. Attempting rendered scan for ${domain}...`);
+                // Use Apify web-scraper just for the homepage to get links
+                const ACTOR_ID = 'apify~web-scraper';
+                const runUrl = `https://api.apify.com/v2/acts/${ACTOR_ID}/runs?token=${token}`;
+                const input = {
+                    startUrls: [{ url }],
+                    pageFunction: "async function pageFunction(context) { const { page, request } = context; await page.waitForTimeout(3000); const links = await page.evaluate(() => Array.from(document.querySelectorAll('a')).map(a => a.href)); return { links }; }",
+                    proxyConfiguration: { useApifyProxy: true }
+                };
+                const startRes = await axios.post(runUrl, input);
+                const runId = startRes.data.data.id;
+
+                // Fast poll (max 30s)
+                let attempts = 0;
+                while (attempts < 15) {
+                    await new Promise(r => setTimeout(r, 2000));
+                    const checkRes = await axios.get(`https://api.apify.com/v2/actor-runs/${runId}?token=${token}`);
+                    if (checkRes.data.data.status === 'SUCCEEDED') {
+                        const datasetId = checkRes.data.data.defaultDatasetId;
+                        const items = await axios.get(`https://api.apify.com/v2/datasets/${datasetId}/items?token=${token}`);
+                        if (items.data && items.data[0]?.links) {
+                            items.data[0].links.forEach(l => {
+                                if (l.includes(domain)) links.add(l.split('#')[0].split('?')[0].replace(/\/$/, ''));
+                            });
+                            console.log(`[Local Scraper] Rendered scan found ${links.size} links.`);
+                        }
+                        break;
+                    }
+                    attempts++;
+                }
+            } catch (e) {
+                console.error(`[Local Scraper] Rendered scan failed:`, e.message);
+            }
         }
 
         // 2. Try to find Sitemap (Sitemaps are often at /sitemap.xml or mentioned in robots.txt)
@@ -730,8 +793,36 @@ export const scrapeSpecificPages = async (urls, token = null, onProgress = () =>
             });
 
             const $ = cheerio(response.data);
+
+            // Check for Next.js content in data blob
+            const nextDataText = $('script#__NEXT_DATA__').html();
+            let nextContent = "";
+            if (nextDataText) {
+                try {
+                    const parsed = JSON.parse(nextDataText);
+                    // Extract all strings from pageProps
+                    const extractText = (obj) => {
+                        if (!obj) return "";
+                        if (typeof obj === 'string') return obj + " ";
+                        if (typeof obj === 'object') {
+                            return Object.values(obj).map(extractText).join("");
+                        }
+                        if (Array.isArray(obj)) {
+                            return obj.map(extractText).join("");
+                        }
+                        return "";
+                    };
+                    nextContent = extractText(parsed.props?.pageProps || {}).replace(/\s+/g, ' ').trim().substring(0, 15000);
+                    if (nextContent.length > 300) {
+                        console.log(`[Local Scraper] Extracted ${nextContent.length} chars from Next.js data for ${url}`);
+                    }
+                } catch (e) { }
+            }
+
             $('script, style, noscript, nav, footer, header, svg, img').remove();
-            let content = $('body').text().replace(/\s+/g, ' ').trim().substring(0, 10000);
+            let bodyContent = $('body').text().replace(/\s+/g, ' ').trim().substring(0, 10000);
+
+            let content = bodyContent.length > nextContent.length ? bodyContent : nextContent;
 
             if (content.length < 200) {
                 throw new Error("Empty or very short content (likely SPA/blocked)");
@@ -793,20 +884,7 @@ export const scrapeSpecificPages = async (urls, token = null, onProgress = () =>
                 }
             }
 
-            // Attempt 3: Desperate Search Snippet fallback
-            if (token) {
-                try {
-                    console.log(`[Local Scraper] Trying Google Search fallback for ${url}...`);
-                    const fallbackResults = await performGoogleSearch(`site:${url} team members bios`, token);
-                    if (fallbackResults && fallbackResults.length > 0) {
-                        const snippetText = fallbackResults.map(r => `${r.title}\n${r.snippet}`).join('\n\n');
-                        return `--- PAGE (SEARCH FALLBACK): ${url} ---\n${snippetText}`;
-                    }
-                } catch (searchErr) {
-                    console.error(`[Local Scraper] Search fallback failed for ${url}`);
-                }
-            }
-
+            // Attempt 3: Skip (Don't use noisy search fallback here)
             return `--- PAGE: ${url} ---\n(Error: ${err.message})`;
         }
     };

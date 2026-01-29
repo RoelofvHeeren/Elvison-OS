@@ -20,6 +20,7 @@
 
 import { GeminiModel, extractJson } from './gemini.js';
 import ResearchFactExtractor from './outreach/researchFactExtractor.js';
+import LLMOutreachGenerator from './llm-outreach-generator.js';
 
 // Constants
 const OPENERS = [
@@ -114,7 +115,9 @@ export class OutreachService {
         icp_type,
         first_name,
         person_name,
-        instructions
+        instructions,
+        portfolio_deals = [], // NEW: Accept portfolio deals from custom_data
+        investment_thesis = null // NEW: Accept investment thesis
     }) {
         try {
             // === Handle Custom Instructions (Manual Review Mode) ===
@@ -151,7 +154,10 @@ export class OutreachService {
                 factResult,
                 first_name,
                 person_name,
-                icp_type
+                icp_type,
+                portfolio_deals,
+                investment_thesis, // Pass thesis
+                company_profile // Pass profile
             );
 
             // Message generation failed
@@ -305,9 +311,47 @@ export class OutreachService {
     }
 
     /**
-     * Generate the outreach message
+     * Generate the outreach message (Hybrid: LLM > Template)
      */
-    static _generateMessage(company_name, factResult, first_name, person_name, icp_type) {
+    static async _generateMessage(company_name, factResult, first_name, person_name, icp_type, portfolio_deals = [], investment_thesis, company_profile) {
+
+        // 1. Try LLM Generation (High Quality)
+        try {
+            const llmResult = await LLMOutreachGenerator.generate({
+                companyName: company_name,
+                personName: person_name,
+                icpType: icp_type,
+                investmentThesis: investment_thesis,
+                portfolioDeals: portfolio_deals,
+                companyProfile: company_profile
+            });
+
+            if (llmResult) {
+                // Success! Map to expected format
+                return {
+                    outreach_status: 'SUCCESS',
+                    outreach_reason: null, // llmResult.reasoning (could log this)
+                    research_fact: factResult.fact,
+                    research_fact_type: factResult.fact_type,
+                    message_version: 'v8-llm',
+                    profile_quality_score: factResult.confidence,
+                    linkedin_message: llmResult.linkedin_message,
+                    email_subject: llmResult.email_subject || 'Partnership Opportunity',
+                    email_body: llmResult.email_body || llmResult.linkedin_message
+                };
+            }
+        } catch (e) {
+            console.warn('[OutreachService] LLM generation passed, falling back to template:', e);
+        }
+
+        // 2. Fallback to Template (Legacy)
+        return this._generateTemplateMessage(company_name, factResult, first_name, person_name, icp_type, portfolio_deals);
+    }
+
+    /**
+     * Legacy Template Generator
+     */
+    static _generateTemplateMessage(company_name, factResult, first_name, person_name, icp_type, portfolio_deals = []) {
         try {
             // Ticket 1: Fix Family Office detection bug
             const icp = (icp_type || '').toUpperCase().replace(/\s|-/g, '_');
@@ -331,12 +375,26 @@ export class OutreachService {
             // Build template based on fact type
             // Ticket 3: Enhanced Micro-Hooks for Deal/Scale/Thesis
             // V5.2: Dynamic tone and structure adjustments
+            // V6.0: Portfolio deal integration for hyper-specific hooks
             let messageTemplate;
             const investorHook = "often partner with LP or co-GP capital";
 
-            if (factResult.fact_type === 'DEAL') {
-                // DEAL: Specificity wins. "We develop similar projects..."
-                messageTemplate = `Hi {First_name}, ${opener} ${factResult.fact}. We have experience developing comparable projects at Fifth Avenue Properties and ${investorHook}. ${closer}.`;
+            // NEW: Check if we have portfolio deals for enhanced specificity
+            const hasDeal = portfolio_deals && portfolio_deals.length > 0;
+            const bestDeal = hasDeal ? portfolio_deals[0] : null;
+
+            if (factResult.fact_type === 'DEAL' || (hasDeal && bestDeal)) {
+                // DEAL: Specificity wins. Mention their specific project if available
+                if (bestDeal && bestDeal.name) {
+                    const dealContext = bestDeal.location ? `${bestDeal.name} in ${bestDeal.location}` : bestDeal.name;
+                    // Only add "units" if not already present in the string
+                    const dealSize = bestDeal.units
+                        ? (bestDeal.units.toLowerCase().includes('unit') ? ` (${bestDeal.units})` : ` (${bestDeal.units} units)`)
+                        : '';
+                    messageTemplate = `Hi {First_name}, ${opener} your work on ${dealContext}${dealSize}. We develop similar residential projects at Fifth Avenue Properties and ${investorHook}. ${closer}.`;
+                } else {
+                    messageTemplate = `Hi {First_name}, ${opener} ${factResult.fact}. We have experience developing comparable projects at Fifth Avenue Properties and ${investorHook}. ${closer}.`;
+                }
             } else if (factResult.fact_type === 'SCALE') {
                 // SCALE: Capacity focus. "At your scale..."
                 messageTemplate = `Hi {First_name}, ${opener} ${factResult.fact}. Given your portfolio scale, we believe our co-GP opportunities at Fifth Avenue Properties would align well. ${closer}.`;
