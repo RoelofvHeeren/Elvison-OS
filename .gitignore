@@ -28,3 +28,4 @@ nohup.out
 gcp-oauth.keys.json
 credentials.json
 dist/.gsheets-server-credentials.json
+*.json
