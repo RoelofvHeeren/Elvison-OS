@@ -748,6 +748,12 @@ export const runAgentWorkflow = async (input, config) => {
                     // PARAMETERIZED SCORE THRESHOLD PER ICP TYPE
                     const scoreThreshold = isFamilyOfficeSearch ? 8 : 6;
 
+                    // NEW: GEOGRAPHY CHECK - Broadened to North America (US + Canada)
+                    const isNorthAmericaRequired = (companyContext.icpDescription || "").toLowerCase().includes("canada") ||
+                        (companyContext.icpDescription || "").toLowerCase().includes("canadian") ||
+                        (companyContext.icpDescription || "").toLowerCase().includes("united states") ||
+                        (companyContext.icpDescription || "").toLowerCase().includes("north america");
+
                     let strictnessInstructions = "";
                     if (isFamilyOfficeSearch) {
 
@@ -755,7 +761,7 @@ export const runAgentWorkflow = async (input, config) => {
                         **STRICT REQUIREMENTS - MUST MEET ALL:**
                         1. Must be an EXPLICIT Single Family Office (SFO) or Multi-Family Office (MFO) - NOT a wealth manager, advisor, or broker
                         2. Must have a DIRECT Real Estate or Private Equity investment arm (not just "alternative investments")
-                        3. Must be Canadian-based or have explicit Canadian investment mandate
+                        3. Must have a North American presence (Canada or US) or explicit North American investment mandate
 
                         **AUTOMATIC DISQUALIFICATION (Score 1-4):**
                         - Wealth managers, financial advisors, insurance companies
@@ -767,8 +773,8 @@ export const runAgentWorkflow = async (input, config) => {
                         - Unclear or vague investment mandates
 
                         **SCORING (BE STRICT):**
-                        - **9-10**: Explicitly states SFO/MFO + names specific RE/PE deals or portfolios + Canadian
-                        - **8**: Clearly SFO/MFO with direct investment mandate + Canadian presence
+                        - **9-10**: Explicitly states SFO/MFO + names specific RE/PE deals or portfolios + North American
+                        - **8**: Clearly SFO/MFO with direct investment mandate + North American presence
                         - **5-7**: Might be an investor but not explicitly SFO/MFO or unclear if direct investing. (DISQUALIFY if unsure)
                         - **1-4**: Service providers, brokers, advisors.
 
@@ -783,23 +789,19 @@ export const runAgentWorkflow = async (input, config) => {
                         5. **Holdings**: "Group" or "Holdings" companies that invest are VALID.
 
                         SCORING GUIDELINES:
-                        - **8-10 (Perfect Fit)**: Dedicated REPE, REIT, or large institutional investor${requiresCanada ? ' + Canadian presence' : ''}.
+                        - **8-10 (Perfect Fit)**: Dedicated REPE, REIT, or large institutional investor${isNorthAmericaRequired ? ' + North American presence' : ''}.
                         - **6-7 (Likely Fit/Keep)**: Generalist PE firm, Holdings company with RE assets. **WHEN IN DOUBT, SCORE 6 TO KEEP.**
-                        - **1-5 (Disqualify)**: Pure Service Providers (Law/Tax), Pure Brokers (Sales only), Lenders (Debt only), Tenants${requiresCanada ? ', Non-Canadian without Canadian strategy' : ''}.
+                        - **1-5 (Disqualify)**: Pure Service Providers (Law/Tax), Pure Brokers (Sales only), Lenders (Debt only), Tenants${isNorthAmericaRequired ? ', Outside North America without North American strategy' : ''}.
                         `;
                     }
 
-                    // NEW: GEOGRAPHY CHECK
-                    const isCanadaRequired = (companyContext.icpDescription || "").toLowerCase().includes("canada") ||
-                        (companyContext.icpDescription || "").toLowerCase().includes("canadian");
-
-                    if (isCanadaRequired) {
+                    if (isNorthAmericaRequired) {
                         strictnessInstructions += `
                         
-                        CRITICAL GEOGRAPHY CHECK (CANADA):
-                        The user STRICTLY requires companies based in CANADA or with a MAJOR CANADIAN PRESENCE.
-                        - IF the company is clearly based in the US, UK, India, Middle East, etc. WITHOUT a Canadian office or explicit mention of Canadian investments -> DISQUALIFY IMMEDIATELY (Score 1).
-                        - IF the company is Global, they are ONLY permitted if they mention a "Toronto" or "Vancouver" or "Montreal" office OR explicitly state they are "actively investing in Canada". Otherwise -> DISQUALIFY.
+                        CRITICAL GEOGRAPHY CHECK (NORTH AMERICA):
+                        The user requires companies with a MAJOR NORTH AMERICAN PRESENCE (Canada or USA).
+                        - IF the company is clearly based in Europe, Asia, Middle East, etc. WITHOUT a North American office or explicit mention of North American investments -> DISQUALIFY IMMEDIATELY (Score 1).
+                        - IF the company is Global, they are ONLY permitted if they mention significant North American operations or active investing in the US/Canada. Otherwise -> DISQUALIFY.
                         `;
                     }
 

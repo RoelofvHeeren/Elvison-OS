@@ -19,15 +19,20 @@ export class CompanyScorer {
         }
 
         // Fetch ICP config to check for geography requirements
-        let requiresCanada = false;
+        let requiresNorthAmerica = false;
         try {
             const icpRes = await query(`SELECT config FROM icps WHERE id = $1`, [icpId]);
             if (icpRes.rows.length > 0 && icpRes.rows[0].config) {
                 const cfg = icpRes.rows[0].config;
                 const icpDescription = cfg.surveys?.company_finder?.icp_description || cfg.icp_description || '';
-                requiresCanada = icpDescription.toLowerCase().includes('canada') || icpDescription.toLowerCase().includes('canadian');
-                if (requiresCanada) {
-                    console.log(`🇨🇦 Canada geography requirement detected for ICP cleanup`);
+                const lowerDesc = icpDescription.toLowerCase();
+                requiresNorthAmerica = lowerDesc.includes('canada') ||
+                    lowerDesc.includes('canadian') ||
+                    lowerDesc.includes('united states') ||
+                    lowerDesc.includes('north america');
+
+                if (requiresNorthAmerica) {
+                    console.log(`🌎 North America geography requirement detected for ICP cleanup`);
                 }
             }
         } catch (e) {
@@ -66,14 +71,14 @@ export class CompanyScorer {
         // Helper to process a single company
         const processCompany = async (company) => {
             try {
-                const scoreData = await this.rescoreLead(company, typeStr, requiresCanada);
+                const scoreData = await this.rescoreLead(company, typeStr, requiresNorthAmerica);
 
                 if (scoreData) {
                     if (scoreData.fit_score < SCORE_THRESHOLD) {
                         // 1. CROSS-CHECK: Is it valid for the OTHER category?
                         // If we are checking FAMILY_OFFICE, check INVESTMENT_FIRM, and vice-versa.
                         const otherTypeStr = isFamilyOffice ? 'INVESTMENT_FIRM' : 'FAMILY_OFFICE';
-                        const otherScoreData = await this.rescoreLead(company, otherTypeStr, requiresCanada);
+                        const otherScoreData = await this.rescoreLead(company, otherTypeStr, requiresNorthAmerica);
 
                         if (otherScoreData && otherScoreData.fit_score >= SCORE_THRESHOLD) {
                             // SUCCESS: It's a miscategorized company! RESCUE IT.
@@ -113,7 +118,7 @@ export class CompanyScorer {
                                     // Keep the FO type, don't downgrade
                                     newIcpType = company.icp_type;
                                 }
-                                
+
                                 await query(`
                                     UPDATE companies 
                                     SET icp_type = $1, 
@@ -226,17 +231,17 @@ export class CompanyScorer {
         return results;
     }
 
-    static async rescoreLead(lead, type, requiresCanada = false) {
+    static async rescoreLead(lead, type, requiresNorthAmerica = false) {
         const companyName = lead.company_name;
         const profile = lead.custom_data?.company_profile || lead.custom_data?.description || '';
         const website = lead.custom_data?.company_website || lead.custom_data?.website || '';
 
-        // Geography instruction to inject if Canada is required
-        const canadaInstruction = requiresCanada ? `
-    ** CRITICAL GEOGRAPHY CHECK(CANADA):**
-        - The user STRICTLY requires Canadian companies or firms with explicit Canadian presence.
-- Non - Canadian firms without a Canadian office or Canadian investment strategy -> DISQUALIFY(Score 1 - 3).
-- Global firms are ONLY permitted if they mention Toronto, Vancouver, Montreal, or "investing in Canada".
+        // Geography instruction to inject if North America is required
+        const geographyInstruction = requiresNorthAmerica ? `
+    ** CRITICAL GEOGRAPHY CHECK (NORTH AMERICA):**
+        - The user requires companies with a MAJOR NORTH AMERICAN PRESENCE (Canada or USA).
+        - IF the company is clearly based in Europe, Asia, Middle East, etc. WITHOUT a North American office or explicit mention of North American investments -> DISQUALIFY IMMEDIATELY (Score 1-3).
+        - IF the company is Global, they are ONLY permitted if they mention significant North American operations or active investing in the US/Canada. Otherwise -> DISQUALIFY.
 ` : '';
 
         let prompt = '';
@@ -247,12 +252,12 @@ export class CompanyScorer {
     WEBSITE: ${website}
     PROFILE: ${profile.substring(0, 1500)}
 
-    ${canadaInstruction}
+    ${geographyInstruction}
 
     **STRICT REQUIREMENTS - MUST MEET ALL:**
     1. Must be an EXPLICIT Single Family Office (SFO) or Multi-Family Office (MFO) - NOT a wealth manager, advisor, or broker
     2. Must have a DIRECT Real Estate or Private Equity investment arm (not just "alternative investments")
-    3. Must be Canadian-based or have explicit Canadian investment mandate
+    3. Must have a North American presence (Canada or US) or explicit North American investment mandate
 
     **AUTOMATIC DISQUALIFICATION (Score 1-4):**
     - Wealth managers, financial advisors, insurance companies
@@ -262,8 +267,8 @@ export class CompanyScorer {
     - Unclear or vague investment mandates
 
     **SCORING (BE STRICT):**
-    - **9-10**: Explicitly states SFO/MFO + names specific RE/PE deals or portfolios + Canadian
-    - **8**: Clearly SFO/MFO with direct investment mandate + Canadian presence
+    - **9-10**: Explicitly states SFO/MFO + names specific RE/PE deals or portfolios + North American
+    - **8**: Clearly SFO/MFO with direct investment mandate + North American presence
     - **5-7**: Might be an investor but not explicitly SFO/MFO or unclear if direct investing
     - **1-4**: Does not meet strict criteria above
 
@@ -291,12 +296,12 @@ export class CompanyScorer {
     4. **Multi-Strategy**: If a firm invests in Tech/Healthcare BUT also Real Estate/Infrastructure, **KEEP THEM** (Score 7-8).
     5. **Holdings**: "Group" or "Holdings" companies that invest are VALID.
 
-    ${canadaInstruction}
+    ${geographyInstruction}
 
     SCORING GUIDELINES:
-    - **8-10 (Perfect Fit)**: Dedicated REPE, REIT, or large institutional investor${requiresCanada ? ' + Canadian presence' : ''}.
+    - **8-10 (Perfect Fit)**: Dedicated REPE, REIT, or large institutional investor${requiresNorthAmerica ? ' + North American presence' : ''}.
     - **6-7 (Likely Fit/Keep)**: Generalist PE firm, Holdings company with RE assets. **WHEN IN DOUBT, SCORE 6 TO KEEP.**
-    - **1-5 (Disqualify)**: Pure Service Providers (Law/Tax), Pure Brokers (Sales only), Lenders (Debt only), Tenants${requiresCanada ? ', Non-Canadian without Canadian strategy' : ''}.
+    - **1-5 (Disqualify)**: Pure Service Providers (Law/Tax), Pure Brokers (Sales only), Lenders (Debt only), Tenants${requiresNorthAmerica ? ', Outside North America without North American strategy' : ''}.
 
     OUTPUT JSON:
     {
