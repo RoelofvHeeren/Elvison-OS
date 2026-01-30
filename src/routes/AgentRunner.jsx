@@ -285,6 +285,10 @@ const AgentRunner = () => {
                             } else if (line.startsWith('event: log')) {
                                 try {
                                     const logData = JSON.parse(line.split('\n')[1].replace('data: ', ''));
+
+                                    // CRITICAL: Clear initializing state as soon as we get the first real log
+                                    setIsInitializing(false);
+
                                     setLogs(prev => {
                                         // Avoid duplicate logs if polling also caught them
                                         const exists = prev.some(l => l.detail === logData.detail && l.step === logData.step);
@@ -523,10 +527,10 @@ const AgentRunner = () => {
                         )}
                     </div>
                     {/* Controls */}
-                    {currentRun && currentRun.status === 'RUNNING' && (
+                    {selectedRunId && runStatus === 'RUNNING' && (
                         <div className="flex gap-2">
                             <button
-                                onClick={() => handleStopRun(currentRun.id)}
+                                onClick={() => handleStopRun(selectedRunId)}
                                 className="text-xs bg-red-500/20 text-red-400 px-3 py-1.5 rounded hover:bg-red-500/40 transition-colors flex items-center gap-1"
                             >
                                 <StopCircle className="h-3 w-3" /> Stop
