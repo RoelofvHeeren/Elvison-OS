@@ -245,8 +245,10 @@ export const runAgentWorkflow = async (input, config) => {
                 }
 
                 // Read Outreach Creator settings (NEW)
+                // Read Outreach Creator settings (NEW)
                 if (cfg.surveys && cfg.surveys.outreach_creator) {
                     const outreach = cfg.surveys.outreach_creator;
+                    if (outreach.prompt_instructions) companyContext.outreachPromptInstructions = outreach.prompt_instructions;
                     if (outreach.template) companyContext.outreachTemplate = outreach.template;
                     if (outreach.forbidden) companyContext.outreachForbidden = outreach.forbidden;
                     if (outreach.credibility) companyContext.outreachCredibility = outreach.credibility;
@@ -1175,7 +1177,7 @@ OUTPUT FORMAT: Return JSON array with email and match_score:
                     apiKey: googleKey,
                     modelName: 'gemini-2.0-flash',
                     agentName: 'Outreach Creator',
-                    instructions: `You are Roelof van Heeren, a Principal at Fifth Avenue Properties, a Canadian residential real estate development firm.
+                    instructions: companyContext.outreachPromptInstructions || `You are Roelof van Heeren, a Principal at Fifth Avenue Properties, a Canadian residential real estate development firm.
 Your goal is to write direct, fact-based outreach messages to potential Investment Partners (LPs/Co-GPs) or Peers in the industry.
 
 CRITICAL: The user HATES generic messages. 
