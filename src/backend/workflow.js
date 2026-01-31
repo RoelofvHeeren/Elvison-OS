@@ -926,6 +926,36 @@ export const runAgentWorkflow = async (input, config) => {
 
         logStep('Company Finder', `✅ Discovery complete: ${masterQualifiedList.length} qualified, ${totalDisqualified} disqualified, ${totalDiscovered} total discovered`);
 
+        // IMMEDIATE DATA PERSISTENCE
+        // Sync to Display Table (companies) immediately after discovery
+        // This ensures companies are visible even if no leads are found later
+        if (masterQualifiedList.length > 0) {
+            logStep('Database', `💾 Persisting ${masterQualifiedList.length} companies to database...`);
+            try {
+                for (const company of masterQualifiedList) {
+                    // company object has: company_name, domain, match_score, company_profile
+                    const website = company.website || company.domain;
+                    let score = parseInt(company.match_score);
+                    if (isNaN(score)) score = null;
+
+                    await query(`
+                        INSERT INTO companies (user_id, company_name, website, company_profile, fit_score, created_at, last_updated)
+                        VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+                        ON CONFLICT (user_id, company_name) 
+                        DO UPDATE SET
+                            website = COALESCE(companies.website, EXCLUDED.website),
+                            company_profile = COALESCE(companies.company_profile, EXCLUDED.company_profile),
+                            fit_score = COALESCE(companies.fit_score, EXCLUDED.fit_score),
+                            last_updated = NOW()
+                    `, [userId, company.company_name, website, company.company_profile, score]);
+                }
+                logStep('Database', `✅ Successfully persisted companies.`);
+            } catch (e) {
+                console.error('Failed to persist companies:', e);
+                logStep('Database', `⚠️ Failed to persist companies: ${e.message}`);
+            }
+        }
+
         // --- Phase 1 Check: Data Starvation Protection ---
         if (masterQualifiedList.length === 0) {
             logStep('Workflow', '❌ No qualified companies found after discovery. Stopping workflow to prevent hallucination.');
