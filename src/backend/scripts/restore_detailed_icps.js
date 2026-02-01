@@ -4,16 +4,11 @@ import { generateFOQuerySet } from '../icps/familyOffice.queryBank.js';
 // --- HELPER FOR INVESTMENT FIRM EXCLUSIONS (SIMILAR TO FO QUERY BANK) ---
 function buildInvestmentFirmQuery(basePattern, geography = '', exclusions = []) {
     const defaultExclusions = [
-        '-brokerage',
-        '-"property management"',
-        '-lender',
-        '-"mortgage broker"',
-        '-consulting',
-        '-"service provider"',
-        '-"commercial real estate agent"',
         '-residential',
-        '-"wealth management"',
-        '-advisor'
+        '-brokerage',
+        '-realtor',
+        '-lender',
+        '-"property management"'
     ];
 
     const allExclusions = [...defaultExclusions, ...exclusions];

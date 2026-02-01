@@ -83,7 +83,8 @@ export class ResearchFactExtractor {
                 return this._noResult('Empty profile provided');
             }
 
-            const profile = profileText.trim();
+            // Clean markdown headers before processing
+            const profile = profileText.replace(/^#+\s+.*$/gm, '').trim();
             const profileLower = profile.toLowerCase();
 
             // === Priority 1: Named Deals/Projects ===
@@ -383,7 +384,7 @@ export class ResearchFactExtractor {
     static _isTooGeneric(text) {
         const genericTerms = [
             'alternative investments', 'global reach', 'years in business',
-            'impressed', 'synergies', 'company', 'firm', 'organization', 'group',
+            'impressed', 'synergies', 'group',
             'market leader', 'proven track record', 'highest standards'
         ];
 

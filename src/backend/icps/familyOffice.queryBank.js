@@ -14,7 +14,7 @@ export const FAMILY_OFFICE_QUERY_PATTERNS = {
         '"family office" investments',
         '"family office" capital',
     ],
-    
+
     // Category 2: The sleeper goldmine terms (most effective for discovery)
     sleeper: [
         '"private investment office"',
@@ -25,7 +25,7 @@ export const FAMILY_OFFICE_QUERY_PATTERNS = {
         'family holding company investments',
         'family holdings real estate',
     ],
-    
+
     // Category 3: Holdings and capital patterns
     holdings: [
         '"holding company" "private investments"',
@@ -35,14 +35,14 @@ export const FAMILY_OFFICE_QUERY_PATTERNS = {
         '"family capital" real estate',
         'family office holdings portfolio',
     ],
-    
+
     // Category 4: Operator-style FO (many are developers)
     operatorFO: [
         'holding company real estate developer',
         'private family company real estate',
         'family operated real estate investments',
     ],
-    
+
     // Category 5: Geographic + FO combos
     geographic: {
         canada: [
@@ -61,7 +61,7 @@ export const FAMILY_OFFICE_QUERY_PATTERNS = {
             'global family office capital',
         ]
     },
-    
+
     // Category 6: Alternative entity types (often used by FO)
     alternativeStructures: [
         'family-led investment company',
@@ -80,25 +80,20 @@ export function buildFamilyOfficeQuery(basePattern, geography = '', exclusions =
     const defaultExclusions = [
         '-advisor',
         '-wealth',
-        '-RIA',
-        '-"financial planning"',
-        '-"private banking"',
-        '-"investment advisory"',
-        '-"wealth management"',
-        '-"financial consultant"',
-        '-"fiduciary"',
-        '-"portfolio management services"'
+        '-residential',
+        '-broker',
+        '-"financial planning"'
     ];
-    
+
     const allExclusions = [...defaultExclusions, ...exclusions];
     const exclusionStr = allExclusions.join(' ');
-    
+
     let query = basePattern;
     if (geography) {
         query += ` ${geography}`;
     }
     query += ` ${exclusionStr}`;
-    
+
     return query.trim();
 }
 
@@ -108,25 +103,25 @@ export function buildFamilyOfficeQuery(basePattern, geography = '', exclusions =
  */
 export function generateFOQuerySet(geography = 'Canada') {
     const queries = [];
-    
+
     // Add direct terms
     queries.push(buildFamilyOfficeQuery('single family office', geography));
     queries.push(buildFamilyOfficeQuery('multi family office', geography));
     queries.push(buildFamilyOfficeQuery('"family office" capital', geography));
-    
+
     // Add sleeper terms (highest quality results)
     queries.push(buildFamilyOfficeQuery('"private investment office"', geography));
     queries.push(buildFamilyOfficeQuery('"investment office" principal', geography));
     queries.push(buildFamilyOfficeQuery('"principal investments"', geography));
-    
+
     // Add holdings patterns
     queries.push(buildFamilyOfficeQuery('holding company "private investments"', geography));
     queries.push(buildFamilyOfficeQuery('"family holdings" real estate', geography));
-    
+
     // Add alternative structures
     queries.push(buildFamilyOfficeQuery('family-controlled capital', geography));
     queries.push(buildFamilyOfficeQuery('proprietor-owned investment', geography));
-    
+
     return queries;
 }
 
@@ -141,14 +136,14 @@ export const FAMILY_OFFICE_DEEP_RESEARCH = {
         '{company} "direct investment"',
         '{company} family office',
     ],
-    
+
     // Founder/family name research
     founderResearch: [
         '{founder_name} investment office',
         '{founder_name} capital',
         '{founder_name} holdings real estate',
     ],
-    
+
     // Competitive analysis (who does this FO invest alongside?)
     competitiveAnalysis: [
         'family office investments real estate {geographic_focus}',

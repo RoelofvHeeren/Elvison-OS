@@ -147,17 +147,6 @@ const SheetTable = ({ rows, loading, error, onDeleteRow, onEnrichRow, onDeepEnri
                     </div>
                   </td>
 
-                  {/* Status */}
-                  <td className="px-4 py-3.5">
-                    <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border shadow-sm ${row.status === 'SUCCESS' ? 'bg-teal-500/20 text-teal-400 border-teal-500/30' :
-                      row.status === 'SKIP' ? 'bg-rose-500/20 text-rose-400 border-rose-500/30' :
-                        row.status === 'NEEDS_RESEARCH' ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' :
-                          'bg-gray-500/20 text-gray-400 border-gray-500/30'
-                      }`}>
-                      {row.status}
-                    </span>
-                  </td>
-
                   {/* Email */}
                   <td className="px-4 py-3.5 text-xs text-gray-400">
                     {row.email ? (
@@ -209,22 +198,6 @@ const SheetTable = ({ rows, loading, error, onDeleteRow, onEnrichRow, onDeepEnri
                         Visit
                       </a>
                     ) : '—'}
-                  </td>
-
-                  {/* Reason */}
-                  <td className="px-4 py-3.5 text-[11px] text-gray-400 max-w-[12rem] truncate" title={row.reason}>
-                    {row.reason || '—'}
-                  </td>
-
-                  {/* Research Fact */}
-                  <td className="px-4 py-3.5">
-                    {row.researchFact ? (
-                      <div className="max-w-[16rem] italic text-[11px] text-gray-300 leading-snug truncate" title={row.researchFact}>
-                        "{row.researchFact}"
-                      </div>
-                    ) : (
-                      <span className="text-gray-600 text-[11px]">No fact found</span>
-                    )}
                   </td>
 
                   {/* Connection Request */}
@@ -290,6 +263,32 @@ const SheetTable = ({ rows, loading, error, onDeleteRow, onEnrichRow, onDeepEnri
                     )}
                   </td>
 
+                  {/* Status */}
+                  <td className="px-4 py-3.5">
+                    <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border shadow-sm ${row.status === 'SUCCESS' ? 'bg-teal-500/20 text-teal-400 border-teal-500/30' :
+                      row.status === 'SKIP' ? 'bg-rose-500/20 text-rose-400 border-rose-500/30' :
+                        row.status === 'NEEDS_RESEARCH' ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' :
+                          'bg-gray-500/20 text-gray-400 border-gray-500/30'
+                      }`}>
+                      {row.status}
+                    </span>
+                  </td>
+
+                  {/* Reason */}
+                  <td className="px-4 py-3.5 text-[11px] text-gray-400 max-w-[12rem] truncate" title={row.reason}>
+                    {row.reason || '—'}
+                  </td>
+
+                  {/* Research Fact */}
+                  <td className="px-4 py-3.5">
+                    {row.researchFact ? (
+                      <div className="max-w-[16rem] italic text-[11px] text-gray-300 leading-snug truncate" title={row.researchFact}>
+                        "{row.researchFact}"
+                      </div>
+                    ) : (
+                      <span className="text-gray-600 text-[11px]">No fact found</span>
+                    )}
+                  </td>
                   {/* Actions */}
                   <td className="px-4 py-3 text-gray-400">
                     <div className="flex items-center gap-2">
@@ -337,8 +336,8 @@ const SheetTable = ({ rows, loading, error, onDeleteRow, onEnrichRow, onDeepEnri
             )}
           </tbody>
         </table>
-      </div>
-    </div>
+      </div >
+    </div >
   )
 }
 
