@@ -423,7 +423,7 @@ export const scrapeCompanyWebsite = async (domain, token, checkCancellation = nu
         ],
         saveHtml: false,
         removeElementsCssSelector: 'nav, footer, script, style, noscript, svg',
-        crawlerType: 'cheerio' // Fast & cheap
+        crawlerType: 'playwright:firefox' // Use Playwright to handle SPAs (React/Next.js)
     };
 
     try {
@@ -937,7 +937,7 @@ export const scrapeFullSite = async (domain, token, maxCost = 5.00, onProgress =
         saveHtml: false,
         saveMarkdown: true, // We want markdown for LLM
         removeElementsCssSelector: 'nav, footer, script, style, noscript, svg, .ad, .popup, .cookie-banner',
-        crawlerType: 'cheerio', // Cheapest & Fastest
+        crawlerType: 'playwright:firefox', // Use Playwright for better data quality
     };
 
     if (options.globs && options.globs.length > 0) {

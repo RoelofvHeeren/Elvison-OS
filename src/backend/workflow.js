@@ -725,11 +725,21 @@ export const runAgentWorkflow = async (input, config) => {
                         const { links, content: fallbackContent } = await scrapeWebsiteSmart(candidate.domain);
                         finalContent = fallbackContent;
 
-                        if (companyContext.depth === "Deep Dive (News, LinkedIn, Reports)" && links.length > 5) {
-                            logStep('Company Profiler', `🧠 Smart Selecting pages for ${candidate.domain}...`);
+                        // CRITICAL: Always do deep dive for Investment Firms/Family Offices to find "Portfolio" pages
+                        const isInvestmentContext = companyContext.icpDescription?.toLowerCase().includes('family office') ||
+                            companyContext.icpDescription?.toLowerCase().includes('investment') ||
+                            companyContext.icpDescription?.toLowerCase().includes('real estate');
+
+                        if ((isInvestmentContext || companyContext.depth === "Deep Dive (News, LinkedIn, Reports)") && links.length > 5) {
+                            logStep('Company Profiler', `🧠 Deep Scraping (Portfolio/Deals) for ${candidate.domain}...`);
                             const bestUrls = await selectRelevantPages(candidate.domain, links, companyContext.icpDescription);
                             if (bestUrls.length > 0) {
-                                finalContent = await scrapeSpecificPages(bestUrls, apifyToken, checkCancellation);
+                                // Scrape specific pages and APPEND to homepage content
+                                const deepContent = await scrapeSpecificPages(bestUrls, apifyToken, checkCancellation);
+                                if (deepContent && deepContent.length > 500) {
+                                    finalContent = finalContent + "\n\n" + deepContent;
+                                    logStep('Company Profiler', `✅ Added ${deepContent.length} chars from deep pages.`);
+                                }
                             }
                         }
                     } catch (scrapeErr) {
@@ -835,6 +845,12 @@ export const runAgentWorkflow = async (input, config) => {
                         
                         # Entity Classification
                         (Rationale for why this is a Principal Investor and not a Wealth Manager)
+
+                        # Portfolio Highlights
+                        (List specific recent deals, acquisitions, or assets mentioned. "See 'Featured' or 'Portfolio' sections".)
+
+                        # Geographic Focus
+                        (Where do they invest? e.g. "North America", "Global", "UK & Europe")
 
                         # Key Highlights
                         - Use bullet points for critical stats or unique edges.

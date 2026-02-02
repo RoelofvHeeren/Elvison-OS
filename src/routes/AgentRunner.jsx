@@ -33,6 +33,7 @@ const AgentRunner = () => {
     const [runStatus, setRunStatus] = useState(null)
     const [runResult, setRunResult] = useState(null)
     const [runError, setRunError] = useState(null)
+    const [runStats, setRunStats] = useState(null)
     const [currentStep, setCurrentStep] = useState(null)
     const [isInitializing, setIsInitializing] = useState(false)
 
@@ -96,6 +97,7 @@ const AgentRunner = () => {
 
             setRunStatus(runData.status);
             setRunError(runData.error_log);
+            setRunStats(runData.stats || null);
 
             if (runData.status === 'COMPLETED' && runData.output_data) {
                 setRunResult({ leads: runData.output_data.leads || [] });
@@ -152,6 +154,7 @@ const AgentRunner = () => {
             setRunStatus('LOADING');
             setRunError(null);
             setRunResult(null);
+            setRunStats(null);
             setCurrentStep(null);
             setIsInitializing(false);
         }
@@ -570,6 +573,7 @@ const AgentRunner = () => {
                         <WorkflowProgress
                             logs={logs}
                             status={runStatus}
+                            stats={runStats}
                             isInitializing={isInitializing}
                         />
                     )}

@@ -89,7 +89,7 @@ const extractMilestones = (logs) => {
     return milestones.slice(-7)
 }
 
-const StageHeader = ({ currentStage, status }) => {
+const StageHeader = ({ currentStage, status, stats }) => {
     const stage = STAGE_DEFINITIONS.find(s => s.id === currentStage)
     const isComplete = status === 'COMPLETED'
     const isError = status === 'FAILED'
@@ -103,9 +103,9 @@ const StageHeader = ({ currentStage, status }) => {
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -10 }}
                     transition={{ duration: 0.4, ease: 'easeInOut' }}
-                    className="flex items-center gap-4"
+                    className="flex items-start gap-4"
                 >
-                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center backdrop-blur-md transition-all duration-500 ${isComplete ? 'bg-emerald-500/20 border-2 border-emerald-500/50' :
+                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center backdrop-blur-md transition-all duration-500 shrink-0 ${isComplete ? 'bg-emerald-500/20 border-2 border-emerald-500/50' :
                         isError ? 'bg-red-500/20 border-2 border-red-500/50' :
                             'bg-[#139187]/20 border-2 border-[#139187]/50 shadow-[0_0_20px_rgba(19,145,135,0.3)]'
                         }`}>
@@ -118,13 +118,29 @@ const StageHeader = ({ currentStage, status }) => {
                         )}
                     </div>
                     <div className="flex-1">
-                        <h3 className={`text-2xl font-semibold mb-1 transition-colors duration-300 ${isComplete ? 'text-emerald-400' :
-                            isError ? 'text-red-400' :
-                                'text-white'
-                            }`}>
-                            {isComplete ? 'Complete!' : isError ? 'Failed' : stage?.label || 'Processing'}
-                        </h3>
-                        <p className="text-sm text-gray-400">
+                        <div className="flex justify-between items-start">
+                            <h3 className={`text-2xl font-semibold mb-1 transition-colors duration-300 ${isComplete ? 'text-emerald-400' :
+                                isError ? 'text-red-400' :
+                                    'text-white'
+                                }`}>
+                                {isComplete ? 'Complete!' : isError ? 'Failed' : stage?.label || 'Processing'}
+                            </h3>
+                            {/* Run Stats Badge */}
+                            {stats && stats.cost && (
+                                <div className="flex items-center gap-3 bg-black/40 rounded-lg px-3 py-1.5 border border-white/10">
+                                    <div className="flex flex-col items-end">
+                                        <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">Cost</span>
+                                        <span className="text-sm font-mono text-emerald-400">{stats.cost.formatted || '$0.00'}</span>
+                                    </div>
+                                    <div className="w-[1px] h-6 bg-white/10"></div>
+                                    <div className="flex flex-col items-end">
+                                        <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">Tokens</span>
+                                        <span className="text-xs font-mono text-gray-300">{stats.tokens?.total?.toLocaleString() || 0}</span>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                        <p className="text-sm text-gray-400 mt-1">
                             {isComplete ? 'Workflow completed successfully' :
                                 isError ? 'An error occurred during processing' :
                                     stage?.description || 'Working...'}
@@ -320,7 +336,7 @@ const FullLogsPanel = ({ logs, isOpen, onToggle }) => {
     )
 }
 
-const WorkflowProgress = ({ logs = [], status = 'RUNNING', isInitializing = false }) => {
+const WorkflowProgress = ({ logs = [], status = 'RUNNING', stats = null, isInitializing = false }) => {
     const [showFullLogs, setShowFullLogs] = useState(false)
 
     const currentStage = useMemo(() => {
@@ -332,7 +348,7 @@ const WorkflowProgress = ({ logs = [], status = 'RUNNING', isInitializing = fals
 
     return (
         <div className="h-full flex flex-col bg-white/5 rounded-xl border border-white/10 backdrop-blur-sm overflow-hidden">
-            <StageHeader currentStage={currentStage} status={status} />
+            <StageHeader currentStage={currentStage} status={status} stats={logs.length > 0 ? stats : null} />
             <StageTimeline currentStage={currentStage} status={status} />
             <ActivityFeed milestones={milestones} />
             <FullLogsPanel
