@@ -23,7 +23,8 @@ const APIFY_API_URL = 'https://api.apify.com/v2';
 export const checkApifyRun = async (token, runId) => {
     try {
         const response = await axios.get(
-            `${APIFY_API_URL}/actor-runs/${runId}?token=${token}`
+            `${APIFY_API_URL}/actor-runs/${runId}?token=${token}`,
+            { timeout: 10000 }
         );
         const { status, defaultDatasetId } = response.data.data;
         return { status, datasetId: defaultDatasetId };
@@ -42,7 +43,8 @@ export const abortApifyRun = async (token, runId) => {
     try {
         console.log(`[Apify] Aborting Run ${runId}...`);
         await axios.post(
-            `${APIFY_API_URL}/actor-runs/${runId}/abort?token=${token}`
+            `${APIFY_API_URL}/actor-runs/${runId}/abort?token=${token}`,
+            {}, { timeout: 10000 }
         );
         return true;
     } catch (error) {
@@ -62,7 +64,8 @@ export const abortApifyRun = async (token, runId) => {
 export const getApifyResults = async (token, datasetId, offset = 0, limit = 1000) => {
     try {
         const response = await axios.get(
-            `${APIFY_API_URL}/datasets/${datasetId}/items?token=${token}&offset=${offset}&limit=${limit}`
+            `${APIFY_API_URL}/datasets/${datasetId}/items?token=${token}&offset=${offset}&limit=${limit}`,
+            { timeout: 15000 }
         );
         return response.data;
     } catch (error) {
@@ -77,7 +80,8 @@ export const getApifyResults = async (token, datasetId, offset = 0, limit = 1000
 export const getDatasetInfo = async (token, datasetId) => {
     try {
         const response = await axios.get(
-            `${APIFY_API_URL}/datasets/${datasetId}?token=${token}`
+            `${APIFY_API_URL}/datasets/${datasetId}?token=${token}`,
+            { timeout: 10000 }
         );
         return response.data.data;
     } catch (error) {
@@ -262,7 +266,7 @@ export const startApolloDomainScrape = async (token, domains, filters = {}, idem
         const response = await axios.post(
             url,
             input,
-            { headers: { 'Content-Type': 'application/json' } }
+            { headers: { 'Content-Type': 'application/json' }, timeout: 15000 }
         );
 
         console.log(`[ApolloDomain] Scrape started. Run ID: ${response.data.data.id}`);
@@ -307,7 +311,7 @@ export const startLinkedInPeopleSearch = async (token, keywords, options = {}) =
         const response = await axios.post(
             `${APIFY_API_URL}/acts/${ACTOR_ID}/runs?token=${token}`,
             input,
-            { headers: { 'Content-Type': 'application/json' } }
+            { headers: { 'Content-Type': 'application/json' }, timeout: 15000 }
         );
 
         console.log(`[LinkedInSearch] Scrape started. Run ID: ${response.data.data.id}`);
@@ -373,7 +377,7 @@ export const startGoogleSearch = async (token, queries, options = {}) => {
         const response = await axios.post(
             `${APIFY_API_URL}/acts/${ACTOR_ID}/runs?token=${token}`,
             finalInput,
-            { headers: { 'Content-Type': 'application/json' } }
+            { headers: { 'Content-Type': 'application/json' }, timeout: 15000 }
         );
 
         console.log(`[GoogleSearch] Scrape started. Run ID: ${response.data.data.id}`);
@@ -429,7 +433,7 @@ export const scrapeCompanyWebsite = async (domain, token, checkCancellation = nu
     try {
         console.log(`[Apify] Deep scraping ${domain}...`);
         const runUrl = `${APIFY_API_URL}/acts/${ACTOR_ID}/runs?token=${token}`;
-        const startRes = await axios.post(runUrl, input);
+        const startRes = await axios.post(runUrl, input, { timeout: 15000 });
         const runId = startRes.data.data.id;
 
         // Poll (Max 2 mins for crawl)
@@ -672,17 +676,17 @@ export const scanSiteStructure = async (domain, token = null, checkCancellation 
                     pageFunction: "async function pageFunction(context) { const { page, request } = context; await page.waitForTimeout(3000); const links = await page.evaluate(() => Array.from(document.querySelectorAll('a')).map(a => a.href)); return { links }; }",
                     proxyConfiguration: { useApifyProxy: true }
                 };
-                const startRes = await axios.post(runUrl, input);
+                const startRes = await axios.post(runUrl, input, { timeout: 10000 });
                 const runId = startRes.data.data.id;
 
                 // Fast poll (max 30s)
                 let attempts = 0;
                 while (attempts < 15) {
                     await new Promise(r => setTimeout(r, 2000));
-                    const checkRes = await axios.get(`https://api.apify.com/v2/actor-runs/${runId}?token=${token}`);
+                    const checkRes = await axios.get(`https://api.apify.com/v2/actor-runs/${runId}?token=${token}`, { timeout: 10000 });
                     if (checkRes.data.data.status === 'SUCCEEDED') {
                         const datasetId = checkRes.data.data.defaultDatasetId;
-                        const items = await axios.get(`https://api.apify.com/v2/datasets/${datasetId}/items?token=${token}`);
+                        const items = await axios.get(`https://api.apify.com/v2/datasets/${datasetId}/items?token=${token}`, { timeout: 15000 });
                         if (items.data && items.data[0]?.links) {
                             items.data[0].links.forEach(l => {
                                 if (l.includes(domain)) links.add(l.split('#')[0].split('?')[0].replace(/\/$/, ''));
@@ -774,7 +778,7 @@ export const scrapeSpecificPages = async (urls, token = null, onProgress = () =>
 
             // Attempt 1: Fast local scrape with browser-like headers
             const response = await axios.get(url, {
-                timeout: 8000,
+                timeout: 5000,
                 headers: {
                     'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
                     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
@@ -848,7 +852,7 @@ export const scrapeSpecificPages = async (urls, token = null, onProgress = () =>
                         proxyConfiguration: { useApifyProxy: true }
                     };
 
-                    const startRes = await axios.post(runUrl, input);
+                    const startRes = await axios.post(runUrl, input, { timeout: 10000 });
                     const runId = startRes.data.data.id;
 
                     // Poll for completion (Max 90s)
@@ -947,7 +951,7 @@ export const scrapeFullSite = async (domain, token, maxCost = 5.00, onProgress =
     try {
         console.log(`[Apify] Starting run with input:`, JSON.stringify(input, null, 2));
         const runUrl = `${APIFY_API_URL}/acts/${ACTOR_ID}/runs?token=${token}`;
-        const startRes = await axios.post(runUrl, input);
+        const startRes = await axios.post(runUrl, input, { timeout: 15000 });
         const runId = startRes.data.data.id;
 
         console.log(`[Apify] Run ID: ${runId}`);
@@ -963,7 +967,7 @@ export const scrapeFullSite = async (domain, token, maxCost = 5.00, onProgress =
 
             try {
                 // Check Run
-                const checkRes = await axios.get(`${APIFY_API_URL}/actor-runs/${runId}?token=${token}`);
+                const checkRes = await axios.get(`${APIFY_API_URL}/actor-runs/${runId}?token=${token}`, { timeout: 10000 });
                 const data = checkRes.data.data;
                 const status = data.status;
 
