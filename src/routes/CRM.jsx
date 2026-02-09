@@ -92,8 +92,8 @@ function CRM() {
           email: lead.email || '',
           linkedin: lead.linkedin_url || '',
           website: details.company_website || '',
-          connectionRequest: lead.linkedin_message || details.connection_request || '',
-          emailMessage: lead.email_body || details.email_message || '',
+          connectionRequest: lead.connection_request || lead.linkedin_message || details.connection_request || '',
+          emailMessage: lead.email_message || lead.email_body || details.email_message || '',
           companyProfile: lead.company_profile_text || details.company_profile || '',
           phoneNumbers: lead.phone_numbers || [],
           icpId: lead.icp_id || '',
@@ -496,8 +496,8 @@ function CRM() {
           <button
             onClick={() => setActiveTab('all')}
             className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all ${activeTab === 'all'
-                ? 'bg-teal-500 text-black shadow-lg shadow-teal-500/20'
-                : 'text-gray-400 hover:text-white hover:bg-white/5'
+              ? 'bg-teal-500 text-black shadow-lg shadow-teal-500/20'
+              : 'text-gray-400 hover:text-white hover:bg-white/5'
               }`}
           >
             All Leads
@@ -505,8 +505,8 @@ function CRM() {
           <button
             onClick={() => setActiveTab('review')}
             className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all flex items-center gap-2 ${activeTab === 'review'
-                ? 'bg-purple-500 text-white shadow-lg shadow-purple-500/20'
-                : 'text-gray-400 hover:text-white hover:bg-white/5'
+              ? 'bg-purple-500 text-white shadow-lg shadow-purple-500/20'
+              : 'text-gray-400 hover:text-white hover:bg-white/5'
               }`}
           >
             Manual Review
@@ -514,8 +514,8 @@ function CRM() {
           <button
             onClick={() => setActiveTab('ready')}
             className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all ${activeTab === 'ready'
-                ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/20'
-                : 'text-gray-400 hover:text-white hover:bg-white/5'
+              ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/20'
+              : 'text-gray-400 hover:text-white hover:bg-white/5'
               }`}
           >
             Confirmed for Outreach
