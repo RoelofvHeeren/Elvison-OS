@@ -1255,12 +1255,17 @@ OUTPUT FORMAT: Return JSON array with email and match_score:
             const batch = globalLeads.slice(i, i + BATCH_SIZE);
             logStep('Outreach Creator', `Processing batch ${Math.floor(i / BATCH_SIZE) + 1} of ${Math.ceil(globalLeads.length / BATCH_SIZE)}...`);
 
-            try {
-                const outreachRes = await runGeminiAgent({
-                    apiKey: googleKey,
-                    modelName: 'gemini-2.0-flash',
-                    agentName: 'Outreach Creator',
-                    instructions: companyContext.outreachPromptInstructions || `You are Roelof van Heeren, a Principal at Fifth Avenue Properties, a Canadian residential real estate development firm.
+            let retryCount = 0;
+            const MAX_RETRIES = 2;
+            let batchProcessedLeads = [];
+
+            while (retryCount <= MAX_RETRIES) {
+                try {
+                    const outreachRes = await runGeminiAgent({
+                        apiKey: googleKey,
+                        modelName: 'gemini-2.0-flash',
+                        agentName: 'Outreach Creator',
+                        instructions: companyContext.outreachPromptInstructions || `You are Roelof van Heeren, a Principal at Fifth Avenue Properties, a Canadian residential real estate development firm.
 Your goal is to write direct, fact-based outreach messages to potential Investment Partners (LPs/Co-GPs) or Peers in the industry.
 
 CRITICAL: The user HATES generic messages. 
@@ -1323,85 +1328,90 @@ Fifth Avenue Properties"
 OUTPUT JSON:
 { "leads": [{ "email": "...", "connection_request": "...", "email_subject": "...", "email_message": "..." }] }
 If no specific fact is found, craft a polite, relevant generic message about their residential investment focus. NEVER return null.`,
-                    userMessage: `Draft outreach for these leads based on their 'company_profile' (Intelligence Report).
-Strictly follow the Priority Order and Hard Limits.
+                        userMessage: `Draft outreach for these leads based on their 'company_profile' (Intelligence Report).\n\nLEADS:\n${JSON.stringify(batch.map(l => ({
+                            email: l.email,
+                            first_name: l.first_name,
+                            company_name: l.company_name,
+                            title: l.title,
+                            company_profile: (l.company_profile || "").substring(0, 3000)
+                        })))}`,
+                        tools: [],
+                        maxTurns: 1,
+                        logStep: logStep
+                    });
 
-LEADS:
-${JSON.stringify(batch.map(l => ({
-                        email: l.email,
-                        first_name: l.first_name,
-                        company_name: l.company_name,
-                        title: l.title,
-                        company_profile: (l.company_profile || "").substring(0, 3000)
-                    })))}`,
-                    tools: [],
-                    maxTurns: 1,
-                    logStep: logStep
-                });
+                    // HARD CONTRACT ENFORCEMENT
+                    const normalizedOutreach = enforceAgentContract({
+                        agentName: "Outreach Creator",
+                        rawOutput: outreachRes.finalOutput,
+                        schema: OutreachCreatorSchema
+                    });
 
-                // HARD CONTRACT ENFORCEMENT
-                const normalizedOutreach = enforceAgentContract({
-                    agentName: "Outreach Creator",
-                    rawOutput: outreachRes.finalOutput,
-                    schema: OutreachCreatorSchema
-                });
+                    costTracker.recordCall({
+                        agent: 'Outreach Creator',
+                        model: 'gemini-2.0-flash',
+                        inputTokens: outreachRes.usage?.inputTokens || 0,
+                        outputTokens: outreachRes.usage?.outputTokens || 0,
+                        duration: 0,
+                        success: true
+                    });
 
-                costTracker.recordCall({
-                    agent: 'Outreach Creator',
-                    model: 'gemini-2.0-flash',
-                    inputTokens: outreachRes.usage?.inputTokens || 0,
-                    outputTokens: outreachRes.usage?.outputTokens || 0,
-                    duration: 0,
-                    success: true
-                });
+                    const batchResponses = normalizedOutreach.leads || [];
+                    const outreachMap = new Map(batchResponses.map(l => [(l.email || '').toLowerCase(), l]));
 
-                const batchResponses = normalizedOutreach.leads || [];
+                    batchProcessedLeads = batch.map(original => {
+                        let processedLead = { ...original };
+                        const update = outreachMap.get((original.email || '').toLowerCase());
 
-                // Map results for this batch
-                const outreachMap = new Map(batchResponses.map(l => [(l.email || '').toLowerCase(), l]));
+                        if (update && (update.connection_request || update.email_message)) {
+                            const connReq = update.connection_request || update.linkedin_message || original.connection_request || original.linkedin_message;
+                            const emailMsg = update.email_message || update.email_body || original.email_message || original.email_body;
 
-                batch.forEach(original => {
-                    let processedLead = { ...original };
-                    const update = outreachMap.get((original.email || '').toLowerCase());
+                            processedLead = {
+                                ...original,
+                                email_message: emailMsg,
+                                email_body: emailMsg,
+                                email_subject: update.email_subject || original.email_subject,
+                                connection_request: connReq,
+                                linkedin_message: connReq,
+                                status: 'NEW' // Explicitly set to NEW since it has outreach
+                            };
+                        } else {
+                            // AI failed to generate message for THIS lead -> Flag for Manual Review
+                            processedLead.status = 'MANUAL_REVIEW';
+                            processedLead.disqualification_reason = 'AI Generation Failed - No message returned for this lead';
+                            console.warn(`[Outreach] AI missed message for ${original.email}. Target status: MANUAL_REVIEW`);
+                        }
 
+                        // SAFETY: Enforce 300-char hard limit
+                        if (processedLead.connection_request && processedLead.connection_request.length > 300) {
+                            processedLead.connection_request = processedLead.connection_request.substring(0, 295) + '...';
+                        }
+                        return processedLead;
+                    });
 
-                    if (update) {
-                        const connReq = update.connection_request || update.linkedin_message || original.connection_request || original.linkedin_message;
-                        const emailMsg = update.email_message || update.email_body || original.email_message || original.email_body;
+                    // SUCCESS! Break retry loop
+                    break;
 
-                        processedLead = {
-                            ...original,
-                            // Email Standardization: Use email_message as primary, sync to email_body
-                            email_message: emailMsg,
-                            email_body: emailMsg,
-                            email_subject: update.email_subject || original.email_subject,
-
-                            // LinkedIn Standardization: Use connection_request as primary, sync to linkedin_message
-                            connection_request: connReq,
-                            linkedin_message: connReq
-                        };
-                    } else {
-                        // AI failed to generate message -> Flag for Manual Review
-                        processedLead.status = 'MANUAL_REVIEW';
-                        processedLead.disqualification_reason = 'AI Generation Failed - Needs Manual Review';
+                } catch (e) {
+                    retryCount++;
+                    if (retryCount > MAX_RETRIES) {
+                        logStep('Outreach Creator', `Batch CRITICAL FAILURE after ${MAX_RETRIES} retries: ${e.message}`);
+                        throw e; // Halt the whole workflow to prevent data inconsistency
                     }
+                    logStep('Outreach Creator', `Batch failed (Try ${retryCount}): ${e.message}. Retrying...`);
+                    await delay(3000);
+                }
+            }
 
-                    // SAFETY: Enforce 300-char hard limit
-                    if (processedLead.connection_request && processedLead.connection_request.length > 300) {
-                        processedLead.connection_request = processedLead.connection_request.substring(0, 295) + '...';
-                    }
-
-                    finalLeads.push(processedLead);
-                });
-
-            } catch (e) {
-                logStep('Outreach Creator', `Batch failed: ${e.message}. Falling back to original data for this batch.`);
-                finalLeads.push(...batch);
+            // ATOMIC SAVE: Save this batch immediately so we don't lose work if process crashes later
+            if (batchProcessedLeads.length > 0) {
+                await saveLeadsToDB(batchProcessedLeads, userId, icpId, logStep, 'NEW', runId);
+                finalLeads.push(...batchProcessedLeads);
             }
         }
 
-        // --- Save to CRM ---
-        await saveLeadsToDB(finalLeads, userId, icpId, logStep, 'NEW', runId);
+        // All batches processed and saved incrementally.
 
         return {
             status: finalLeads.length >= targetLeads ? 'success' : 'partial',
@@ -1485,7 +1495,13 @@ export const saveLeadsToDB = async (leads, userId, icpId, logStep, forceStatus =
     for (const lead of leads) {
         try {
             // === CRM ADMISSION GATE ===
-            let currentStatus = forceStatus;
+            // 1. Respect existing status if it's "manual" or "disqualified"
+            // otherwise use the forced workflow status
+            let currentStatus = lead.status || forceStatus;
+
+            // If lead.status was set (e.g. to MANUAL_REVIEW), we use it.
+            // If not, we use forceStatus.
+
             const gateResult = validateLeadForCRM(lead, currentStatus);
 
             if (!gateResult.pass) {
