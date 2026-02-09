@@ -8,7 +8,7 @@ const STAGE_DEFINITIONS = [
         id: 'initializing',
         label: 'Initializing',
         description: 'Preparing workflow...',
-        matchSteps: ['Initialization']
+        matchSteps: ['System']
     },
     {
         id: 'searching',
@@ -20,13 +20,13 @@ const STAGE_DEFINITIONS = [
         id: 'profiling',
         label: 'Company Profiling',
         description: 'Analyzing companies...',
-        matchSteps: ['Company Profiler']
+        matchSteps: ['Company Profiler', 'Apollo Gate']
     },
     {
         id: 'finding_leads',
         label: 'Lead Discovery',
         description: 'Identifying decision makers...',
-        matchSteps: ['Apollo Lead Finder', 'Lead Finder']
+        matchSteps: ['Lead Finder', 'Apollo Lead Finder']
     },
     {
         id: 'crafting_messages',
@@ -38,7 +38,7 @@ const STAGE_DEFINITIONS = [
         id: 'finalizing',
         label: 'Finalizing',
         description: 'Saving results...',
-        matchSteps: ['Data Architect', 'CRM Sync', 'Database']
+        matchSteps: ['Data Architect', 'CRM Sync', 'Database', 'Workflow']
     }
 ]
 

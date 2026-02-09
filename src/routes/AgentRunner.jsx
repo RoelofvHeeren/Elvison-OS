@@ -6,11 +6,12 @@ import { useIcp } from '../context/IcpContext'
 import WorkflowProgress from '../components/WorkflowProgress'
 
 const STEPS = [
-    { id: 'Company Profiler', label: 'Company Profiler' },
-    { id: 'Apollo Lead Finder', label: 'Lead Finder' },
+    { id: 'Company Finder', label: 'Company Search' },
+    { id: 'Company Profiler', label: 'Company Profiling' },
+    { id: 'Lead Finder', label: 'Lead Discovery' },
     { id: 'Outreach Creator', label: 'Outreach Creator' },
-    { id: 'Data Architect', label: 'Data Architect' },
-    { id: 'CRM Sync', label: 'CRM Sync' }
+    { id: 'Data Architect', label: 'Data Processing' },
+    { id: 'Database', label: 'CRM Sync' }
 ]
 
 const AgentRunner = () => {
