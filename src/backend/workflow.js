@@ -1465,12 +1465,10 @@ const validateLeadForCRM = (lead, status) => {
         return { pass: false, reason: 'Missing or invalid company_name' };
     }
 
-    // Rule 4: For NEW status, warn if missing outreach but DO NOT REJECT
+    // Rule 4: For NEW status, outreach messages are MANDATORY
     if (status === 'NEW') {
-        if (!lead.connection_request && !lead.email_message && !lead.email_body) {
-            // Changed logic: Allow passing but log it
-            // return { pass: false, reason: 'Missing outreach messages (required for NEW status)' };
-            /* Allow it to pass so user can manually review */
+        if (!lead.connection_request && !lead.email_message) {
+            return { pass: false, reason: 'Outreach messages are mandatory for NEW status' };
         }
     }
 
@@ -1505,12 +1503,18 @@ export const saveLeadsToDB = async (leads, userId, icpId, logStep, forceStatus =
             const gateResult = validateLeadForCRM(lead, currentStatus);
 
             if (!gateResult.pass) {
-                // If this was meant to be a NEW lead, redirect to DISQUALIFIED for review
+                // If this was meant to be a NEW lead, redirect for review
                 if (currentStatus === 'NEW') {
-                    currentStatus = 'DISQUALIFIED';
-                    lead.disqualification_reason = `REJECTED AT GATE: ${gateResult.reason}`;
+                    // Specific redirect: Missing outreach goes to MANUAL_REVIEW, everything else goes to DISQUALIFIED
+                    if (gateResult.reason?.includes('Outreach messages are mandatory')) {
+                        currentStatus = 'MANUAL_REVIEW';
+                    } else {
+                        currentStatus = 'DISQUALIFIED';
+                    }
+
+                    lead.disqualification_reason = `AUTO-REDIRECT: ${gateResult.reason}`;
                     redirectedCount++;
-                    // Fall through to save... 
+                    // Fall through to save so the user can see it and fix it
                 } else {
                     // If it's already meant to be disqualified and still fails (no email), drop it
                     console.log(`[CRM Gate] ❌ Dropped ${lead.first_name} ${lead.last_name} (${lead.email || 'no email'}): ${gateResult.reason}`);
