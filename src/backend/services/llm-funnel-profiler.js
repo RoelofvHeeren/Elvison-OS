@@ -54,10 +54,10 @@ const LLMFunnelProfiler = {
                 ICP TYPE: ${icpType}
 
                 GOAL: Select ALL pages that might contain information about:
-                1. Investment thesis, strategy, focus areas, or criteria
-                2. Portfolio companies, real estate projects, or past transactions
-                3. Specific deals, acquisitions, developments, or assets under management
-                4. Recent news about investments or projects
+                1. RESIDENTIAL INVESTMENTS: Multifamily, Single Family Rental (SFR), Student Housing, Senior Living, Build-to-Rent (BTR).
+                2. Investment thesis, strategy, focus areas, or criteria (specifically looking for Residential mentions)
+                3. Portfolio companies, real estate projects, or past transactions
+                4. Specific deals, acquisitions, developments, or assets under management
                 5. Geographic focus (regional pages like /canada/, /us/, etc.)
 
                 INSTRUCTIONS:
@@ -156,13 +156,14 @@ const LLMFunnelProfiler = {
             const prompt = `
             You are a strict Deal Origination Analyst. Your job is to decide if we should do a Deep Audit on this company for potential partnership.
             
-            TARGET ICP: ${icpType} (Specifically Real Estate Investors)
+            TARGET ICP: ${icpType} (Specifically RESIDENTIAL Real Estate Investors)
             
             QUALIFICATION RULES:
-            1. MUST be the PRINCIPAL, OWNER, or INVESTOR of real estate assets, OR manage a dedicated Real Estate / Private Equity fund.
-            2. HYBRID FIRMS (Wealth Manager + RE Fund): These are a PASS. If they mention "Private Capital", "Real Estate Fund", or "Direct Assets", keep them.
-            3. REJECT: Pure Retail Brokers, Law Firms, Tax Advisors, or small independent "Financial Planners".
-            4. REJECT: Companies that only offer "Stock Portfolio Management" without any Real Estate signals.
+            1. MUST be the PRINCIPAL, OWNER, or INVESTOR of RESIDENTIAL real estate assets (Multifamily, SFR, Student Housing, etc.).
+            2. HYBRID FIRMS (Wealth Manager + RE Fund): These are a PASS ONLY IF they explicitly mention "Residential", "Multifamily", or "Housing" investments.
+            3. REJECT: Pure Commercial-Only Investors (Office, Retail, Industrial) unless they have a mixed-use or residential component.
+            4. REJECT: Pure Retail Brokers, Law Firms, Tax Advisors, or small independent "Financial Planners".
+            5. REJECT: Companies that only offer "Stock Portfolio Management" without any Real Estate signals.
             
             COMPANY NAME: ${companyName}
             
@@ -233,11 +234,13 @@ const LLMFunnelProfiler = {
             ICP TYPE: ${icpType}
 
             GOALS:
-            1. INVESTMENT THESIS: Extract a 1-2 sentence core investment strategy.
-            2. PORTFOLIO DEALS: Find specific REAL ESTATE PROJECTS or PROPERTY ACQUISITIONS.
+            1. INVESTMENT THESIS: Extract a 1-2 sentence core investment strategy (Focus on RESIDENTIAL/HOUSING).
+            2. PORTFOLIO DEALS (CRITICAL): Find specific RESIDENTIAL PROJECT NAMES, LOCATIONS, and UNIT COUNTS.
+               - Look for: "Acquired [Property Name]", "Developed [Community Name]", "Owns [Number] units in [City]".
+               - We need CONCRETE EXAMPLES of what they own/built.
             3. MANAGED FUNDS: List the specialized funds or internal LPs.
             4. KEY DOCUMENTS: Summarize any PDFs, Reports, or One Pagers.
-            5. CRITERIA FOCUS: Extract specific investment criteria.
+            5. CRITERIA FOCUS: Extract specific investment criteria (Target IRR, Check Size, Asset Classes).
             
             JSON OUTPUT STRUCTURE:
             {
@@ -313,6 +316,13 @@ const LLMFunnelProfiler = {
 
             const prompt = `
             Write a detailed 1000-word company profile for research.
+            
+            FOCUS: RESIDENTIAL REAL ESTATE (Multifamily, SFR, BTR, Student Housing).
+            
+            CRITICAL REQUIREMENT: You MUST include a dedicated "PORTFOLIO HIGHLIGHTS" section.
+            - List specific names of residential properties, communities, or past developments.
+            - Mention locations and unit counts if available.
+            - This is the MOST IMPORTANT section for our sales team to reference.
             
             COMPANY: ${companyName}
             ICP TYPE: ${icpType}

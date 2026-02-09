@@ -64,18 +64,21 @@ WEBSITE CONTENT:
 ${scrapedContent || 'No content available - use your knowledge about this company if you know them.'}
 
 Create a profile (4-10 sentences) that includes:
-1. What the company does (core business, niche)
-2. Size/Scale (AUM, employees, projects, founded date) - use specific numbers if available
+1. What the company does (core business, niche) - HIGHLIGHT RESIDENTIAL FOCUS
+2. Size/Scale (AUM, employees, projects, founded date)
 3. Geographic focus
-4. Investment focus areas / key services
-5. Notable deals, achievements, or partnerships
-6. Why they might be a good fit for real estate development partnerships
+4. Investment focus areas / key services (Mention Multifamily, Single Family, etc.)
+5. PORTFOLIO HIGHLIGHTS (CRITICAL):
+   - List SPECIFIC names of past residential projects, acquisitions, or developments.
+   - "Acquired X Apartments in Y City", "Developed Z Community".
+   - We need concrete proof of their residential experience.
+6. Why they might be a good fit for residential real estate development partnerships
 
-Also rate this company 1-10 for fit as a real estate investment partner:
-- 10: Perfect - actively invests in residential real estate
-- 7-9: Strong fit - invests in real estate or related sectors
-- 4-6: Potential - financial services but not clear real estate focus
-- 1-3: Poor fit - not relevant to real estate investing
+Also rate this company 1-10 for fit as a RESIDENTIAL real estate investment partner:
+- 10: Perfect - actively invests in RESIDENTIAL real estate (Multifamily, SFR, BTR)
+- 7-9: Strong fit - invests in real estate with some residential component
+- 4-6: Potential - general real estate or financial services, unclear residential focus
+- 1-3: Poor fit - commercial only (Office/Industrial) or not relevant to real estate
 
 OUTPUT FORMAT (JSON):
 {

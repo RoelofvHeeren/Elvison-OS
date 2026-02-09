@@ -117,7 +117,7 @@ export const CompanyProfiler = {
                 if (targetUrls.length > 0) {
                     console.log(`[Profiler] Scraping ${targetUrls.length} prioritized pages (Deep Audit)...`);
                     const prioritizedUrls = [...new Set(targetUrls)].sort((a, b) => {
-                        const priorityKeywords = ['portfolio', 'real-estate', 'projects', 'deals', 'strategy', 'criteria', 'investments', 'properties'];
+                        const priorityKeywords = ['multifamily', 'residential', 'housing', 'apartments', 'living', 'portfolio', 'real-estate', 'projects', 'deals', 'strategy', 'criteria', 'investments', 'properties'];
                         const aLower = a.toLowerCase();
                         const bLower = b.toLowerCase();
                         const aScore = priorityKeywords.some(k => aLower.includes(k)) ? 0 : 1;
