@@ -944,49 +944,49 @@ export const runAgentWorkflow = async (input, config) => {
                             }
                         };
 
-                                                if (isHighQuality) {
-                                                    masterQualifiedList.push(enrichedCompany);
-                                                    scrapedNamesSet.add(company.company_name);
-                                                    logStep('Company Profiler', `✅ Qualified: ${company.company_name} (Type: ${company.entity_type}, Score: ${company.match_score})`);
-                                                } else {
-                                                    totalDisqualified++;
-                                                    logStep('Company Profiler', `🗑️ Dropped: ${company.company_name} (Score: ${company.match_score}, Type: ${company.entity_type})`);
-                                                }
-                                            }
+                        if (isHighQuality) {
+                            masterQualifiedList.push(enrichedCompany);
+                            scrapedNamesSet.add(company.company_name);
+                            logStep('Company Profiler', `✅ Qualified: ${company.company_name} (Type: ${company.entity_type}, Score: ${company.match_score})`);
+                        } else {
+                            totalDisqualified++;
+                            logStep('Company Profiler', `🗑️ Dropped: ${company.company_name} (Score: ${company.match_score}, Type: ${company.entity_type})`);
+                        }
+                    }
 
-                                        } catch (err) {
-                                            logStep('Company Profiler', `Failed to analyze ${candidate.companyName || candidate.company_name}: ${err.message}`);
-                                        }
-                                    }
+                } catch (err) {
+                    logStep('Company Profiler', `Failed to analyze ${candidate.companyName || candidate.company_name}: ${err.message}`);
+                }
+            }
 
-                                    logStep('Company Finder', `📈 Progress: ${masterQualifiedList.length}/${targetLeads} qualified companies`);
-                                }
+            logStep('Company Finder', `📈 Progress: ${masterQualifiedList.length}/${targetLeads} qualified companies`);
+        }
 
-                                // --- Rotate used search terms to back of queue ---
-                                if (icpId && termsUsedThisRun.length > 0) {
-                                    try {
-                                        await markTermsAsUsed(icpId, termsUsedThisRun, searchStats.results_per_term);
-                                        logStep('System', `🔄 Rotated ${termsUsedThisRun.length} search terms to back of queue`);
-                                    } catch (e) {
-                                        console.error('Failed to rotate search terms:', e.message);
-                                    }
-                                }
+        // --- Rotate used search terms to back of queue ---
+        if (icpId && termsUsedThisRun.length > 0) {
+            try {
+                await markTermsAsUsed(icpId, termsUsedThisRun, searchStats.results_per_term);
+                logStep('System', `🔄 Rotated ${termsUsedThisRun.length} search terms to back of queue`);
+            } catch (e) {
+                console.error('Failed to rotate search terms:', e.message);
+            }
+        }
 
-                                logStep('Company Finder', `✅ Discovery complete: ${masterQualifiedList.length} qualified, ${totalDisqualified} disqualified, ${totalDiscovered} total discovered`);
+        logStep('Company Finder', `✅ Discovery complete: ${masterQualifiedList.length} qualified, ${totalDisqualified} disqualified, ${totalDiscovered} total discovered`);
 
-                                // IMMEDIATE DATA PERSISTENCE
-                                // Sync to Display Table (companies) immediately after discovery
-                                // This ensures companies are visible even if no leads are found later
-                                if (masterQualifiedList.length > 0) {
-                                    logStep('Database', `💾 Persisting ${masterQualifiedList.length} companies to database...`);
-                                    try {
-                                        for (const company of masterQualifiedList) {
-                                            // company object has: company_name, domain, match_score, company_profile
-                                            const website = company.website || company.domain;
-                                            let score = parseInt(company.match_score);
-                                            if (isNaN(score)) score = null;
+        // IMMEDIATE DATA PERSISTENCE
+        // Sync to Display Table (companies) immediately after discovery
+        // This ensures companies are visible even if no leads are found later
+        if (masterQualifiedList.length > 0) {
+            logStep('Database', `💾 Persisting ${masterQualifiedList.length} companies to database...`);
+            try {
+                for (const company of masterQualifiedList) {
+                    // company object has: company_name, domain, match_score, company_profile
+                    const website = company.website || company.domain;
+                    let score = parseInt(company.match_score);
+                    if (isNaN(score)) score = null;
 
-                                            await query(`
+                    await query(`
                         INSERT INTO companies (user_id, company_name, website, company_profile, fit_score, created_at, last_updated)
                         VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
                         ON CONFLICT (user_id, company_name) 
@@ -996,137 +996,137 @@ export const runAgentWorkflow = async (input, config) => {
                             fit_score = COALESCE(companies.fit_score, EXCLUDED.fit_score),
                             last_updated = NOW()
                     `, [userId, company.company_name, website, company.company_profile, score]);
-                                        }
-                                        logStep('Database', `✅ Successfully persisted companies.`);
-                                    } catch (e) {
-                                        console.error('Failed to persist companies:', e);
-                                        logStep('Database', `⚠️ Failed to persist companies: ${e.message}`);
-                                    }
-                                }
+                }
+                logStep('Database', `✅ Successfully persisted companies.`);
+            } catch (e) {
+                console.error('Failed to persist companies:', e);
+                logStep('Database', `⚠️ Failed to persist companies: ${e.message}`);
+            }
+        }
 
-                                // --- Phase 1 Check: Data Starvation Protection ---
-                                if (masterQualifiedList.length === 0) {
-                                    logStep('Workflow', '❌ No qualified companies found after discovery. Stopping workflow to prevent hallucination.');
-                                    return {
-                                        status: 'failed',
-                                        leads: [],
-                                        stats: { total: 0, searchStats, cost: costTracker.getSummary() },
-                                        error: "Discovery failed: No qualified companies found."
-                                    };
-                                }
+        // --- Phase 1 Check: Data Starvation Protection ---
+        if (masterQualifiedList.length === 0) {
+            logStep('Workflow', '❌ No qualified companies found after discovery. Stopping workflow to prevent hallucination.');
+            return {
+                status: 'failed',
+                leads: [],
+                stats: { total: 0, searchStats, cost: costTracker.getSummary() },
+                error: "Discovery failed: No qualified companies found."
+            };
+        }
 
-                                // --- APOLLO GATE: Strict Filtering for Family Offices ---
-                                // Only allow APPROVED Entity Types to proceed to Apollo
-                                // This prevents Wealth Managers from leaking into the lead pool
+        // --- APOLLO GATE: Strict Filtering for Family Offices ---
+        // Only allow APPROVED Entity Types to proceed to Apollo
+        // This prevents Wealth Managers from leaking into the lead pool
 
-                                // Define Approved Types (Must match entity-classifier.js)
-                                const APOLLO_APPROVED_TYPES = [
-                                    'FAMILY_OFFICE_SFO',
-                                    'FAMILY_OFFICE_MFO_PRINCIPAL',
-                                    'FAMILY_OFFICE_CAPITAL_VEHICLE',
-                                    'PRIVATE_EQUITY',
-                                    'PENSION_FUND',
-                                    'INSTITUTIONAL_INVESTOR',
-                                    'FAMILY_OFFICE' // Legacy
-                                ];
+        // Define Approved Types (Must match entity-classifier.js)
+        const APOLLO_APPROVED_TYPES = [
+            'FAMILY_OFFICE_SFO',
+            'FAMILY_OFFICE_MFO_PRINCIPAL',
+            'FAMILY_OFFICE_CAPITAL_VEHICLE',
+            'PRIVATE_EQUITY',
+            'PENSION_FUND',
+            'INSTITUTIONAL_INVESTOR',
+            'FAMILY_OFFICE' // Legacy
+        ];
 
-                                // Is this an FO run?
-                                const isFORun = (companyContext.icpDescription || "").toLowerCase().includes("family office") ||
-                                    (companyContext.name || "").toLowerCase().includes("family office");
+        // Is this an FO run?
+        const isFORun = (companyContext.icpDescription || "").toLowerCase().includes("family office") ||
+            (companyContext.name || "").toLowerCase().includes("family office");
 
-                                if (isFORun) {
-                                    const originalCount = masterQualifiedList.length;
+        if (isFORun) {
+            const originalCount = masterQualifiedList.length;
 
-                                    // Check if we have entity_type data (might describe if using dummy data or new classifier)
-                                    // If classification exists, filter. If not (old data), warn but proceed.
-                                    const hasClassificationData = masterQualifiedList.some(c => c.classification?.entity_type);
+            // Check if we have entity_type data (might describe if using dummy data or new classifier)
+            // If classification exists, filter. If not (old data), warn but proceed.
+            const hasClassificationData = masterQualifiedList.some(c => c.classification?.entity_type);
 
-                                    if (hasClassificationData) {
-                                        logStep('Apollo Gate', `🛡️ Enforcing strict FO filter on ${originalCount} companies...`);
+            if (hasClassificationData) {
+                logStep('Apollo Gate', `🛡️ Enforcing strict FO filter on ${originalCount} companies...`);
 
-                                        masterQualifiedList = masterQualifiedList.filter(c => {
-                                            const type = c.classification?.entity_type;
-                                            const approved = APOLLO_APPROVED_TYPES.includes(type);
+                masterQualifiedList = masterQualifiedList.filter(c => {
+                    const type = c.classification?.entity_type;
+                    const approved = APOLLO_APPROVED_TYPES.includes(type);
 
-                                            if (!approved) {
-                                                logStep('Apollo Gate', `⛔ Blocking ${c.company_name} (Type: ${type}) - Not a Principal Investor`);
-                                                totalDisqualified++;
-                                            }
-                                            return approved;
-                                        });
+                    if (!approved) {
+                        logStep('Apollo Gate', `⛔ Blocking ${c.company_name} (Type: ${type}) - Not a Principal Investor`);
+                        totalDisqualified++;
+                    }
+                    return approved;
+                });
 
-                                        logStep('Apollo Gate', `✅ Allowed ${masterQualifiedList.length} Principal Investors to proceed (Blocked ${originalCount - masterQualifiedList.length} Wealth Managers/Funds)`);
-                                    }
-                                }
+                logStep('Apollo Gate', `✅ Allowed ${masterQualifiedList.length} Principal Investors to proceed (Blocked ${originalCount - masterQualifiedList.length} Wealth Managers/Funds)`);
+            }
+        }
 
-                                // --- Phase 2: Consolidated Lead Scraping (ONE Pass) ---
-                                // Already protected by the check above, but keeping structure
-                                if (masterQualifiedList.length > 0) {
-                                    logStep('Lead Finder', `🚀 Triggering Scraper for ALL ${masterQualifiedList.length} qualified companies...`);
-                                    try {
-                                        if (await checkCancellation()) return;
+        // --- Phase 2: Consolidated Lead Scraping (ONE Pass) ---
+        // Already protected by the check above, but keeping structure
+        if (masterQualifiedList.length > 0) {
+            logStep('Lead Finder', `🚀 Triggering Scraper for ALL ${masterQualifiedList.length} qualified companies...`);
+            try {
+                if (await checkCancellation()) return;
 
-                                        // --- 4. Lead Scraping with Disqualified Tracking ---
-                                        // Pass idempotencyKey to prevent duplicate Apify runs on retries
-                                        // Incremental Save Hook - Save valid leads immediately after each batch
-                                        const scrapeFilters = {
-                                            ...filters,
-                                            idempotencyKey: idempotencyKey || `wf_${Date.now()}`,
-                                            onBatchComplete: async ({ valid, disqualified }) => {
-                                                if (valid?.length > 0) {
-                                                    try {
-                                                        await saveLeadsToDB(valid, userId, icpId, logStep, 'NEW', runId);
-                                                    } catch (e) {
-                                                        logStep('Database', `⚠️ Incremental save failed: ${e.message}`);
-                                                    }
-                                                }
-                                                if (disqualified?.length > 0) {
-                                                    try {
-                                                        await saveLeadsToDB(disqualified, userId, icpId, logStep, 'DISQUALIFIED', runId);
-                                                    } catch (e) {
-                                                        // logStep('Database', `⚠️ Incremental disqualified save failed: ${e.message}`);
-                                                    }
-                                                }
-                                            }
-                                        };
-                                        const scrapeResult = await leadScraper.fetchLeads(masterQualifiedList, scrapeFilters, logStep, checkCancellation);
+                // --- 4. Lead Scraping with Disqualified Tracking ---
+                // Pass idempotencyKey to prevent duplicate Apify runs on retries
+                // Incremental Save Hook - Save valid leads immediately after each batch
+                const scrapeFilters = {
+                    ...filters,
+                    idempotencyKey: idempotencyKey || `wf_${Date.now()}`,
+                    onBatchComplete: async ({ valid, disqualified }) => {
+                        if (valid?.length > 0) {
+                            try {
+                                await saveLeadsToDB(valid, userId, icpId, logStep, 'NEW', runId);
+                            } catch (e) {
+                                logStep('Database', `⚠️ Incremental save failed: ${e.message}`);
+                            }
+                        }
+                        if (disqualified?.length > 0) {
+                            try {
+                                await saveLeadsToDB(disqualified, userId, icpId, logStep, 'DISQUALIFIED', runId);
+                            } catch (e) {
+                                // logStep('Database', `⚠️ Incremental disqualified save failed: ${e.message}`);
+                            }
+                        }
+                    }
+                };
+                const scrapeResult = await leadScraper.fetchLeads(masterQualifiedList, scrapeFilters, logStep, checkCancellation);
 
-                                        // Handle new return structure { leads, disqualified }
-                                        const leadsFound = scrapeResult.leads || (Array.isArray(scrapeResult) ? scrapeResult : []);
-                                        const disqualifiedFound = scrapeResult.disqualified || [];
+                // Handle new return structure { leads, disqualified }
+                const leadsFound = scrapeResult.leads || (Array.isArray(scrapeResult) ? scrapeResult : []);
+                const disqualifiedFound = scrapeResult.disqualified || [];
 
-                                        logStep('Lead Finder', `Found ${leadsFound.length} valid leads.Saving ${disqualifiedFound.length} disqualified leads for review.`);
+                logStep('Lead Finder', `Found ${leadsFound.length} valid leads.Saving ${disqualifiedFound.length} disqualified leads for review.`);
 
-                                        // Save Disqualified Leads Immediately
-                                        if (disqualifiedFound.length > 0) {
-                                            await saveLeadsToDB(disqualifiedFound, userId, icpId, logStep, 'DISQUALIFIED');
-                                        }
+                // Save Disqualified Leads Immediately
+                if (disqualifiedFound.length > 0) {
+                    await saveLeadsToDB(disqualifiedFound, userId, icpId, logStep, 'DISQUALIFIED');
+                }
 
-                                        if (leadsFound.length === 0) {
-                                            logStep('Workflow', '❌ No leads found from scraped companies. Stopping before Outreach.');
-                                            return {
-                                                status: 'failed',
-                                                leads: [],
-                                                stats: { total: 0, searchStats, cost: costTracker.getSummary() },
-                                                error: "Scraping failed: No leads found."
-                                            };
-                                        }
+                if (leadsFound.length === 0) {
+                    logStep('Workflow', '❌ No leads found from scraped companies. Stopping before Outreach.');
+                    return {
+                        status: 'failed',
+                        leads: [],
+                        stats: { total: 0, searchStats, cost: costTracker.getSummary() },
+                        error: "Scraping failed: No leads found."
+                    };
+                }
 
-                                        if (leadsFound.length > 0) {
-                                            logStep('Data Architect', `Normalizing ${leadsFound.length} leads...`);
+                if (leadsFound.length > 0) {
+                    logStep('Data Architect', `Normalizing ${leadsFound.length} leads...`);
 
-                                            // 4. Data Architect: Validation & Normalization
-                                            const deterministicLeads = leadsFound.filter(l => l.first_name && l.last_name && l.email);
-                                            const ambiguousLeads = leadsFound.filter(l => !l.first_name || !l.last_name || !l.email);
-                                            let fixedLeads = [];
+                    // 4. Data Architect: Validation & Normalization
+                    const deterministicLeads = leadsFound.filter(l => l.first_name && l.last_name && l.email);
+                    const ambiguousLeads = leadsFound.filter(l => !l.first_name || !l.last_name || !l.email);
+                    let fixedLeads = [];
 
-                                            if (ambiguousLeads.length > 0) {
-                                                try {
-                                                    const architectRes = await runGeminiAgent({
-                                                        apiKey: googleKey,
-                                                        modelName: 'gemini-2.0-flash',
-                                                        agentName: 'Data Architect',
-                                                        instructions: `You are a data normalization agent.Your job is to fix and validate lead data.
+                    if (ambiguousLeads.length > 0) {
+                        try {
+                            const architectRes = await runGeminiAgent({
+                                apiKey: googleKey,
+                                modelName: 'gemini-2.0-flash',
+                                agentName: 'Data Architect',
+                                instructions: `You are a data normalization agent.Your job is to fix and validate lead data.
 
 For each lead:
                         1. Fix capitalization(FirstName LastName)
@@ -1137,42 +1137,42 @@ For each lead:
 OUTPUT FORMAT: Return JSON:
                         { "leads": [{ "first_name": "...", "last_name": "...", "email": "...", "is_valid": true, "company_profile": "PRESERVE_ORIGINAL_VALUE", ...}] }
                         CRITICAL: You MUST preserve the 'company_profile' field for every lead.Do not modify or drop it.`,
-                                                        userMessage: `Normalize these ambiguous leads: ${JSON.stringify(ambiguousLeads)} `,
-                                                        tools: [],
-                                                        maxTurns: 2,
-                                                        logStep: logStep
-                                                    });
+                                userMessage: `Normalize these ambiguous leads: ${JSON.stringify(ambiguousLeads)} `,
+                                tools: [],
+                                maxTurns: 2,
+                                logStep: logStep
+                            });
 
-                                                    const parsed = enforceAgentContract({
-                                                        agentName: "Data Architect",
-                                                        rawOutput: architectRes.finalOutput,
-                                                        schema: z.object({ leads: z.array(z.any()) })
-                                                    });
-                                                    fixedLeads = (parsed.leads || []).filter(l => l.is_valid);
+                            const parsed = enforceAgentContract({
+                                agentName: "Data Architect",
+                                rawOutput: architectRes.finalOutput,
+                                schema: z.object({ leads: z.array(z.any()) })
+                            });
+                            fixedLeads = (parsed.leads || []).filter(l => l.is_valid);
 
-                                                    costTracker.recordCall({
-                                                        agent: 'Data Architect',
-                                                        model: 'gemini-2.0-flash',
-                                                        inputTokens: architectRes.usage?.inputTokens || 0,
-                                                        outputTokens: architectRes.usage?.outputTokens || 0,
-                                                        duration: 0,
-                                                        success: true
-                                                    });
-                                                } catch (e) {
-                                                    logStep('Data Architect', `Normalization failed: ${e.message} `);
-                                                }
-                                            }
+                            costTracker.recordCall({
+                                agent: 'Data Architect',
+                                model: 'gemini-2.0-flash',
+                                inputTokens: architectRes.usage?.inputTokens || 0,
+                                outputTokens: architectRes.usage?.outputTokens || 0,
+                                duration: 0,
+                                success: true
+                            });
+                        } catch (e) {
+                            logStep('Data Architect', `Normalization failed: ${e.message} `);
+                        }
+                    }
 
-                                            const validatedLeads = [...deterministicLeads, ...fixedLeads];
+                    const validatedLeads = [...deterministicLeads, ...fixedLeads];
 
-                                            // 5. Ranking & Deduplication
-                                            if (validatedLeads.length > 0) {
-                                                try {
-                                                    const rankRes = await runGeminiAgent({
-                                                        apiKey: googleKey,
-                                                        modelName: 'gemini-2.0-flash',
-                                                        agentName: 'Lead Ranker',
-                                                        instructions: `You are a lead ranking agent. Score each lead from 1-10 based on fit.
+                    // 5. Ranking & Deduplication
+                    if (validatedLeads.length > 0) {
+                        try {
+                            const rankRes = await runGeminiAgent({
+                                apiKey: googleKey,
+                                modelName: 'gemini-2.0-flash',
+                                agentName: 'Lead Ranker',
+                                instructions: `You are a lead ranking agent. Score each lead from 1-10 based on fit.
 
 SCORING CRITERIA:
 - 10: Perfect title match, decision maker at target company
@@ -1185,82 +1185,82 @@ TARGET TITLES: ${companyContext.baselineTitles?.join(', ') || 'Decision makers'}
 
 OUTPUT FORMAT: Return JSON array with email and match_score:
 { "leads": [{ "email": "...", "match_score": 8 }] }`,
-                                                        userMessage: `Rank these leads: ${JSON.stringify(validatedLeads.slice(0, 50).map(l => ({ email: l.email, title: l.title, company: l.company_name })))}`,
-                                                        tools: [],
-                                                        maxTurns: 2,
-                                                        logStep: logStep
-                                                    });
+                                userMessage: `Rank these leads: ${JSON.stringify(validatedLeads.slice(0, 50).map(l => ({ email: l.email, title: l.title, company: l.company_name })))}`,
+                                tools: [],
+                                maxTurns: 2,
+                                logStep: logStep
+                            });
 
-                                                    const rankedParsed = enforceAgentContract({
-                                                        agentName: "Lead Ranker",
-                                                        rawOutput: rankRes.finalOutput,
-                                                        schema: z.object({
-                                                            leads: z.array(z.object({
-                                                                email: z.string(),
-                                                                match_score: z.number()
-                                                            }))
-                                                        })
-                                                    });
+                            const rankedParsed = enforceAgentContract({
+                                agentName: "Lead Ranker",
+                                rawOutput: rankRes.finalOutput,
+                                schema: z.object({
+                                    leads: z.array(z.object({
+                                        email: z.string(),
+                                        match_score: z.number()
+                                    }))
+                                })
+                            });
 
-                                                    // MERGE SCORES BACK to validatedLeads (Preserves company_profile)
-                                                    const scoreMap = new Map((rankedParsed.leads || []).map(l => [l.email, l.match_score]));
+                            // MERGE SCORES BACK to validatedLeads (Preserves company_profile)
+                            const scoreMap = new Map((rankedParsed.leads || []).map(l => [l.email, l.match_score]));
 
-                                                    const ranked = validatedLeads.map(l => ({
-                                                        ...l,
-                                                        match_score: scoreMap.get(l.email) || 5 // Default score if ranking fails/skips
-                                                    }));
+                            const ranked = validatedLeads.map(l => ({
+                                ...l,
+                                match_score: scoreMap.get(l.email) || 5 // Default score if ranking fails/skips
+                            }));
 
-                                                    const sorted = ranked.sort((a, b) => (b.match_score || 0) - (a.match_score || 0));
+                            const sorted = ranked.sort((a, b) => (b.match_score || 0) - (a.match_score || 0));
 
-                                                    costTracker.recordCall({
-                                                        agent: 'Lead Ranker',
-                                                        model: 'gemini-2.0-flash',
-                                                        inputTokens: rankRes.usage?.inputTokens || 0,
-                                                        outputTokens: rankRes.usage?.outputTokens || 0,
-                                                        duration: 0,
-                                                        success: true
-                                                    });
+                            costTracker.recordCall({
+                                agent: 'Lead Ranker',
+                                model: 'gemini-2.0-flash',
+                                inputTokens: rankRes.usage?.inputTokens || 0,
+                                outputTokens: rankRes.usage?.outputTokens || 0,
+                                duration: 0,
+                                success: true
+                            });
 
-                                                    const perCompany = {};
-                                                    sorted.forEach(l => {
-                                                        if (!perCompany[l.company_name]) perCompany[l.company_name] = [];
-                                                        if (perCompany[l.company_name].length < maxLeadsPerCompany) perCompany[l.company_name].push(l);
-                                                    });
+                            const perCompany = {};
+                            sorted.forEach(l => {
+                                if (!perCompany[l.company_name]) perCompany[l.company_name] = [];
+                                if (perCompany[l.company_name].length < maxLeadsPerCompany) perCompany[l.company_name].push(l);
+                            });
 
-                                                    const added = Object.values(perCompany).flat();
-                                                    globalLeads.push(...added);
-                                                    logStep('Workflow', `✅ Finalized ${globalLeads.length} leads.`);
-                                                } catch (e) {
-                                                    logStep('Lead Ranker', `Ranking failed: ${e.message}`);
-                                                    // Fallback: use unranked leads with default score
-                                                    const fallback = validatedLeads.slice(0, 20).map(l => ({ ...l, match_score: 5 }));
-                                                    globalLeads.push(...fallback);
-                                                }
-                                            }
-                                        }
+                            const added = Object.values(perCompany).flat();
+                            globalLeads.push(...added);
+                            logStep('Workflow', `✅ Finalized ${globalLeads.length} leads.`);
+                        } catch (e) {
+                            logStep('Lead Ranker', `Ranking failed: ${e.message}`);
+                            // Fallback: use unranked leads with default score
+                            const fallback = validatedLeads.slice(0, 20).map(l => ({ ...l, match_score: 5 }));
+                            globalLeads.push(...fallback);
+                        }
+                    }
+                }
 
-                                        // Mark companies as processed
-                                        masterQualifiedList.forEach(c => scrapedNamesSet.add(c.company_name));
-                                    } catch (e) {
-                                        logStep('Lead Finder', `Scraping failed: ${e.message} `);
-                                    }
-                                }
+                // Mark companies as processed
+                masterQualifiedList.forEach(c => scrapedNamesSet.add(c.company_name));
+            } catch (e) {
+                logStep('Lead Finder', `Scraping failed: ${e.message} `);
+            }
+        }
 
-                                // --- Outreach Generation ---
-                                logStep('Outreach Creator', `Drafting messages for ${globalLeads.length} leads in batches...`);
-                                let finalLeads = [];
-                                const BATCH_SIZE = 5;
+        // --- Outreach Generation ---
+        logStep('Outreach Creator', `Drafting messages for ${globalLeads.length} leads in batches...`);
+        let finalLeads = [];
+        const BATCH_SIZE = 5;
 
-                                for (let i = 0; i < globalLeads.length; i += BATCH_SIZE) {
-                                    const batch = globalLeads.slice(i, i + BATCH_SIZE);
-                                    logStep('Outreach Creator', `Processing batch ${Math.floor(i / BATCH_SIZE) + 1} of ${Math.ceil(globalLeads.length / BATCH_SIZE)}...`);
+        for (let i = 0; i < globalLeads.length; i += BATCH_SIZE) {
+            const batch = globalLeads.slice(i, i + BATCH_SIZE);
+            logStep('Outreach Creator', `Processing batch ${Math.floor(i / BATCH_SIZE) + 1} of ${Math.ceil(globalLeads.length / BATCH_SIZE)}...`);
 
-                                    try {
-                                        const outreachRes = await runGeminiAgent({
-                                            apiKey: googleKey,
-                                            modelName: 'gemini-2.0-flash',
-                                            agentName: 'Outreach Creator',
-                                            instructions: companyContext.outreachPromptInstructions || `You are Roelof van Heeren, a Principal at Fifth Avenue Properties, a Canadian residential real estate development firm.
+            try {
+                const outreachRes = await runGeminiAgent({
+                    apiKey: googleKey,
+                    modelName: 'gemini-2.0-flash',
+                    agentName: 'Outreach Creator',
+                    instructions: companyContext.outreachPromptInstructions || `You are Roelof van Heeren, a Principal at Fifth Avenue Properties, a Canadian residential real estate development firm.
 Your goal is to write direct, fact-based outreach messages to potential Investment Partners (LPs/Co-GPs) or Peers in the industry.
 
 CRITICAL: The user HATES generic messages. 
@@ -1323,182 +1323,190 @@ Fifth Avenue Properties"
 OUTPUT JSON:
 { "leads": [{ "email": "...", "connection_request": "...", "email_subject": "...", "email_message": "..." }] }
 If no specific fact is found, craft a polite, relevant generic message about their residential investment focus. NEVER return null.`,
-                                            userMessage: `Draft outreach for these leads based on their 'company_profile' (Intelligence Report).
+                    userMessage: `Draft outreach for these leads based on their 'company_profile' (Intelligence Report).
 Strictly follow the Priority Order and Hard Limits.
 
 LEADS:
 ${JSON.stringify(batch.map(l => ({
-                                                email: l.email,
-                                                first_name: l.first_name,
-                                                company_name: l.company_name,
-                                                title: l.title,
-                                                company_profile: (l.company_profile || "").substring(0, 3000)
-                                            })))}`,
-                                            tools: [],
-                                            maxTurns: 1,
-                                            logStep: logStep
-                                        });
+                        email: l.email,
+                        first_name: l.first_name,
+                        company_name: l.company_name,
+                        title: l.title,
+                        company_profile: (l.company_profile || "").substring(0, 3000)
+                    })))}`,
+                    tools: [],
+                    maxTurns: 1,
+                    logStep: logStep
+                });
 
-                                        // HARD CONTRACT ENFORCEMENT
-                                        const normalizedOutreach = enforceAgentContract({
-                                            agentName: "Outreach Creator",
-                                            rawOutput: outreachRes.finalOutput,
-                                            schema: OutreachCreatorSchema
-                                        });
+                // HARD CONTRACT ENFORCEMENT
+                const normalizedOutreach = enforceAgentContract({
+                    agentName: "Outreach Creator",
+                    rawOutput: outreachRes.finalOutput,
+                    schema: OutreachCreatorSchema
+                });
 
-                                        costTracker.recordCall({
-                                            agent: 'Outreach Creator',
-                                            model: 'gemini-2.0-flash',
-                                            inputTokens: outreachRes.usage?.inputTokens || 0,
-                                            outputTokens: outreachRes.usage?.outputTokens || 0,
-                                            duration: 0,
-                                            success: true
-                                        });
+                costTracker.recordCall({
+                    agent: 'Outreach Creator',
+                    model: 'gemini-2.0-flash',
+                    inputTokens: outreachRes.usage?.inputTokens || 0,
+                    outputTokens: outreachRes.usage?.outputTokens || 0,
+                    duration: 0,
+                    success: true
+                });
 
-                                        const batchResponses = normalizedOutreach.leads || [];
+                const batchResponses = normalizedOutreach.leads || [];
 
-                                        // Map results for this batch
-                                        const outreachMap = new Map(batchResponses.map(l => [l.email, l]));
+                // Map results for this batch
+                const outreachMap = new Map(batchResponses.map(l => [(l.email || '').toLowerCase(), l]));
 
-                                        batch.forEach(original => {
-                                            let processedLead = { ...original };
-                                            const update = outreachMap.get(original.email);
+                batch.forEach(original => {
+                    let processedLead = { ...original };
+                    const update = outreachMap.get((original.email || '').toLowerCase());
 
 
-                                            if (update) {
-                                                processedLead = {
-                                                    ...original,
-                                                    email_message: update.email_message || update.email_body || original.email_message,
-                                                    email_subject: update.email_subject || original.email_subject,
-                                                    connection_request: update.connection_request || original.connection_request
-                                                };
-                                            } else {
-                                                // AI failed to generate message -> Flag for Manual Review
-                                                processedLead.status = 'MANUAL_REVIEW';
-                                                processedLead.disqualification_reason = 'AI Generation Failed - Needs Manual Review';
-                                            }
+                    if (update) {
+                        const connReq = update.connection_request || update.linkedin_message || original.connection_request || original.linkedin_message;
+                        const emailMsg = update.email_message || update.email_body || original.email_message || original.email_body;
 
-                                            // SAFETY: Enforce 300-char hard limit
-                                            if (processedLead.connection_request && processedLead.connection_request.length > 300) {
-                                                processedLead.connection_request = processedLead.connection_request.substring(0, 295) + '...';
-                                            }
+                        processedLead = {
+                            ...original,
+                            // Email Standardization: Use email_message as primary, sync to email_body
+                            email_message: emailMsg,
+                            email_body: emailMsg,
+                            email_subject: update.email_subject || original.email_subject,
 
-                                            finalLeads.push(processedLead);
-                                        });
-
-                                    } catch (e) {
-                                        logStep('Outreach Creator', `Batch failed: ${e.message}. Falling back to original data for this batch.`);
-                                        finalLeads.push(...batch);
-                                    }
-                                }
-
-                                // --- Save to CRM ---
-                                await saveLeadsToDB(finalLeads, userId, icpId, logStep, 'NEW', runId);
-
-                                return {
-                                    status: finalLeads.length >= targetLeads ? 'success' : 'partial',
-                                    leads: finalLeads,
-                                    stats: {
-                                        leads_returned: finalLeads.length,
-                                        qualified: finalLeads.length,
-                                        leadsDisqualified: totalDisqualified,
-                                        companies_discovered: masterQualifiedList.length,
-                                        searchStats,
-                                        cost: costTracker.getSummary()
-                                    }
-                                };
-
-                            } catch (error) {
-                                // CRITICAL: Attach cost data to the error so server.js can save it even on failure
-                                console.error('[Workflow] Error occurred, attaching cost data to error object');
-                                error.stats = {
-                                    partialStats: true,
-                                    error: error.message,
-                                    cost: costTracker.getSummary()
-                                };
-                                throw error; // Re-throw with attached cost data
-                            }
+                            // LinkedIn Standardization: Use connection_request as primary, sync to linkedin_message
+                            connection_request: connReq,
+                            linkedin_message: connReq
                         };
+                    } else {
+                        // AI failed to generate message -> Flag for Manual Review
+                        processedLead.status = 'MANUAL_REVIEW';
+                        processedLead.disqualification_reason = 'AI Generation Failed - Needs Manual Review';
+                    }
 
-                        /**
-                         * CRM Admission Gate - Validates a lead before persistence
-                         * @returns {{ pass: boolean, reason?: string }}
-                         */
-                        const validateLeadForCRM = (lead, status) => {
-                            // Rule 1: Must have email (Required for all leads to avoid DB chaos)
-                            if (!lead.email) return { pass: false, reason: 'Missing email' };
+                    // SAFETY: Enforce 300-char hard limit
+                    if (processedLead.connection_request && processedLead.connection_request.length > 300) {
+                        processedLead.connection_request = processedLead.connection_request.substring(0, 295) + '...';
+                    }
 
-                            // DISQUALIFIED leads pass easily for review
-                            if (status === 'DISQUALIFIED') return { pass: true };
+                    finalLeads.push(processedLead);
+                });
 
-                            // Rule 2: Email domain must not be generic/fake
-                            const emailDomain = lead.email.split('@')[1]?.toLowerCase();
-                            const BLOCKED_DOMAINS = [
-                                'linktr.ee', 'linktree.com', 'example.com', 'test.com',
-                                'temp-mail.org', 'mailinator.com', 'guerrillamail.com',
-                                'bio.link', 'beacons.ai', 'stan.store', 'carrd.co'
-                            ];
-                            if (!emailDomain || BLOCKED_DOMAINS.includes(emailDomain)) {
-                                return { pass: false, reason: `Blocked email domain: ${emailDomain || 'missing'}` };
-                            }
+            } catch (e) {
+                logStep('Outreach Creator', `Batch failed: ${e.message}. Falling back to original data for this batch.`);
+                finalLeads.push(...batch);
+            }
+        }
 
-                            // Rule 3: Must have company_name
-                            if (!lead.company_name || lead.company_name.trim() === '' || lead.company_name === 'Unknown') {
-                                return { pass: false, reason: 'Missing or invalid company_name' };
-                            }
+        // --- Save to CRM ---
+        await saveLeadsToDB(finalLeads, userId, icpId, logStep, 'NEW', runId);
 
-                            // Rule 4: For NEW status, warn if missing outreach but DO NOT REJECT
-                            if (status === 'NEW') {
-                                if (!lead.connection_request && !lead.email_message && !lead.email_body) {
-                                    // Changed logic: Allow passing but log it
-                                    // return { pass: false, reason: 'Missing outreach messages (required for NEW status)' };
-                                    /* Allow it to pass so user can manually review */
-                                }
-                            }
+        return {
+            status: finalLeads.length >= targetLeads ? 'success' : 'partial',
+            leads: finalLeads,
+            stats: {
+                leads_returned: finalLeads.length,
+                qualified: finalLeads.length,
+                leadsDisqualified: totalDisqualified,
+                companies_discovered: masterQualifiedList.length,
+                searchStats,
+                cost: costTracker.getSummary()
+            }
+        };
 
-                            // Rule 5: Must have some company association data
-                            if (!lead.company_profile && !lead.company_website && !lead.company_domain) {
-                                return { pass: false, reason: 'No company association data' };
-                            }
+    } catch (error) {
+        // CRITICAL: Attach cost data to the error so server.js can save it even on failure
+        console.error('[Workflow] Error occurred, attaching cost data to error object');
+        error.stats = {
+            partialStats: true,
+            error: error.message,
+            cost: costTracker.getSummary()
+        };
+        throw error; // Re-throw with attached cost data
+    }
+};
 
-                            return { pass: true };
-                        };
+/**
+ * CRM Admission Gate - Validates a lead before persistence
+ * @returns {{ pass: boolean, reason?: string }}
+ */
+const validateLeadForCRM = (lead, status) => {
+    // Rule 1: Must have email (Required for all leads to avoid DB chaos)
+    if (!lead.email) return { pass: false, reason: 'Missing email' };
 
-                        /**
-                         * DB Persistence with CRM Admission Gate
-                         */
-                        export const saveLeadsToDB = async (leads, userId, icpId, logStep, forceStatus = 'NEW', runId = null) => {
-                            if (!leads || leads.length === 0) return;
+    // DISQUALIFIED leads pass easily for review
+    if (status === 'DISQUALIFIED') return { pass: true };
 
-                            let savedCount = 0;
-                            let redirectedCount = 0;
-                            let rejectedCount = 0;
+    // Rule 2: Email domain must not be generic/fake
+    const emailDomain = lead.email.split('@')[1]?.toLowerCase();
+    const BLOCKED_DOMAINS = [
+        'linktr.ee', 'linktree.com', 'example.com', 'test.com',
+        'temp-mail.org', 'mailinator.com', 'guerrillamail.com',
+        'bio.link', 'beacons.ai', 'stan.store', 'carrd.co'
+    ];
+    if (!emailDomain || BLOCKED_DOMAINS.includes(emailDomain)) {
+        return { pass: false, reason: `Blocked email domain: ${emailDomain || 'missing'}` };
+    }
 
-                            for (const lead of leads) {
-                                try {
-                                    // === CRM ADMISSION GATE ===
-                                    let currentStatus = forceStatus;
-                                    const gateResult = validateLeadForCRM(lead, currentStatus);
+    // Rule 3: Must have company_name
+    if (!lead.company_name || lead.company_name.trim() === '' || lead.company_name === 'Unknown') {
+        return { pass: false, reason: 'Missing or invalid company_name' };
+    }
 
-                                    if (!gateResult.pass) {
-                                        // If this was meant to be a NEW lead, redirect to DISQUALIFIED for review
-                                        if (currentStatus === 'NEW') {
-                                            currentStatus = 'DISQUALIFIED';
-                                            lead.disqualification_reason = `REJECTED AT GATE: ${gateResult.reason}`;
-                                            redirectedCount++;
-                                            // Fall through to save... 
-                                        } else {
-                                            // If it's already meant to be disqualified and still fails (no email), drop it
-                                            console.log(`[CRM Gate] ❌ Dropped ${lead.first_name} ${lead.last_name} (${lead.email || 'no email'}): ${gateResult.reason}`);
-                                            rejectedCount++;
-                                            continue;
-                                        }
-                                    }
+    // Rule 4: For NEW status, warn if missing outreach but DO NOT REJECT
+    if (status === 'NEW') {
+        if (!lead.connection_request && !lead.email_message && !lead.email_body) {
+            // Changed logic: Allow passing but log it
+            // return { pass: false, reason: 'Missing outreach messages (required for NEW status)' };
+            /* Allow it to pass so user can manually review */
+        }
+    }
 
-                                    // Removed redundant existence check to allow ON CONFLICT UPDATE to work for existing leads
-                                    // This ensures enrichment data is saved even if the lead is already linked to the user
+    // Rule 5: Must have some company association data
+    if (!lead.company_profile && !lead.company_website && !lead.company_domain) {
+        return { pass: false, reason: 'No company association data' };
+    }
 
-                                    const insertRes = await query(`INSERT INTO leads(company_name, person_name, email, job_title, linkedin_url, status, source, user_id, icp_id, custom_data, run_id, 
+    return { pass: true };
+};
+
+/**
+ * DB Persistence with CRM Admission Gate
+ */
+export const saveLeadsToDB = async (leads, userId, icpId, logStep, forceStatus = 'NEW', runId = null) => {
+    if (!leads || leads.length === 0) return;
+
+    let savedCount = 0;
+    let redirectedCount = 0;
+    let rejectedCount = 0;
+
+    for (const lead of leads) {
+        try {
+            // === CRM ADMISSION GATE ===
+            let currentStatus = forceStatus;
+            const gateResult = validateLeadForCRM(lead, currentStatus);
+
+            if (!gateResult.pass) {
+                // If this was meant to be a NEW lead, redirect to DISQUALIFIED for review
+                if (currentStatus === 'NEW') {
+                    currentStatus = 'DISQUALIFIED';
+                    lead.disqualification_reason = `REJECTED AT GATE: ${gateResult.reason}`;
+                    redirectedCount++;
+                    // Fall through to save... 
+                } else {
+                    // If it's already meant to be disqualified and still fails (no email), drop it
+                    console.log(`[CRM Gate] ❌ Dropped ${lead.first_name} ${lead.last_name} (${lead.email || 'no email'}): ${gateResult.reason}`);
+                    rejectedCount++;
+                    continue;
+                }
+            }
+
+            // Removed redundant existence check to allow ON CONFLICT UPDATE to work for existing leads
+            // This ensures enrichment data is saved even if the lead is already linked to the user
+
+            const insertRes = await query(`INSERT INTO leads(company_name, person_name, email, job_title, linkedin_url, status, source, user_id, icp_id, custom_data, run_id, 
                         company_website, company_domain, match_score, email_message, email_body, email_subject, linkedin_message, connection_request, disqualification_reason)
                         VALUES($1, $2, $3, $4, $5, $6, 'Outbound Agent', $7, $8, $9, $10, 
                         $11, $12, $13, $14, $15, $16, $17, $18, $19) 
@@ -1522,94 +1530,94 @@ ${JSON.stringify(batch.map(l => ({
                             disqualification_reason = EXCLUDED.disqualification_reason,
                             updated_at = NOW()
                         RETURNING id`,
-                                        [
-                                            lead.company_name,
-                                            `${lead.first_name} ${lead.last_name}`.trim(),
-                                            lead.email,
-                                            lead.title,
-                                            lead.linkedin_url,
-                                            currentStatus,
-                                            userId,
-                                            icpId || null, // Sanitize empty string to null for UUID
-                                            {
-                                                icp_id: icpId,
-                                                score: lead.match_score,
-                                                company_profile: lead.company_profile,
-                                                company_website: lead.company_website || lead.company_domain,
-                                                company_domain: lead.company_domain,
-                                                email_message: lead.email_message || lead.email_body,
-                                                email_subject: lead.email_subject,
-                                                connection_request: lead.connection_request,
-                                                disqualification_reason: lead.disqualification_reason
-                                            },
-                                            runId || null, // Sanitize empty string to null for UUID
-                                            // Direct columns for easier querying
-                                            lead.company_website || lead.company_domain,
-                                            lead.company_domain,
-                                            lead.match_score,
-                                            lead.email_message,
-                                            lead.email_body,
-                                            lead.email_subject,
-                                            lead.linkedin_message, // Assuming this is where connection request msg might be stored if different
-                                            lead.connection_request,
-                                            lead.disqualification_reason
-                                        ]);
+                [
+                    lead.company_name,
+                    `${lead.first_name} ${lead.last_name}`.trim(),
+                    lead.email,
+                    lead.title,
+                    lead.linkedin_url,
+                    currentStatus,
+                    userId,
+                    icpId || null, // Sanitize empty string to null for UUID
+                    {
+                        icp_id: icpId,
+                        score: lead.match_score,
+                        company_profile: lead.company_profile,
+                        company_website: lead.company_website || lead.company_domain,
+                        company_domain: lead.company_domain,
+                        email_message: lead.email_message || lead.email_body,
+                        email_subject: lead.email_subject,
+                        connection_request: lead.connection_request,
+                        disqualification_reason: lead.disqualification_reason
+                    },
+                    runId || null, // Sanitize empty string to null for UUID
+                    // Direct columns for easier querying
+                    lead.company_website || lead.company_domain,
+                    lead.company_domain,
+                    lead.match_score,
+                    lead.email_message,
+                    lead.email_body,
+                    lead.email_subject,
+                    lead.linkedin_message, // Assuming this is where connection request msg might be stored if different
+                    lead.connection_request,
+                    lead.disqualification_reason
+                ]);
 
-                                    const leadId = insertRes.rows[0].id;
+            const leadId = insertRes.rows[0].id;
 
-                                    await query(
-                                        `INSERT INTO leads_link(lead_id, parent_id, parent_type) 
+            await query(
+                `INSERT INTO leads_link(lead_id, parent_id, parent_type) 
                  VALUES($1, $2, 'user') 
                  ON CONFLICT DO NOTHING`,
-                                        [leadId, userId]
-                                    );
+                [leadId, userId]
+            );
 
-                                    savedCount++;
-                                } catch (e) {
-                                    console.error('Failed to save lead:', e.message);
-                                }
-                            }
+            savedCount++;
+        } catch (e) {
+            console.error('Failed to save lead:', e.message);
+        }
+    }
 
-                            if (savedCount > 0 || redirectedCount > 0 || rejectedCount > 0) {
-                                const typeLabel = (forceStatus === 'DISQUALIFIED') ? '❌ Disqualified' : '✅ Valid';
-                                let detailMsg = `Saved ${savedCount} leads.`;
-                                if (redirectedCount > 0) detailMsg += ` Redirected ${redirectedCount} to disqualified for review.`;
-                                if (rejectedCount > 0) detailMsg += ` Dropped ${rejectedCount} (dead data).`;
+    if (savedCount > 0 || redirectedCount > 0 || rejectedCount > 0) {
+        const typeLabel = (forceStatus === 'DISQUALIFIED') ? '❌ Disqualified' : '✅ Valid';
+        let detailMsg = `Saved ${savedCount} leads.`;
+        if (redirectedCount > 0) detailMsg += ` Redirected ${redirectedCount} to disqualified for review.`;
+        if (rejectedCount > 0) detailMsg += ` Dropped ${rejectedCount} (dead data).`;
 
-                                logStep('Database', `${typeLabel} Sync: ${detailMsg}`);
-                            }
+        logStep('Database', `${typeLabel} Sync: ${detailMsg}`);
+    }
 
-                            // SYNC: Mark companies as researched to prevent discovery in future runs AND Sync to companies table
-                            if (savedCount > 0) {
-                                try {
-                                    const savedLeads = leads.filter(l => validateLeadForCRM(l, forceStatus).pass);
+    // SYNC: Mark companies as researched to prevent discovery in future runs AND Sync to companies table
+    if (savedCount > 0) {
+        try {
+            const savedLeads = leads.filter(l => validateLeadForCRM(l, forceStatus).pass);
 
-                                    // 1. Mark as Researched
-                                    const { markCompaniesAsResearched } = await import('./company-tracker.js');
-                                    const companiesToMark = [...new Set(savedLeads.map(l => l.company_name))].map(name => {
-                                        const lead = savedLeads.find(l => l.company_name === name);
-                                        return {
-                                            name,
-                                            domain: lead.company_website || lead.company_domain || lead.domain,
-                                            leadCount: savedLeads.filter(l => l.company_name === name).length,
-                                            metadata: { source: 'workflow_save', icp_id: icpId }
-                                        };
-                                    });
-                                    await markCompaniesAsResearched(userId, companiesToMark);
+            // 1. Mark as Researched
+            const { markCompaniesAsResearched } = await import('./company-tracker.js');
+            const companiesToMark = [...new Set(savedLeads.map(l => l.company_name))].map(name => {
+                const lead = savedLeads.find(l => l.company_name === name);
+                return {
+                    name,
+                    domain: lead.company_website || lead.company_domain || lead.domain,
+                    leadCount: savedLeads.filter(l => l.company_name === name).length,
+                    metadata: { source: 'workflow_save', icp_id: icpId }
+                };
+            });
+            await markCompaniesAsResearched(userId, companiesToMark);
 
-                                    // 2. Sync to Display Table (companies)
-                                    const uniqueCompanies = [...new Set(savedLeads.map(l => l.company_name))];
-                                    for (const name of uniqueCompanies) {
-                                        const lead = savedLeads.find(l => l.company_name === name);
-                                        const finalWebsite = lead.company_website || lead.company_domain || lead.domain;
+            // 2. Sync to Display Table (companies)
+            const uniqueCompanies = [...new Set(savedLeads.map(l => l.company_name))];
+            for (const name of uniqueCompanies) {
+                const lead = savedLeads.find(l => l.company_name === name);
+                const finalWebsite = lead.company_website || lead.company_domain || lead.domain;
 
-                                        // CRITICAL FIX: Use company_fit_score (from Company Profiler), NOT lead.match_score (from Lead Ranker)
-                                        // lead.match_score = how good the PERSON is (1-10 based on job title)
-                                        // company_fit_score = how good the COMPANY is (1-10 based on ICP fit)
-                                        let score = parseInt(lead.company_fit_score);
-                                        if (isNaN(score)) score = null;
+                // CRITICAL FIX: Use company_fit_score (from Company Profiler), NOT lead.match_score (from Lead Ranker)
+                // lead.match_score = how good the PERSON is (1-10 based on job title)
+                // company_fit_score = how good the COMPANY is (1-10 based on ICP fit)
+                let score = parseInt(lead.company_fit_score);
+                if (isNaN(score)) score = null;
 
-                                        await query(`
+                await query(`
                     INSERT INTO companies (user_id, company_name, website, company_profile, fit_score, created_at, last_updated)
                     VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
                     ON CONFLICT (user_id, company_name) 
@@ -1619,17 +1627,17 @@ ${JSON.stringify(batch.map(l => ({
                         fit_score = COALESCE(companies.fit_score, EXCLUDED.fit_score),
                         last_updated = NOW()
                 `, [userId, name, finalWebsite, lead.company_profile, score]);
-                                    }
+            }
 
-                                } catch (e) {
-                                    console.error('Failed to sync with researched_companies/companies:', e.message);
-                                }
-                            }
-                        };
+        } catch (e) {
+            console.error('Failed to sync with researched_companies/companies:', e.message);
+        }
+    }
+};
 
-                        /**
-                         * Manual Enrichment (Helper)
-                         */
-                        export const enrichLeadWithPhone = async (lead) => {
-                            return [];
-                        };
+/**
+ * Manual Enrichment (Helper)
+ */
+export const enrichLeadWithPhone = async (lead) => {
+    return [];
+};

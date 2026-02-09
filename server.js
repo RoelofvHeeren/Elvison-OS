@@ -1151,25 +1151,7 @@ app.post('/api/agents/config', requireAuth, async (req, res) => {
     }
 })
 
-// 4. Create New ICP Strategy
-app.post('/api/icps', requireAuth, async (req, res) => {
-    const { name, config, agent_config } = req.body
 
-    if (!name) return res.status(400).json({ error: 'ICP Name is required' })
-
-    try {
-        const { rows } = await query(
-            `INSERT INTO icps (user_id, name, config, agent_config) 
-             VALUES ($1, $2, $3, $4)
-             RETURNING id, name, created_at`,
-            [req.userId, name, config || {}, agent_config || {}]
-        )
-        res.json({ success: true, icp: rows[0] })
-    } catch (err) {
-        console.error('Failed to create ICP:', err)
-        res.status(500).json({ error: 'Database error' })
-    }
-})
 
 
 // 5. Enrich Lead (LeadMagic)
@@ -3008,18 +2990,33 @@ app.get('/api/runs', requireAuth, async (req, res) => {
 })
 
 // Get Single Run Status (for resumption)
+// Get Single Run Status (for resumption)
 app.get('/api/runs/:id', requireAuth, async (req, res) => {
     try {
         const { id } = req.params;
-        const { rows } = await query(`
-            SELECT 
-                wr.*,
-                ar.output_data
-            FROM workflow_runs wr
-            JOIN workflow_runs_link_table link ON wr.id = link.workflow_run_id
-            LEFT JOIN agent_results ar ON wr.id = ar.run_id
-            WHERE wr.id = $1 AND link.parent_id = $2 AND link.parent_type = 'user'
-    `, [id, req.userId]);
+        const { summary } = req.query; // Add support for summary mode (lighter payload)
+
+        let queryText = '';
+        if (summary === 'true') {
+            queryText = `
+                SELECT wr.*
+                FROM workflow_runs wr
+                JOIN workflow_runs_link_table link ON wr.id = link.workflow_run_id
+                WHERE wr.id = $1 AND link.parent_id = $2 AND link.parent_type = 'user'
+            `;
+        } else {
+            queryText = `
+                SELECT 
+                    wr.*,
+                    ar.output_data
+                FROM workflow_runs wr
+                JOIN workflow_runs_link_table link ON wr.id = link.workflow_run_id
+                LEFT JOIN agent_results ar ON wr.id = ar.run_id
+                WHERE wr.id = $1 AND link.parent_id = $2 AND link.parent_type = 'user'
+            `;
+        }
+
+        const { rows } = await query(queryText, [id, req.userId]);
 
         if (rows.length === 0) {
             return res.status(404).json({ error: 'Run not found' });
@@ -3038,28 +3035,22 @@ app.get('/api/runs/:id', requireAuth, async (req, res) => {
                 SELECT MAX(created_at) as last_log_at 
                 FROM workflow_step_logs 
                 WHERE run_id = $1
-    `, [id]);
+            `, [id]);
 
             const lastLogAt = logRes.rows[0]?.last_log_at ? new Date(logRes.rows[0].last_log_at) : startedAt;
             const logAgeMinutes = (now - lastLogAt) / (1000 * 60);
 
+            // Return metrics even if not stale, for debugging
+            run.running_minutes = runningMinutes;
+            run.log_age_minutes = logAgeMinutes;
+
             // Mark as STALE if: running > 10 min AND no logs in > 5 min
             if (runningMinutes > 10 && logAgeMinutes > 5) {
-                console.log(`[Stale Detection]Run ${id} is stale(running ${runningMinutes.toFixed(1)} min, log age ${logAgeMinutes.toFixed(1)} min).Updating DB to FAILED...`);
-                // Auto-mark as failed
-                await query(
-                    `UPDATE workflow_runs SET status = 'FAILED', completed_at = NOW(), error_log = $2 WHERE id = $1`,
-                    [id, 'Run terminated unexpectedly (stale detection)']
-                );
-                console.log(`[Stale Detection]DB Updated for Run ${id}`);
-
+                console.log(`[Stale Detection] Run ${id} is stale (running ${runningMinutes.toFixed(1)} min, log age ${logAgeMinutes.toFixed(1)} min). Updating DB to FAILED...`);
+                await query(`UPDATE workflow_runs SET status = 'FAILED', completed_at = NOW(), error_log = 'Automatically marked as FAILED due to inactivity (stale)' WHERE id = $1`, [id]);
                 run.status = 'FAILED';
-                run.error_log = 'Run terminated unexpectedly (stale detection)';
+                run.error_log = 'Automatically marked as FAILED due to inactivity (stale)';
                 run.was_stale = true;
-            } else {
-                // Return staleness info to frontend for UI feedback
-                run.running_minutes = runningMinutes;
-                run.log_age_minutes = logAgeMinutes;
             }
         }
 
@@ -3277,10 +3268,12 @@ app.get('/api/integrations/apify/status/:runId', async (req, res) => {
 // Get all ICPs for logged-in user
 app.get('/api/icps', requireAuth, async (req, res) => {
     try {
+        console.log(`[API] GET /api/icps for User: ${req.userId}`);
         const { rows } = await query(
             'SELECT * FROM icps WHERE user_id = $1 ORDER BY created_at DESC',
             [req.userId]
-        )
+        );
+        console.log(`[API] Found ${rows.length} ICPs for User ${req.userId}:`, rows.map(i => i.name));
         res.json({ icps: rows })
     } catch (err) {
         console.error('Failed to fetch ICPs:', err)
@@ -3797,14 +3790,19 @@ app.post('/api/runs/:id/force-fail', requireAuth, async (req, res) => {
 
         const run = verifyRes.rows[0];
 
-        // Allow force-failing RUNNING, PENDING, or FAILED (idempotent)
-        // If it's already FAILED, we just return success to clear the UI state.
+        // Idempotency: Handle already terminal states
         if (run.status === 'FAILED') {
             return res.json({ status: 'success', message: 'Run is already marked as FAILED.' });
         }
+        if (run.status === 'COMPLETED') {
+            return res.json({ status: 'success', message: 'Run already completed successfully.' });
+        }
+        if (run.status === 'CANCELLED') {
+            return res.json({ status: 'success', message: 'Run was already cancelled.' });
+        }
 
         if (!['RUNNING', 'PENDING'].includes(run.status)) {
-            return res.status(400).json({ error: `Cannot force - fail run with status: ${run.status} ` });
+            return res.status(400).json({ error: `Cannot force-fail run with status: ${run.status}` });
         }
 
         const errorMessage = reason || 'Manually stopped by user (force-fail)';
@@ -3814,8 +3812,8 @@ app.post('/api/runs/:id/force-fail', requireAuth, async (req, res) => {
             [id, errorMessage]
         );
 
-        console.log(`[Force - Fail] Run ${id} manually marked as FAILED: ${errorMessage} `);
-        res.json({ status: 'success', message: 'Run marked as failed.' });
+        console.log(`[Force-Fail] Run ${id} manually marked as FAILED: ${errorMessage}`);
+        res.json({ status: 'success', message: 'Run marked as FAILED.' });
     } catch (e) {
         console.error('Force-fail error:', e);
         res.status(500).json({ error: e.message });

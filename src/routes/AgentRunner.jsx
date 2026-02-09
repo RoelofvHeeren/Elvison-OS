@@ -88,10 +88,10 @@ const AgentRunner = () => {
         }
     }
 
-    const fetchRunDetails = async (runId) => {
+    const fetchRunDetails = async (runId, summary = false) => {
         try {
             // 1. Get Status (Metadata)
-            const statusRes = await fetch(`/api/runs/${runId}`);
+            const statusRes = await fetch(`/api/runs/${runId}${summary ? '?summary=true' : ''}`);
             if (!statusRes.ok) return null;
             const runData = await statusRes.json();
 
@@ -99,6 +99,7 @@ const AgentRunner = () => {
             setRunError(runData.error_log);
             setRunStats(runData.stats || null);
 
+            // Only update results if we have output_data (which summary mode omits)
             if (runData.status === 'COMPLETED' && runData.output_data) {
                 setRunResult({ leads: runData.output_data.leads || [] });
                 setCurrentStep('Complete');
@@ -106,7 +107,7 @@ const AgentRunner = () => {
                 setCurrentStep('Failed');
             }
 
-            // 2. Get Logs
+            // 2. Get Logs (Independent of summary mode for now, maybe optimize later)
             const logRes = await fetch(`/api/runs/${runId}/logs`);
             if (logRes.ok) {
                 const { logs: fetchedLogs } = await logRes.json();
@@ -115,8 +116,6 @@ const AgentRunner = () => {
                     detail: l.message,
                     timestamp: l.created_at
                 }));
-                // Sort by ID or Timestamp to ensure order (DB usually returns created_at ASC)
-                // formattedLogs.sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
 
                 setLogs(formattedLogs);
 
@@ -161,21 +160,22 @@ const AgentRunner = () => {
 
         setIsPolling(true);
 
-        // Initial Fetch
-        fetchRunDetails(selectedRunId).then((data) => {
+        // Initial Fetch (Full details initially to populate if already done)
+        fetchRunDetails(selectedRunId, false).then((data) => {
             if (!data) return;
 
             if (data.status === 'RUNNING') {
-                // Start Polling
+                // Start Polling (Summary Mode for efficiency)
                 const interval = setInterval(async () => {
-                    const freshData = await fetchRunDetails(selectedRunId);
-                    // Also refetch list periodically to update status icons of other runs
-                    // fetchRuns(); // might be too heavy?
+                    const freshData = await fetchRunDetails(selectedRunId, true); // Use summary mode
 
                     if (freshData && freshData.status !== 'RUNNING') {
                         clearInterval(interval);
                         setIsPolling(false);
-                        fetchRuns(); // Refresh list to show correct status
+                        fetchRuns(); // Refresh list
+
+                        // Fetch full details now that it's done
+                        fetchRunDetails(selectedRunId, false);
                     }
                 }, 2000);
                 return () => clearInterval(interval);
