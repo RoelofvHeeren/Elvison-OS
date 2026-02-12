@@ -486,6 +486,10 @@ export const runAgentWorkflow = async (input, config) => {
 
     CATEGORIZE EACH RESULT INTO ONE OF THREE TYPES:
 
+    GLOBAL PREFERENCE: RESIDENTIAL / MULTI-FAMILY REAL ESTATE.
+    - PRIORITIZE companies mentioning "Residential", "Multi-Family", "Apartments", "Condos", "Mixed-Use", "Housing".
+    - PENALIZE companies that are exclusively "Commercial", "Office", "Industrial", "Retail" UNLESS they are large diversified players.
+
     1. "company" - Direct company website that matches or MIGHT match the ICP
        → Include companyName, domain, description
 
@@ -816,16 +820,23 @@ export const runAgentWorkflow = async (input, config) => {
                         CRITICAL GEOGRAPHY CHECK (NORTH AMERICA):
                         The user requires companies with a MAJOR NORTH AMERICAN PRESENCE (Canada or USA).
                         - IF the company is HEADQUARTERED in Europe, Asia, Middle East, etc. AND does not describe a specific "North American Team" or "US/Canada Strategy" -> DISQUALIFY IMMEDIATELY (Score 1).
-                        - IF the company is Global, they are ONLY permitted if they mention significant North American operations or active investing in the US/Canada. Otherwise -> DISQUALIFY.
-                        - Sovereign Wealth Funds (e.g. ADIA, GIC): Score 10 ONLY if they have a dedicated US/Canada office mentioned.
-                        `;
+                            CRITICAL GEOGRAPHY CHECK (NORTH AMERICA):
+                            The user requires companies with a MAJOR NORTH AMERICAN PRESENCE (Canada or USA).
+                            - IF the company is HEADQUARTERED in Europe, Asia, Middle East, etc. AND does not describe a specific "North American Team" or "US/Canada Strategy" -> DISQUALIFY IMMEDIATELY (Score 1).
+                            - IF the company is Global, they are ONLY permitted if they mention significant North American operations or active investing in the US/Canada. Otherwise -> DISQUALIFY.
+                            - Sovereign Wealth Funds (e.g. ADIA, GIC): Score 10 ONLY if they have a dedicated US/Canada office mentioned.
+                            `;
                     }
 
-                    // NEW: INFRASTRUCTURE / OPERATING CO EXCLUSION
                     strictnessInstructions += `
                     
                     SECTOR EXCLUSIONS:
                     - IF the company is primarily an "Infrastructure Fund", "Energy Investor", or "Operating Company" (non-real estate) -> DISQUALIFY (Score 2) unless Real Estate is explicitly a major vertical.
+
+                    GLOBAL PREFERENCE: RESIDENTIAL / MULTI-FAMILY REAL ESTATE
+                    - The user is a Residential Developer.
+                    - BOOOST SCORE (+1-2 points) for: "Residential", "Multi-Family", "Apartments", "Condos", "Mixed-Use", "Housing", "BTR".
+                    - PENALIZE SCORE (-2 points) for: Exclusively "Commercial", "Office", "Industrial", "Retail" UNLESS they are large diversified players with a residential arm.
                     `;
 
 
@@ -837,17 +848,17 @@ export const runAgentWorkflow = async (input, config) => {
                         
                         YOUR TASK:
                         Analyze this content and create a detailed Company Profile JSON.
-                        
+
                         ${strictnessInstructions}
                         
                         COMPANY PROFILE REQUIREMENTS:
                         Structure the company_profile into a "Proper Report" using these Markdown headers:
                         
                         # Summary
-                        (2-3 sentences about core business and scale. Explicitly state if SFO or MFO.)
+                    (2 - 3 sentences about core business and scale.Explicitly state if SFO or MFO.)
                         
-                        # Investment Strategy 
-                        (Detailed breakdown of their approach, target asset classes, and GP/LP status)
+                        # Investment Strategy
+                        (Detailed breakdown of their approach, target asset classes, and GP / LP status)
                         
                         # Entity Classification
                         (Rationale for why this is a Principal Investor and not a Wealth Manager)
@@ -856,7 +867,7 @@ export const runAgentWorkflow = async (input, config) => {
                         (List specific recent deals, acquisitions, or assets mentioned. "See 'Featured' or 'Portfolio' sections".)
 
                         # Geographic Focus
-                        (Where do they invest? e.g. "North America", "Global", "UK & Europe")
+                        (Where do they invest ? e.g. "North America", "Global", "UK & Europe")
 
                         # Key Highlights
                         - Use bullet points for critical stats or unique edges.
@@ -864,22 +875,22 @@ export const runAgentWorkflow = async (input, config) => {
                         USER REQUIREMENTS:
                         ${companyContext.profileContent || "Extract key stats and focus."}
                         
-                        SCORING CRITERIA (0-10):
-                        - 10: Perfect fit (${companyContext.keyAttributes || "Clear match"})
-                        - 1: Poor fit (${companyContext.redFlags || "Mismatch"})
+                        SCORING CRITERIA(0 - 10):
+                    - 10: Perfect fit(${companyContext.keyAttributes || "Clear match"})
+                        - 1: Poor fit(${companyContext.redFlags || "Mismatch"})
 
-                        STRICT ENTITY TYPES (Choose One):
-                        - FAMILY_OFFICE_SFO (Approved)
-                        - FAMILY_OFFICE_MFO_PRINCIPAL (Approved)
-                        - FAMILY_OFFICE_CAPITAL_VEHICLE (Approved)
-                        - WEALTH_MANAGER_MFO (Reject)
-                        - WEALTH_MANAGER (Reject)
-                        - INVESTMENT_FUND (Reject)
-                        - SERVICE_PROVIDER (Reject)
+                        STRICT ENTITY TYPES(Choose One):
+                    - FAMILY_OFFICE_SFO(Approved)
+                        - FAMILY_OFFICE_MFO_PRINCIPAL(Approved)
+                        - FAMILY_OFFICE_CAPITAL_VEHICLE(Approved)
+                        - WEALTH_MANAGER_MFO(Reject)
+                        - WEALTH_MANAGER(Reject)
+                        - INVESTMENT_FUND(Reject)
+                        - SERVICE_PROVIDER(Reject)
                         
                         OUTPUT JSON:
-                        {"results": [{"company_name": "...", "domain": "...", "company_profile": "...", "match_score": 8, "entity_type": "FAMILY_OFFICE_SFO", "entity_subtype": "SFO"}]}
-                        `;
+                    { "results": [{ "company_name": "...", "domain": "...", "company_profile": "...", "match_score": 8, "entity_type": "FAMILY_OFFICE_SFO", "entity_subtype": "SFO" }] }
+                    `;
 
                     const profilerRes = await runGeminiAgent({
                         apiKey: googleKey,
@@ -955,7 +966,7 @@ export const runAgentWorkflow = async (input, config) => {
                     }
 
                 } catch (err) {
-                    logStep('Company Profiler', `Failed to analyze ${candidate.companyName || candidate.company_name}: ${err.message}`);
+                    logStep('Company Profiler', `Failed to analyze ${candidate.companyName || candidate.company_name}: ${err.message} `);
                 }
             }
 
@@ -1075,7 +1086,8 @@ export const runAgentWorkflow = async (input, config) => {
                     onBatchComplete: async ({ valid, disqualified }) => {
                         if (valid?.length > 0) {
                             try {
-                                await saveLeadsToDB(valid, userId, icpId, logStep, 'NEW', runId);
+                                // Incremental Discovery results are 'PROFILED', not 'NEW' yet (since no outreach)
+                                await saveLeadsToDB(valid, userId, icpId, logStep, 'PROFILED', runId);
                             } catch (e) {
                                 logStep('Database', `⚠️ Incremental save failed: ${e.message}`);
                             }
@@ -1099,7 +1111,7 @@ export const runAgentWorkflow = async (input, config) => {
 
                 // Save Disqualified Leads Immediately
                 if (disqualifiedFound.length > 0) {
-                    await saveLeadsToDB(disqualifiedFound, userId, icpId, logStep, 'DISQUALIFIED');
+                    await saveLeadsToDB(disqualifiedFound, userId, icpId, logStep, 'DISQUALIFIED', runId);
                 }
 
                 if (leadsFound.length === 0) {
@@ -1121,23 +1133,38 @@ export const runAgentWorkflow = async (input, config) => {
                     let fixedLeads = [];
 
                     if (ambiguousLeads.length > 0) {
+                        // CRITICAL: Back up company_profile BEFORE sending to LLM.
+                        // Gemini routinely truncates/drops large string fields.
+                        const profileBackup = new Map();
+                        const leadsForLLM = ambiguousLeads.map(l => {
+                            profileBackup.set(l.email || l.linkedin_url || `${l.first_name}_${l.company_name}`, {
+                                company_profile: l.company_profile,
+                                company_website: l.company_website,
+                                company_domain: l.company_domain,
+                                company_fit_score: l.company_fit_score
+                            });
+                            // Send only the fields the Data Architect needs
+                            const { company_profile, ...lightLead } = l;
+                            return lightLead;
+                        });
+
                         try {
                             const architectRes = await runGeminiAgent({
                                 apiKey: googleKey,
                                 modelName: 'gemini-2.0-flash',
                                 agentName: 'Data Architect',
-                                instructions: `You are a data normalization agent.Your job is to fix and validate lead data.
+                                instructions: `You are a data normalization agent. Your job is to fix and validate lead data.
 
 For each lead:
-                        1. Fix capitalization(FirstName LastName)
-                        2. Validate email format
-                        3. Fix broken URLs
-                        4. Mark is_valid: true if data is usable, false if unsalvageable
+1. Fix capitalization (FirstName LastName)
+2. Validate email format
+3. Fix broken URLs
+4. Mark is_valid: true if data is usable, false if unsalvageable
 
 OUTPUT FORMAT: Return JSON:
-                        { "leads": [{ "first_name": "...", "last_name": "...", "email": "...", "is_valid": true, "company_profile": "PRESERVE_ORIGINAL_VALUE", ...}] }
-                        CRITICAL: You MUST preserve the 'company_profile' field for every lead.Do not modify or drop it.`,
-                                userMessage: `Normalize these ambiguous leads: ${JSON.stringify(ambiguousLeads)} `,
+{ "leads": [{ "first_name": "...", "last_name": "...", "email": "...", "is_valid": true, ...}] }
+Do NOT add or invent any fields. Only fix what's broken.`,
+                                userMessage: `Normalize these ambiguous leads: ${JSON.stringify(leadsForLLM)}`,
                                 tools: [],
                                 maxTurns: 2,
                                 logStep: logStep
@@ -1148,7 +1175,19 @@ OUTPUT FORMAT: Return JSON:
                                 rawOutput: architectRes.finalOutput,
                                 schema: z.object({ leads: z.array(z.any()) })
                             });
-                            fixedLeads = (parsed.leads || []).filter(l => l.is_valid);
+
+                            // RESTORE backed-up fields that the LLM didn't see
+                            fixedLeads = (parsed.leads || []).filter(l => l.is_valid).map(l => {
+                                const key = l.email || l.linkedin_url || `${l.first_name}_${l.company_name}`;
+                                const backup = profileBackup.get(key) || {};
+                                return {
+                                    ...l,
+                                    company_profile: backup.company_profile || l.company_profile,
+                                    company_website: backup.company_website || l.company_website,
+                                    company_domain: backup.company_domain || l.company_domain,
+                                    company_fit_score: backup.company_fit_score || l.company_fit_score
+                                };
+                            });
 
                             costTracker.recordCall({
                                 agent: 'Data Architect',
@@ -1159,7 +1198,9 @@ OUTPUT FORMAT: Return JSON:
                                 success: true
                             });
                         } catch (e) {
-                            logStep('Data Architect', `Normalization failed: ${e.message} `);
+                            logStep('Data Architect', `Normalization failed: ${e.message}`);
+                            // FALLBACK: Use original ambiguous leads as-is rather than dropping them
+                            fixedLeads = ambiguousLeads.filter(l => l.email);
                         }
                     }
 
@@ -1252,6 +1293,7 @@ OUTPUT FORMAT: Return JSON array with email and match_score:
         const BATCH_SIZE = 5;
 
         for (let i = 0; i < globalLeads.length; i += BATCH_SIZE) {
+            if (await checkCancellation()) break;
             const batch = globalLeads.slice(i, i + BATCH_SIZE);
             logStep('Outreach Creator', `Processing batch ${Math.floor(i / BATCH_SIZE) + 1} of ${Math.ceil(globalLeads.length / BATCH_SIZE)}...`);
 
@@ -1396,8 +1438,15 @@ If no specific fact is found, craft a polite, relevant generic message about the
                 } catch (e) {
                     retryCount++;
                     if (retryCount > MAX_RETRIES) {
-                        logStep('Outreach Creator', `Batch CRITICAL FAILURE after ${MAX_RETRIES} retries: ${e.message}`);
-                        throw e; // Halt the whole workflow to prevent data inconsistency
+                        // GRACEFUL DEGRADATION: Don't halt the workflow.
+                        // Mark the entire batch as MANUAL_REVIEW — the self-healing pass will retry individually.
+                        logStep('Outreach Creator', `⚠️ Batch failed after ${MAX_RETRIES} retries: ${e.message}. Marking for self-healing...`);
+                        batchProcessedLeads = batch.map(l => ({
+                            ...l,
+                            status: 'MANUAL_REVIEW',
+                            disqualification_reason: `Batch outreach failed: ${e.message}`
+                        }));
+                        break; // Exit retry loop with MANUAL_REVIEW leads
                     }
                     logStep('Outreach Creator', `Batch failed (Try ${retryCount}): ${e.message}. Retrying...`);
                     await delay(3000);
@@ -1409,6 +1458,145 @@ If no specific fact is found, craft a polite, relevant generic message about the
                 await saveLeadsToDB(batchProcessedLeads, userId, icpId, logStep, 'NEW', runId);
                 finalLeads.push(...batchProcessedLeads);
             }
+        }
+
+        // --- SELF-HEALING PASS: Retry failed outreach individually ---
+        // The company_profile data is already there — generating a message from it is trivial.
+        // Instead of punting to MANUAL_REVIEW, we retry each failed lead with a focused single-lead call.
+        const failedLeads = finalLeads.filter(l => l.status === 'MANUAL_REVIEW' && l.company_profile);
+
+        if (failedLeads.length > 0) {
+            logStep('Outreach Creator', `🔄 Self-healing: Retrying ${failedLeads.length} leads that missed outreach...`);
+
+            for (const lead of failedLeads) {
+                try {
+                    const singleRes = await runGeminiAgent({
+                        apiKey: googleKey,
+                        modelName: 'gemini-2.0-flash',
+                        agentName: 'Outreach Creator',
+                        instructions: companyContext.outreachPromptInstructions || `You are Roelof van Heeren, a Principal at Fifth Avenue Properties, a Canadian residential real estate development firm.
+Your goal is to write direct, fact-based outreach messages to potential Investment Partners (LPs/Co-GPs) or Peers in the industry.
+
+CRITICAL: The user HATES generic messages. 
+- NEVER use "Assets Under Management" (AUM) as the hook.
+- NEVER use "Number of Offices" or "Transaction Volume" as the hook.
+- NEVER mention "Sales Volume" (that sounds like a brokerage).
+
+HARD LIMITS (CRITICAL):
+- LinkedIn Message Max Length: 300 characters (Strictly enforced).
+- Mention EXACTLY ONE researched fact from the company profile.
+- Mention COMPANY FACTS ONLY (No personal details, no "20 years experience").
+- NO FLATTERY (No "Impressive career", "Great work").
+- NO BUZZWORDS (No "synergies", "unlock value", "disrupting").
+- NO CALLS TO ACTION (No "hop on a call", no "meeting").
+- MAXIMUM GENERALITY RULE: Prefer specific facts, but if none are found, use a general professional statement about their residential focus. DO NOT FAIL.
+
+MANDATORY PRIORITY ORDER (Stop at the FIRST match):
+
+1. SPECIFIC DEALS / NAMED PROJECTS (Highest Priority)
+   - Fact: A specific project name, asset, or recent acquisition.
+   - Alignment Line: "We frequently develop similar projects at Fifth Avenue Properties" OR "We develop similar residential projects at Fifth Avenue Properties"
+   - Example: "Hi Sarah, I came across Alpine Start’s Alpine Village project in North Texas. We frequently develop similar projects at Fifth Avenue Properties and thought connecting could be worthwhile."
+
+2. INVESTMENT THESIS / STRATEGY (Focus on ASSET CLASS)
+   - Fact: Specific strategy like "ground-up multifamily", "purpose-built rental", "residential-led mixed use".
+   - Alignment Line: "We work on similar residential strategies at Fifth Avenue Properties"
+   - Example: "Hi Michael, I came across Morguard’s long-standing focus on multi-suite residential across North America. We work on similar residential strategies at Fifth Avenue Properties and thought connecting could be worthwhile."
+
+3. RESIDENTIAL FOCUS / MARKET PRESENCE
+   - Fact: A clear statement of residential focus (e.g. "Owning 50,000 apartments", "Developing master-planned communities").
+   - DO NOT USE AUM or GENERIC SCALE ("$5B AUM"). Use unit count or specific market presence if available.
+   - Alignment Line: "We focus on similar residential markets at Fifth Avenue Properties"
+   - Example: "Hi John, I noticed Choice Properties' significant portfolio of residential assets in major Canadian markets. We focus on similar residential development strategies at Fifth Avenue Properties and thought connecting could be worthwhile."
+
+BAD FACTS (DO NOT USE THESE):
+- "Closed $700M in sales" -> REJECT (Brokerage signal).
+- "45 offices worldwide" -> REJECT (Generic).
+- "$4.1B AUM" -> REJECT (Unless tied to specific "residential assets").
+- "Advice on vineyards" -> REJECT (Irrelevant).
+
+LINKEDIN MESSAGE STRUCTURE (Fixed):
+Sentence 1: Greeting + Researched Company Fact (e.g. "Hi [Name], I came across [Company] and [Specific Fact].")
+Sentence 2: Fifth Avenue Properties alignment (Use mandatory alignment line from above) + Soft close ("and thought connecting could be worthwhile.")
+
+EMAIL STRUCTURE:
+Subject: Introduction | [Specific Asset Class/Strategy]
+Body:
+"Hi [Name],
+
+I came across [Company] and your [Specific Fact used in LinkedIn msg].
+
+At Fifth Avenue Properties, [Alignment Line used in LinkedIn msg], which is why I thought it could make sense to connect.
+
+If it makes sense, I'm happy to share more information about our current projects.
+
+Best regards,
+Roelof van Heeren
+Fifth Avenue Properties"
+
+OUTPUT JSON:
+{ "leads": [{ "email": "...", "connection_request": "...", "email_subject": "...", "email_message": "..." }] }
+CRITICAL: You MUST return a message. Use the company profile facts. Never return null or empty.`,
+                        userMessage: `Generate outreach for this single lead. Use any fact from the company profile.\n\nLEAD: ${JSON.stringify({
+                            email: lead.email,
+                            first_name: lead.first_name,
+                            company_name: lead.company_name,
+                            title: lead.title,
+                            company_profile: (lead.company_profile || "").substring(0, 3000)
+                        })}`,
+                        tools: [],
+                        maxTurns: 1,
+                        logStep: logStep
+                    });
+
+                    const parsed = enforceAgentContract({
+                        agentName: "Outreach Creator (Self-Heal)",
+                        rawOutput: singleRes.finalOutput,
+                        schema: OutreachCreatorSchema
+                    });
+
+                    const msg = (parsed.leads || [])[0];
+
+                    if (msg && (msg.connection_request || msg.email_message)) {
+                        // SUCCESS: Upgrade from MANUAL_REVIEW to NEW
+                        lead.connection_request = msg.connection_request || msg.linkedin_message || '';
+                        lead.linkedin_message = lead.connection_request;
+                        lead.email_message = msg.email_message || msg.email_body || '';
+                        lead.email_body = lead.email_message;
+                        lead.email_subject = msg.email_subject || lead.email_subject || '';
+                        lead.status = 'NEW';
+                        lead.disqualification_reason = null;
+
+                        // Enforce 300-char limit
+                        if (lead.connection_request.length > 300) {
+                            lead.connection_request = lead.connection_request.substring(0, 295) + '...';
+                            lead.linkedin_message = lead.connection_request;
+                        }
+
+                        // Persist the fix immediately
+                        await saveLeadsToDB([lead], userId, icpId, logStep, 'NEW', runId);
+                        logStep('Outreach Creator', `✅ Self-healed: ${lead.first_name} ${lead.last_name || ''} (${lead.company_name})`);
+
+                        costTracker.recordCall({
+                            agent: 'Outreach Creator (Self-Heal)',
+                            model: 'gemini-2.0-flash',
+                            inputTokens: singleRes.usage?.inputTokens || 0,
+                            outputTokens: singleRes.usage?.outputTokens || 0,
+                            duration: 0,
+                            success: true
+                        });
+                    } else {
+                        logStep('Outreach Creator', `⚠️ Self-heal failed for ${lead.email} — keeping as MANUAL_REVIEW`);
+                    }
+                } catch (healErr) {
+                    logStep('Outreach Creator', `⚠️ Self-heal error for ${lead.email}: ${healErr.message}`);
+                    // Don't throw — keep the lead as MANUAL_REVIEW and continue to the next one
+                }
+            }
+
+            const healed = failedLeads.filter(l => l.status === 'NEW').length;
+            const remaining = failedLeads.length - healed;
+            logStep('Outreach Creator', `🔄 Self-healing complete: ${healed}/${failedLeads.length} recovered${remaining > 0 ? `, ${remaining} still need manual review` : ''}`);
         }
 
         // All batches processed and saved incrementally.

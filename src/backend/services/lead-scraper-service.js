@@ -152,7 +152,7 @@ export class LeadScraperService {
         // Fix: Pass idempotencyKey with batch suffix to avoid collisions
         const batchPromises = batches.map(async (batch, index) => {
             const batchKey = idempotencyKey ? `${idempotencyKey}_batch_${index + 1}` : null;
-            const result = await this._runApolloBatch(batch, filters, index + 1, batchKey, checkCancellation);
+            const result = await this._runApolloBatch(batch, filters, index + 1, batchKey, checkCancellation, logStep);
 
             // Incremental Save Hook - Save immediately to prevent data loss
             if (filters.onBatchComplete && typeof filters.onBatchComplete === 'function') {
@@ -224,8 +224,8 @@ export class LeadScraperService {
     /**
      * Helper to run a single batch of domains
      */
-    async _runApolloBatch(domains, filters, batchId, idempotencyKey = null, checkCancellation = null) {
-        console.log(`[ApolloDomain] Starting Batch ${batchId} with ${domains.length} domains (Strict Filtering Active). Key: ${idempotencyKey || 'N/A'}`);
+    async _runApolloBatch(domains, filters, batchId, idempotencyKey = null, checkCancellation = null, logStep = console.log) {
+        logStep('Lead Finder', `[ApolloDomain] Starting Batch ${batchId} with ${domains.length} domains...`);
 
         // Log Exclusions
         if (filters.excluded_functions?.length) {
@@ -268,7 +268,7 @@ export class LeadScraperService {
 
                 // logging only every 3rd poll to reduce noise with multiple batches
                 if (attempts % 3 === 0) {
-                    console.log(`[ApolloDomain] Batch ${batchId} Poll ${attempts + 1}: Status = ${statusRes.status}`);
+                    logStep('Lead Finder', `[ApolloDomain] Batch ${batchId} Polling... Status: ${statusRes.status}`);
                 }
 
                 if (statusRes.status === 'SUCCEEDED' || statusRes.status === 'ABORTED') {
@@ -438,7 +438,7 @@ export class LeadScraperService {
                 validItems.push(item);
             });
 
-            console.log(`[ApolloDomain] Batch ${batchId}: ${validItems.length} valid, ${disqualifiedItems.length} disqualified (for review), ${discardedCount} discarded (wrong domain/email).`);
+            logStep('Lead Finder', `[ApolloDomain] Batch ${batchId}: ${validItems.length} leads found (${disqualifiedItems.length} disqualified).`);
 
             return { valid: validItems, disqualified: disqualifiedItems };
 

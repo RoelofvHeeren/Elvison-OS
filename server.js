@@ -3623,12 +3623,24 @@ app.post('/api/agents/run', requireAuth, async (req, res) => {
                         details: logParams
                     });
 
-                    // REAL-TIME: Also persist to workflow_step_logs table immediately
+                    // REAL-TIME: Persist to workflow_step_logs AND update run status
                     try {
+                        // 1. Log History
                         await query(
                             `INSERT INTO workflow_step_logs(run_id, step, message, created_at) VALUES($1, $2, $3, $4)`,
                             [runId, logParams.step, logParams.detail, timestamp]
                         );
+
+                        // 2. Update Run Status for UI Polling
+                        await query(
+                            `UPDATE workflow_runs 
+                             SET current_step_name = $2, 
+                                 current_activity = $3,
+                                 updated_at = NOW() 
+                             WHERE id = $1`,
+                            [runId, logParams.step, logParams.detail]
+                        );
+
                     } catch (logDbErr) {
                         console.error('Step log persist failed:', logDbErr.message);
                     }
@@ -3636,8 +3648,9 @@ app.post('/api/agents/run', requireAuth, async (req, res) => {
             }
         })
 
-        // SUCCESS PATH: Save logs, stats, and output to database
-        console.log('Workflow completed successfully, saving results...');
+        // RESULT PATH: Check if workflow returned soft-failure or real success
+        const isSoftFailure = result.status === 'failed' || (result.status === 'partial' && (!result.leads || result.leads.length === 0));
+        console.log(`Workflow finished with status: ${result.status} (${result.leads?.length || 0} leads). Soft failure: ${isSoftFailure}`);
 
         try {
             // Build stats object from workflow result
@@ -3664,6 +3677,10 @@ app.post('/api/agents/run', requireAuth, async (req, res) => {
                 execution_logs: localExecutionLogs
             };
 
+            if (isSoftFailure) {
+                statsForDB.error = result.error || 'Workflow completed with no results';
+            }
+
             console.log(`[Server] Saving stats with ${localExecutionLogs.length} log entries and ${statsForDB.calls?.length || 0} API calls`);
 
             // Save output to agent_results
@@ -3681,19 +3698,29 @@ app.post('/api/agents/run', requireAuth, async (req, res) => {
                 [runId, JSON.stringify(outputDataForStorage)]
             );
 
-            // Update workflow_runs with stats
-            await query(
-                `UPDATE workflow_runs SET status = 'COMPLETED', completed_at = NOW(), stats = $2 WHERE id = $1`,
-                [runId, JSON.stringify(statsForDB)]
-            );
+            if (isSoftFailure) {
+                // SOFT FAILURE: Mark as FAILED so the UI shows the correct status
+                await query(
+                    `UPDATE workflow_runs SET status = 'FAILED', completed_at = NOW(), error_log = $2, stats = $3 WHERE id = $1`,
+                    [runId, result.error || 'No qualified results found', JSON.stringify(statsForDB)]
+                );
 
-            // Send success event
-            res.write(`event: complete\ndata: ${JSON.stringify({
-                status: 'success',
-                leads: result.leads?.length || 0,
-                cost: costData.cost?.formatted || '$0.00'
-            })
-                } \n\n`);
+                res.write(`event: error\ndata: ${JSON.stringify({
+                    message: result.error || 'Workflow completed but found no results'
+                })}\n\n`);
+            } else {
+                // REAL SUCCESS
+                await query(
+                    `UPDATE workflow_runs SET status = 'COMPLETED', completed_at = NOW(), stats = $2 WHERE id = $1`,
+                    [runId, JSON.stringify(statsForDB)]
+                );
+
+                res.write(`event: complete\ndata: ${JSON.stringify({
+                    status: 'success',
+                    leads: result.leads?.length || 0,
+                    cost: costData.cost?.formatted || '$0.00'
+                })}\n\n`);
+            }
 
         } catch (dbErr) {
             console.error('Failed to save success results:', dbErr);

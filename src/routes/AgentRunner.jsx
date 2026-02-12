@@ -295,7 +295,7 @@ const AgentRunner = () => {
 
                                     setLogs(prev => {
                                         // Avoid duplicate logs if polling also caught them
-                                        const exists = prev.some(l => l.detail === logData.detail && l.step === logData.step);
+                                        const exists = prev.some(l => l.detail === logData.detail && l.step === logData.step && l.timestamp === logData.timestamp);
                                         if (exists) return prev;
                                         return [...prev, logData];
                                     });
