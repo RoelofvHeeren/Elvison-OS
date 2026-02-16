@@ -9,8 +9,8 @@ const STEPS = [
     { id: 'Company Finder', label: 'Company Search' },
     { id: 'Company Profiler', label: 'Company Profiling' },
     { id: 'Lead Finder', label: 'Lead Discovery' },
-    { id: 'Outreach Creator', label: 'Outreach Creator' },
     { id: 'Data Architect', label: 'Data Processing' },
+    { id: 'Outreach Creator', label: 'Outreach Creator' },
     { id: 'Database', label: 'CRM Sync' }
 ]
 

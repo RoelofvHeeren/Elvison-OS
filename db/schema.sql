@@ -47,6 +47,18 @@ CREATE TABLE IF NOT EXISTS leads (
     custom_data JSONB DEFAULT '{}'::jsonb, -- dynamic columns from Data Architect
     source VARCHAR(100), -- e.g. 'Apollo', 'Manual'
     phone_numbers JSONB DEFAULT '[]'::jsonb, -- New column for storing enriched phone numbers
+    connection_request TEXT,
+    email_message TEXT,
+    email_subject TEXT,
+    email_body TEXT,
+    linkedin_message TEXT,
+    match_score NUMERIC,
+    disqualification_reason TEXT,
+    run_id UUID,
+    icp_id UUID,
+    company_domain VARCHAR(255),
+    company_website VARCHAR(255),
+    company_profile TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -73,7 +85,8 @@ CREATE TABLE IF NOT EXISTS workflow_runs (
     completed_at TIMESTAMP WITH TIME ZONE,
     error_log TEXT,
     metadata JSONB DEFAULT '{}'::jsonb,
-    user_id UUID REFERENCES users(id) -- Ensure we track user ownership
+    user_id UUID REFERENCES users(id), -- Ensure we track user ownership
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- Table: run_feedback (Optimization Data)
