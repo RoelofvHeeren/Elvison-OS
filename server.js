@@ -3141,7 +3141,7 @@ app.post('/api/runs/fail', async (req, res) => {
 
 // Trigger Analysis Run (The Long Running Process)
 // --- APIFY INTEGRATION ---
-import { startApolloDomainScrape, checkApifyRun, getApifyResults } from './src/backend/services/apify.js';
+import { startLeadsScraper, checkApifyRun, getApifyResults } from './src/backend/services/apify.js';
 
 // Auto-run Credit Migration on Startup (Safe idempotency)
 (async () => {
@@ -3181,7 +3181,7 @@ app.post('/api/integrations/apify/run', async (req, res) => {
     }
 
     try {
-        const runId = await startApolloDomainScrape(effectiveToken, domains, filters);
+        const runId = await startLeadsScraper(effectiveToken, domains, filters);
         res.json({ runId });
     } catch (error) {
         res.status(500).json({ error: error.message });
