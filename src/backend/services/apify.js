@@ -104,11 +104,14 @@ export const getDatasetInfo = async (token, datasetId) => {
 export const buildLeadsScraperPayload = (domains, filters = {}) => {
     // Strict titles - Only C-level and senior decision makers (Real Estate/Investment focus)
     const defaultTitles = [
-        "CEO", "President", "Managing Director", "Principal",
-        "Founder", "Co-Founder", "Managing Partner", "Partner",
-        "CIO", "COO", "CFO",
-        "Executive Vice President", "Executive Director",
-        "Director of Investments", "Director of Developments"
+        "vp of acquisitions", "director of acquisitions", "head of acquisitions", "svp acquisitions",
+        "vp of investments", "director of investments", "head of investments", "svp investments",
+        "vp of development", "director of development", "head of development", "svp development",
+        "principal", "managing director", "executive director", "partner", "owner", "founder",
+        "head of real estate", "director of real estate", "vp of real estate",
+        "chief investment officer", "cio", "asset manager", "director of asset management", "vp of asset management",
+        "acquisitions manager", "senior acquisitions manager", "investment manager", "senior investment manager",
+        "real estate lead", "senior investment officer"
     ];
 
     // Strict seniorities - C-level and Executives only
@@ -179,6 +182,7 @@ export const buildLeadsScraperPayload = (domains, filters = {}) => {
 
         // Person Filters
         personTitle: (filters.job_titles && filters.job_titles.length > 0) ? filters.job_titles : defaultTitles,
+        qPersonTitle: ((filters.job_titles && filters.job_titles.length > 0) ? filters.job_titles : defaultTitles).join('\n'),
         seniority: (mappedSeniority && mappedSeniority.length > 0) ? mappedSeniority : defaultSeniorities,
 
         // STRICT Department Filters - Only applied if NOT in lenient mode
