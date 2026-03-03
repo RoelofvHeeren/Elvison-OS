@@ -448,12 +448,15 @@ export const runAgentWorkflow = async (input, config) => {
 
             if (isManualMode) {
                 logStep('Company Finder', `📋 MANUAL MODE: Processing ${manualDomains.length} provided domains...`);
-                candidates = manualDomains.map(d => ({
-                    companyName: d,
-                    company_name: d,
-                    domain: d.toLowerCase().startsWith('http') ? d : `https://${d}`,
-                    description: "Manual Entry"
-                }));
+                candidates = manualDomains.map(d => {
+                    const cleanD = d.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0].trim();
+                    return {
+                        companyName: cleanD,
+                        company_name: cleanD,
+                        domain: cleanD,
+                        description: "Manual Entry"
+                    };
+                });
                 manualProcessed = true;
             } else {
                 // --- AUTO SEARCH PATH ---
@@ -514,7 +517,7 @@ export const runAgentWorkflow = async (input, config) => {
                     resultIndex += BATCH_SIZE;
 
                     try {
-                        logStep('Company Finder', `🔍 Filtering results ${resultIndex - BATCH_SIZE + 1}-${Math.min(resultIndex, searchResults.length)} of ${searchResults.length}...`);
+                        logStep('Company Finder', `🔍 Filtering ${batch.length} results (${resultIndex - BATCH_SIZE + 1}-${Math.min(resultIndex, searchResults.length)}) for residential RE focus...`);
 
                         const filterPrompt = `
     You are a company discovery agent. Analyze these search results and CATEGORIZE each one.
@@ -779,13 +782,13 @@ export const runAgentWorkflow = async (input, config) => {
                         continue;
                     }
 
-                    logStep('Company Profiler', `Analyzing ${candidateName} (${candidate.domain})...`);
+                    logStep('Company Profiler', `🏢 Analyzing ${candidate.companyName || candidate.company_name} (${candidate.domain || 'no domain'})...`);
+                    logStep('Company Profiler', `🌐 Scraping ${candidate.domain || candidate.companyName} for residential investment data...`);
 
-                    // 3a. SMART SCRAPING
                     let finalContent = "";
                     try {
-                        const { links, content: fallbackContent } = await scrapeWebsiteSmart(candidate.domain);
-                        finalContent = fallbackContent;
+                        const scraped = await scrapeWebsiteSmart(candidate.domain || candidate.website || candidate.companyName, apifyToken, checkCancellation);
+                        finalContent = scraped.content;
 
                         // CRITICAL: Always do deep dive for Investment Firms/Family Offices to find "Portfolio" pages
                         const isInvestmentContext = companyContext.icpDescription?.toLowerCase().includes('family office') ||
@@ -953,11 +956,12 @@ export const runAgentWorkflow = async (input, config) => {
                     { "results": [{ "company_name": "...", "domain": "...", "company_profile": "...", "match_score": 8, "entity_type": "FAMILY_OFFICE_SFO", "entity_subtype": "SFO" }] }
                     `;
 
+                    logStep('Company Profiler', `🧠 Generating residential-focused profile for ${candidate.companyName || candidate.company_name}...`);
                     const profilerRes = await runGeminiAgent({
                         apiKey: googleKey,
                         modelName: 'gemini-2.0-flash',
                         agentName: 'Company Profiler',
-                        instructions: "You are a senior investment analyst. Analyze the scraped text and output JSON. Ensure strict adherence to scoring and geography rules.",
+                        instructions: "You are a senior investment analyst specializing in residential real estate. Analyze the scraped text and output JSON. Ensure strict adherence to scoring and geography rules.",
                         userMessage: profilePrompt,
                         tools: []
                     });

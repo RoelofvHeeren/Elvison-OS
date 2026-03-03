@@ -104,6 +104,14 @@ const AgentRunner = () => {
             if (runData.status === 'COMPLETED' && runData.output_data) {
                 setRunResult({ leads: runData.output_data.leads || [] });
                 setCurrentStep('Complete');
+
+                // NEW: Ensure report is included in stats for WorkflowProgress
+                if (runData.output_data.report) {
+                    setRunStats(prev => ({
+                        ...prev,
+                        report: runData.output_data.report
+                    }));
+                }
             } else if (runData.status === 'FAILED') {
                 setCurrentStep('Failed');
             }

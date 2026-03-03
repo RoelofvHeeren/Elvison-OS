@@ -350,12 +350,42 @@ const WorkflowProgress = ({ logs = [], status = 'RUNNING', stats = null, isIniti
         <div className="h-full flex flex-col bg-white/5 rounded-xl border border-white/10 backdrop-blur-sm overflow-hidden">
             <StageHeader currentStage={currentStage} status={status} stats={logs.length > 0 ? stats : null} />
             <StageTimeline currentStage={currentStage} status={status} />
-            <ActivityFeed milestones={milestones} />
-            <FullLogsPanel
-                logs={logs}
-                isOpen={showFullLogs}
-                onToggle={() => setShowFullLogs(!showFullLogs)}
-            />
+            <div className="flex border-t border-white/5 bg-black/20">
+                <button
+                    onClick={() => setShowFullLogs(false)}
+                    className={`flex-1 px-4 py-2 text-[10px] font-bold uppercase tracking-wider transition-colors ${!showFullLogs ? 'text-[#139187] border-b-2 border-[#139187]' : 'text-gray-500 hover:text-gray-300'}`}
+                >
+                    Activity Feed
+                </button>
+                <button
+                    onClick={() => setShowFullLogs(true)}
+                    className={`flex-1 px-4 py-2 text-[10px] font-bold uppercase tracking-wider transition-colors ${showFullLogs ? 'text-[#139187] border-b-2 border-[#139187]' : 'text-gray-500 hover:text-gray-300'}`}
+                >
+                    System Logs
+                </button>
+            </div>
+
+            {status === 'COMPLETED' && stats?.report && (
+                <div className="p-6 border-t border-white/5 bg-emerald-500/5 animate-in fade-in slide-in-from-bottom duration-500">
+                    <div className="flex items-center gap-2 mb-4">
+                        <Sparkles className="h-4 w-4 text-emerald-400" />
+                        <h4 className="text-sm font-bold text-white">Final Workflow Report</h4>
+                    </div>
+                    <div className="bg-black/40 rounded-xl p-5 border border-white/10 text-xs text-gray-300 font-mono whitespace-pre-wrap leading-relaxed max-h-[400px] overflow-y-auto scrollbar-thin scrollbar-thumb-white/10">
+                        {stats.report}
+                    </div>
+                </div>
+            )}
+
+            {!showFullLogs ? <ActivityFeed milestones={milestones} /> : (
+                <div className="flex-1 overflow-hidden flex flex-col">
+                    <FullLogsPanel
+                        logs={logs}
+                        isOpen={true}
+                        onToggle={() => { }}
+                    />
+                </div>
+            )}
         </div>
     )
 }
