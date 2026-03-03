@@ -1,8 +1,13 @@
 
 export const JOB_TITLE_SUGGESTIONS = [
-    "VP of Acquisitions", "Director of Investments", "Acquisitions Manager",
-    "Principal", "Managing Director", "Head of Real Estate", "Partner",
-    "VP of Development", "Director of Acquisitions", "Asset Manager"
+    "VP of Acquisitions", "Director of Acquisitions", "Head of Acquisitions", "SVP Acquisitions",
+    "VP of Investments", "Director of Investments", "Head of Investments", "SVP Investments",
+    "VP of Development", "Director of Development", "Head of Development", "SVP Development",
+    "Principal", "Managing Director", "Executive Director", "Partner", "Owner", "Founder",
+    "Head of Real Estate", "Director of Real Estate", "VP of Real Estate",
+    "Chief Investment Officer", "CIO", "Asset Manager", "Director of Asset Management", "VP of Asset Management",
+    "Acquisitions Manager", "Senior Acquisitions Manager", "Investment Manager", "Senior Investment Manager",
+    "Real Estate Lead", "Senior Investment Officer"
 ]
 
 export const COUNTRY_SUGGESTIONS = [

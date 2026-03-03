@@ -10,7 +10,16 @@ import { normalizeLinkedInUrl } from "../utils/linkedin-utils.js";
 
 
 // --- DEFAULTS ---
-const defaultTitles = ["vp of acquisitions", "director of investments", "principal", "managing director", "head of real estate", "partner", "vp of development", "ceo", "founder", "owner"];
+const defaultTitles = [
+    "vp of acquisitions", "director of acquisitions", "head of acquisitions", "svp acquisitions",
+    "vp of investments", "director of investments", "head of investments", "svp investments",
+    "vp of development", "director of development", "head of development", "svp development",
+    "principal", "managing director", "executive director", "partner", "owner", "founder",
+    "head of real estate", "director of real estate", "vp of real estate",
+    "chief investment officer", "cio", "asset manager", "director of asset management", "vp of asset management",
+    "acquisitions manager", "senior acquisitions manager", "investment manager", "senior investment manager",
+    "real estate lead", "senior investment officer"
+];
 const defaultSeniorities = ["c_suite", "executive", "owner", "partner", "vp", "director"];
 
 /**
