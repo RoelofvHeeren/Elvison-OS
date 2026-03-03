@@ -3687,6 +3687,7 @@ app.post('/api/agents/run', requireAuth, async (req, res) => {
             const outputDataForStorage = {
                 leads: result.leads || [],
                 status: result.status,
+                report: result.report, // Include Markdown Report
                 execution_logs: localExecutionLogs,
                 execution_timeline: localExecutionLogs
             };

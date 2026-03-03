@@ -20,13 +20,13 @@ const STAGE_DEFINITIONS = [
         id: 'profiling',
         label: 'Company Profiling',
         description: 'Analyzing companies...',
-        matchSteps: ['Company Profiler', 'Apollo Gate']
+        matchSteps: ['Company Profiler', 'Lead Finder Gate']
     },
     {
         id: 'finding_leads',
         label: 'Lead Discovery',
         description: 'Identifying decision makers...',
-        matchSteps: ['Lead Finder', 'Apollo Lead Finder']
+        matchSteps: ['Lead Finder']
     },
     {
         id: 'crafting_messages',

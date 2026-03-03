@@ -184,9 +184,10 @@ export async function runGeminiAgent({
         }
     }
 
-    logStep(agentName, `⚠️ Max turns (${maxTurns}) reached without completion`);
+    logStep(agentName, `⚠️ Max turns (${maxTurns}) reached without text response — returning empty`);
     return {
-        finalOutput: null,
+        finalOutput: '{"leads": []}', // Safe fallback JSON instead of null
+        maxTurnsReached: true,
         usage: {
             inputTokens: totalInputTokens,
             outputTokens: totalOutputTokens,

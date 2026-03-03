@@ -434,7 +434,7 @@ const StepComplete = ({ onLaunch, isSaving }) => {
             addLine("Connecting to PostgreSQL Database...")
             await new Promise(r => setTimeout(r, 800))
 
-            addLine("Verifying Apollo MCP Connection...")
+            addLine("Verifying Lead Finder Connection...")
             await new Promise(r => setTimeout(r, 800))
 
             addLine("Compiling Internal Strategy Guide...")
@@ -504,7 +504,7 @@ const StepComplete = ({ onLaunch, isSaving }) => {
                 >
                     <div className="flex flex-col items-start leading-none">
                         <span>Generate List Only</span>
-                        <span className="text-[10px] text-gray-500 font-normal uppercase mt-1">For Apollo Export</span>
+                        <span className="text-[10px] text-gray-500 font-normal uppercase mt-1">For CRM Export</span>
                     </div>
                 </button>
 
@@ -774,17 +774,17 @@ const Onboarding = () => {
         try {
             // Save to DB
 
-            // 1. Separate Filters from Onboarding State
-            const apolloAnswers = surveyAnswers?.apollo_lead_finder || {}
+            // Lead Finder Filters
+            const leadsScraperAnswers = surveyAnswers?.leads_scraper || {}
             const companyAnswers = surveyAnswers?.company_finder || {}
 
             const icpConfig = {
-                // Apollo Lead Finder Filters
-                job_titles: apolloAnswers.job_titles || [],
-                seniority: apolloAnswers.seniority || [],
-                job_functions: apolloAnswers.job_functions || [],
-                excluded_functions: apolloAnswers.excluded_functions || [],
-                max_contacts: parseInt(apolloAnswers.max_contacts || 3),
+                // Lead Finder Filters
+                job_titles: leadsScraperAnswers.job_titles || [],
+                seniority: leadsScraperAnswers.seniority || [],
+                job_functions: leadsScraperAnswers.job_functions || [],
+                excluded_functions: leadsScraperAnswers.excluded_functions || [],
+                max_contacts: parseInt(leadsScraperAnswers.max_contacts || 3),
 
                 // Company Finder Filters
                 geography: companyAnswers.geography || [],
@@ -927,7 +927,7 @@ const Onboarding = () => {
                                 onNext={() => setStep('completion')}
                                 onBack={handleGlobalBack}
                                 targetCompanies={50}
-                                maxLeads={parseInt(surveyAnswers['apollo_lead_finder']?.max_contacts || 3)}
+                                maxLeads={parseInt(surveyAnswers['leads_scraper']?.max_contacts || 3)}
                             />
                         </motion.div>
                     )}

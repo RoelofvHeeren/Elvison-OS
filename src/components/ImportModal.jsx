@@ -126,7 +126,7 @@ const ImportModal = ({ isOpen, onClose, onImportSuccess }) => {
                                     <>
                                         <Upload className="w-10 h-10 text-gray-300 mb-3" />
                                         <p className="text-sm font-semibold text-gray-700">Click to upload or drag & drop</p>
-                                        <p className="text-xs text-gray-400 mt-1">CSV files only (Apollo exports supported)</p>
+                                        <p className="text-xs text-gray-400 mt-1">CSV files only (CRM exports supported)</p>
                                     </>
                                 )}
                             </div>

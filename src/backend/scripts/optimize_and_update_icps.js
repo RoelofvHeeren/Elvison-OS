@@ -76,9 +76,9 @@ async function optimizeIcps() {
                     profile_content: "Assets Under Management (AUM), Investment Strategy (Value-add, Opportunistic, Core-plus), Typical Check Size, Geographic Focus, Key Decision Makers, Recent Deals or Acquisitions.",
                     manual_research: "I check the 'Investment Strategy' or 'Portfolio' page to verify they make direct equity investments in real estate projects and don't just allocate to funds or public markets."
                 },
-                apollo_lead_finder: {
+                leads_scraper: {
                     seniority: ["Partner / Principal", "C-Level (CEO, CIO, COO)", "VP / Director", "Head of X"],
-                    job_functions: ["Executive / Leadership", "Finance", "Operations"], // Investment often falls under Finance/Exec in Apollo
+                    job_functions: ["Executive / Leadership", "Finance", "Operations"], // Investment often falls under Finance/Exec in Leads Scraper
                     excluded_functions: ["Sales / Revenue", "Marketing / Growth", "HR / People", "Support / Admin", "Recruiting / Talent"],
                     job_titles: ["Chief Investment Officer", "CIO", "Principal", "Managing Partner", "Head of Real Estate", "Director of Acquisitions", "Investment Manager"],
                     max_contacts: "3"
@@ -179,7 +179,7 @@ If no specific fact is found, craft a polite, relevant generic message about the
                     profile_content: "Assets under management, investment focus areas, recent deals, team size, geographic presence, fund structure, LP equity availability.",
                     manual_research: "I look for a Portfolio page and count assets, check the 'Team' page for acquisition roles, and read press releases for recent deal activity."
                 },
-                apollo_lead_finder: {
+                leads_scraper: {
                     seniority: ["Partner / Principal", "C-Level (CEO, CIO, COO)", "VP / Director"],
                     job_functions: ["Executive / Leadership", "Finance", "Operations"],
                     excluded_functions: ["Entry Level / Interns", "Support / Admin", "Recruiting / Talent", "Students", "Sales / Revenue", "Marketing / Growth", "HR / People"],

@@ -95,7 +95,7 @@ async function finalCleanAndRestore() {
                 target_locations: ["Canada", "United States"],
                 surveys: {
                     company_finder: { geography: ["Canada", "United States"], org_types: ["Family Office"] },
-                    apollo_lead_finder: { job_titles: ["Chief Investment Officer", "CIO", "Principal", "Managing Partner"], max_contacts: 3 }
+                    leads_scraper: { job_titles: ["Chief Investment Officer", "CIO", "Principal", "Managing Partner"], max_contacts: 3 }
                 }
             }
         };
@@ -112,7 +112,7 @@ async function finalCleanAndRestore() {
                 target_locations: ["Canada", "United States"],
                 surveys: {
                     company_finder: { geography: ["Canada", "United States"], org_types: ["Private Equity", "Asset Management"] },
-                    apollo_lead_finder: { job_titles: ["Director of Acquisitions", "VP Development", "Partner"], max_contacts: 3 }
+                    leads_scraper: { job_titles: ["Director of Acquisitions", "VP Development", "Partner"], max_contacts: 3 }
                 }
             }
         };

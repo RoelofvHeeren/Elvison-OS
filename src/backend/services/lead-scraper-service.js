@@ -1,7 +1,7 @@
 import {
     checkApifyRun,
     getApifyResults,
-    startApolloDomainScrape
+    startLeadsScraper
 } from "./apify.js";
 import { normalizeLinkedInUrl } from "../utils/linkedin-utils.js";
 
@@ -31,13 +31,13 @@ const defaultSeniorities = ["c_suite", "executive", "owner", "partner", "vp", "d
 
 /**
  * Interface for Lead Scraper Service
- * This allows swapping the underlying provider (PipelineLabs, Apollo Domain Scraper, ScraperCity)
+ * This allows swapping the underlying provider (PipelineLabs, Leads Scraper, ScraperCity)
  */
 export class LeadScraperService {
     constructor(config = {}) {
         this.config = config;
-        // Default to Apollo Domain Scraper
-        this.provider = config.provider || process.env.LEAD_SCRAPER_PROVIDER || 'apify_apollo_domain';
+        // Default to Leads Scraper (Apify Rental)
+        this.provider = config.provider || process.env.LEAD_SCRAPER_PROVIDER || 'apify_leads_scraper';
         this.apifyApiKey = config.apifyApiKey || process.env.APIFY_API_TOKEN;
     }
 
@@ -56,8 +56,10 @@ export class LeadScraperService {
         logStep('Lead Finder', `Fetching leads for ${companies.length} companies using ${this.provider}...`);
 
         switch (this.provider) {
-            case 'apify_apollo_domain':
-                return this._fetchFromApolloDomain(companies, filters, filters.idempotencyKey, logStep, checkCancellation);
+            case 'apify_leads_scraper':
+            case 'apify_apollo_domain': // Backward compatibility but logs warning
+                if (this.provider === 'apify_apollo_domain') console.warn("⚠️ Using deprecated 'apify_apollo_domain' provider name. Auto-switching to 'apify_leads_scraper'.");
+                return this._fetchFromLeadsScraper(companies, filters, filters.idempotencyKey, logStep, checkCancellation);
             default:
                 throw new Error(`Unknown or deprecated scraper provider: ${this.provider}`);
         }
@@ -66,11 +68,11 @@ export class LeadScraperService {
 
 
     /**
-     * Internal: Fetch from Apollo Domain Scraper (Apify Actor T1XDXWc1L92AfIJtd)
+     * Internal: Fetch from Leads Scraper (Apify Actor GlxYrQp6f3YAzH2W2)
      * This uses DOMAINS instead of company names for better accuracy.
-     * Cost: ~$0.0026 per lead
+     * Cost: Fixed Rental ($35/mo)
      */
-    async _fetchFromApolloDomain(companies, filters, idempotencyKey = null, logStep = console.log, checkCancellation = null) {
+    async _fetchFromLeadsScraper(companies, filters, idempotencyKey = null, logStep = console.log, checkCancellation = null) {
         // Handle arguments shifting if idempotencyKey is function (logStep)
         if (typeof idempotencyKey === 'function') {
             checkCancellation = idempotencyKey; // Not quite right but depends on how it's called
@@ -82,7 +84,7 @@ export class LeadScraperService {
         if (idempotencyKey) filters.idempotencyKey = idempotencyKey;
 
         // 1. Extract domains from companies
-        logStep('Lead Finder', `[Apollo] Processing ${companies.length} companies...`);
+        logStep('Lead Finder', `[LeadsScraper] Processing ${companies.length} companies...`);
 
         // Helper: Check if a string looks like a valid domain (has dot, no spaces)
         const looksLikeDomain = (str) => {
@@ -99,7 +101,7 @@ export class LeadScraperService {
 
         // DEBUG: Log the raw company data to see what we're working with
         companies.forEach((c, i) => {
-            console.log(`[ApolloDomain] Company ${i + 1}: name="${c.company_name}", domain="${c.domain}", website="${c.website}"`);
+            console.log(`[LeadsScraper] Company ${i + 1}: name="${c.company_name}", domain="${c.domain}", website="${c.website}"`);
         });
 
         // Extract domains with smart fallback:
@@ -118,21 +120,21 @@ export class LeadScraperService {
             if (c.website && c.website.includes('.')) {
                 return cleanDomain(c.website);
             }
-            console.warn(`[ApolloDomain] No valid domain found for "${c.company_name}"`);
+            console.warn(`[LeadsScraper] No valid domain found for "${c.company_name}"`);
             return null;
         }).filter(Boolean);
 
-        console.log(`[ApolloDomain] Raw domains extracted: ${JSON.stringify(rawDomains)}`);
+        console.log(`[LeadsScraper] Raw domains extracted: ${JSON.stringify(rawDomains)}`);
 
         const domains = rawDomains
             .filter(d => d && d.trim().length > 0 && d.includes('.') && !d.includes(' ')) // Strict: Must have dot, no spaces
             .map(d => d.replace(/^https?:\/\//, '').replace(/^www\./, '').trim().toLowerCase());
 
-        console.log(`[ApolloDomain] Filtered domains (after validation): ${JSON.stringify(domains)}`);
+        console.log(`[LeadsScraper] Filtered domains (after validation): ${JSON.stringify(domains)}`);
 
         // Deduplicate
         const cleanDomains = [...new Set(domains)];
-        console.log(`[ApolloDomain] Clean domains (deduplicated): ${JSON.stringify(cleanDomains)}`);
+        console.log(`[LeadsScraper] Clean domains (deduplicated): ${JSON.stringify(cleanDomains)}`);
 
         if (cleanDomains.length === 0) {
             logStep('Lead Finder', '❌ No valid domains provided! Check if Company Profiler is returning "domain" field.');
@@ -146,32 +148,32 @@ export class LeadScraperService {
             batches.push(cleanDomains.slice(i, i + BATCH_SIZE));
         }
 
-        console.log(`[ApolloDomain] Processing ${cleanDomains.length} domains in ${batches.length} batches (limit 10/run)...`);
+        console.log(`[LeadsScraper] Processing ${cleanDomains.length} domains in ${batches.length} batches (limit 10/run)...`);
 
         // Run batches in parallel with Promise.allSettled (prevents one failure from breaking all)
         // Fix: Pass idempotencyKey with batch suffix to avoid collisions
         const batchPromises = batches.map(async (batch, index) => {
             const batchKey = idempotencyKey ? `${idempotencyKey}_batch_${index + 1}` : null;
-            const result = await this._runApolloBatch(batch, filters, index + 1, batchKey, checkCancellation, logStep);
+            const result = await this._runLeadsScraperBatch(batch, filters, index + 1, batchKey, checkCancellation, logStep);
 
             // Incremental Save Hook - Save immediately to prevent data loss
             if (filters.onBatchComplete && typeof filters.onBatchComplete === 'function') {
                 try {
                     // Normalize immediately so we can save
-                    const validLeads = this._normalizeApolloDomainResults(result.valid, companies, filters);
+                    const validLeads = this._normalizeLeadsScraperResults(result.valid, companies, filters);
 
                     // Normalize disqualified too
-                    const disqualifiedLeads = this._normalizeApolloDomainResults(result.disqualified, companies, filters).map((l, i) => ({
+                    const disqualifiedLeads = this._normalizeLeadsScraperResults(result.disqualified, companies, filters).map((l, i) => ({
                         ...l,
                         disqualification_reason: result.disqualified[i].disqualification_reason
                     }));
 
                     if (validLeads.length > 0 || disqualifiedLeads.length > 0) {
-                        console.log(`[ApolloDomain] 💾 Incrementally saving ${validLeads.length} valid and ${disqualifiedLeads.length} disqualified leads from Batch ${index + 1}...`);
+                        console.log(`[LeadsScraper] 💾 Incrementally saving ${validLeads.length} valid and ${disqualifiedLeads.length} disqualified leads from Batch ${index + 1}...`);
                         await filters.onBatchComplete({ valid: validLeads, disqualified: disqualifiedLeads });
                     }
                 } catch (e) {
-                    console.error(`[ApolloDomain] onBatchComplete failed for batch ${index + 1}:`, e);
+                    console.error(`[LeadsScraper] onBatchComplete failed for batch ${index + 1}:`, e);
                 }
             }
             return result;
@@ -187,7 +189,7 @@ export class LeadScraperService {
             if (result.status === 'fulfilled') {
                 successfulResults.push(result.value);
             } else {
-                console.error(`[ApolloDomain] Batch ${index + 1} failed:`, result.reason?.message || result.reason);
+                console.error(`[LeadsScraper] Batch ${index + 1} failed:`, result.reason?.message || result.reason);
                 failedBatches.push(index + 1);
                 // Push empty result so we don't lose other batches
                 successfulResults.push({ valid: [], disqualified: [] });
@@ -202,18 +204,18 @@ export class LeadScraperService {
         const rawValid = successfulResults.flatMap(r => r.valid);
         const rawDisqualified = successfulResults.flatMap(r => r.disqualified);
 
-        console.log(`[ApolloDomain] Retrieved ${rawValid.length} valid leads and ${rawDisqualified.length} disqualified.`);
+        console.log(`[LeadsScraper] Retrieved ${rawValid.length} valid leads and ${rawDisqualified.length} disqualified.`);
 
         // 5. Normalize Data with Tiering
         const totalLimit = domains.length * 30; // 30 per company hard cap
         const constrainedValid = rawValid.slice(0, totalLimit);
 
-        console.log(`[ApolloDomain] Strict Limit Enforced: ${rawValid.length} -> ${constrainedValid.length} (Max: ${totalLimit})`);
+        console.log(`[LeadsScraper] Strict Limit Enforced: ${rawValid.length} -> ${constrainedValid.length} (Max: ${totalLimit})`);
 
-        const validLeads = this._normalizeApolloDomainResults(constrainedValid, companies, filters);
+        const validLeads = this._normalizeLeadsScraperResults(constrainedValid, companies, filters);
 
         // Normalize disqualified too (so they can be saved)
-        const disqualifiedLeads = this._normalizeApolloDomainResults(rawDisqualified, companies, filters).map((l, i) => ({
+        const disqualifiedLeads = this._normalizeLeadsScraperResults(rawDisqualified, companies, filters).map((l, i) => ({
             ...l,
             disqualification_reason: rawDisqualified[i].disqualification_reason
         }));
@@ -224,23 +226,26 @@ export class LeadScraperService {
     /**
      * Helper to run a single batch of domains
      */
-    async _runApolloBatch(domains, filters, batchId, idempotencyKey = null, checkCancellation = null, logStep = console.log) {
-        logStep('Lead Finder', `[ApolloDomain] Starting Batch ${batchId} with ${domains.length} domains...`);
+    async _runLeadsScraperBatch(domains, filters, batchId, idempotencyKey = null, checkCancellation = null, logStep = console.log) {
+        logStep('Lead Finder', `[LeadsScraper] Starting Batch ${batchId} with ${domains.length} domains...`);
 
         // Log Exclusions
         if (filters.excluded_functions?.length) {
-            console.log(`[ApolloDomain] Exclusions applied: ${filters.excluded_functions.join(', ')}`);
+            console.log(`[LeadsScraper] Exclusions applied: ${filters.excluded_functions.join(', ')}`);
         }
 
         try {
             // Dynamic totalResults: 30 leads per company in this batch
+            // Dynamic totalResults: 30 leads per company in this batch
+            // API REQUIREMENT: totalResults must be >= 100
+            const calculatedMax = domains.length * 30;
             const batchFilters = {
                 ...filters,
-                maxLeads: domains.length * 30 // 30 leads per company
+                maxLeads: calculatedMax < 100 ? 100 : calculatedMax
             };
 
             // Start Job
-            const runId = await startApolloDomainScrape(this.apifyApiKey, domains, batchFilters, idempotencyKey);
+            const runId = await startLeadsScraper(this.apifyApiKey, domains, batchFilters, idempotencyKey);
 
             if (!runId) {
                 throw new Error(`Batch ${batchId}: No run ID returned`);
@@ -268,13 +273,13 @@ export class LeadScraperService {
 
                 // logging only every 3rd poll to reduce noise with multiple batches
                 if (attempts % 3 === 0) {
-                    logStep('Lead Finder', `[ApolloDomain] Batch ${batchId} Polling... Status: ${statusRes.status}`);
+                    logStep('Lead Finder', `[LeadsScraper] Batch ${batchId} Polling... Status: ${statusRes.status}`);
                 }
 
                 if (statusRes.status === 'SUCCEEDED' || statusRes.status === 'ABORTED') {
                     isComplete = true;
                     datasetId = statusRes.datasetId;
-                    if (statusRes.status === 'ABORTED') console.warn(`[ApolloDomain] Batch ${batchId} ABORTED (likely cost limit). Fetching partial results.`);
+                    if (statusRes.status === 'ABORTED') console.warn(`[LeadsScraper] Batch ${batchId} ABORTED (likely cost limit). Fetching partial results.`);
                 } else if (statusRes.status === 'FAILED') {
                     throw new Error(`Run failed with status: ${statusRes.status}`);
                 }
@@ -287,7 +292,7 @@ export class LeadScraperService {
 
             // Fetch Results
             const items = await getApifyResults(this.apifyApiKey, datasetId);
-            console.log(`[ApolloDomain] Batch ${batchId} raw items: ${items.length}`);
+            console.log(`[LeadsScraper] Batch ${batchId} raw items: ${items.length}`);
 
             // --- STRICT FILTERING LAYER ---
             // First check: Domain validation (CRITICAL) - leads failing this are DISCARDED (not disqualified)
@@ -298,7 +303,7 @@ export class LeadScraperService {
 
             // Build set of requested domains for O(1) lookup
             const requestedDomains = new Set(domains.map(d => d.toLowerCase().trim()));
-            console.log(`[ApolloDomain] Batch ${batchId}: Validating against domains: ${[...requestedDomains].join(', ')}`);
+            console.log(`[LeadsScraper] Batch ${batchId}: Validating against domains: ${[...requestedDomains].join(', ')}`);
 
             items.forEach(item => {
                 // STEP 1: STRICT DOMAIN VALIDATION
@@ -317,14 +322,14 @@ export class LeadScraperService {
 
                 // STRICT: Never allow leads with missing domain metadata - DISCARD (don't even save as disqualified)
                 if (!leadDomain) {
-                    console.log(`[ApolloDomain] 🗑️ DISCARDED (no domain): ${item.firstName || 'Unknown'} ${item.lastName || ''}`);
+                    console.log(`[LeadsScraper] 🗑️ DISCARDED (no domain): ${item.firstName || 'Unknown'} ${item.lastName || ''}`);
                     discardedCount++;
                     return;
                 }
 
                 // Domain mismatch = DISCARD (wrong company, we don't care)
                 if (!isExactMatch && !isSubdomainMatch) {
-                    console.log(`[ApolloDomain] 🗑️ DISCARDED (domain mismatch): ${item.firstName || 'Unknown'} from "${leadDomain}"`);
+                    console.log(`[LeadsScraper] 🗑️ DISCARDED (domain mismatch): ${item.firstName || 'Unknown'} from "${leadDomain}"`);
                     discardedCount++;
                     return;
                 }
@@ -345,13 +350,13 @@ export class LeadScraperService {
 
                 // Missing or fake email = DISCARD (not a real lead)
                 if (!emailDomain) {
-                    console.log(`[ApolloDomain] 🗑️ DISCARDED (no email): ${item.firstName || 'Unknown'}`);
+                    console.log(`[LeadsScraper] 🗑️ DISCARDED (no email): ${item.firstName || 'Unknown'}`);
                     discardedCount++;
                     return;
                 }
 
                 if (BLOCKED_EMAIL_DOMAINS.includes(emailDomain)) {
-                    console.log(`[ApolloDomain] 🗑️ DISCARDED (fake email): ${item.email}`);
+                    console.log(`[LeadsScraper] 🗑️ DISCARDED (fake email): ${item.email}`);
                     discardedCount++;
                     return;
                 }
@@ -360,7 +365,7 @@ export class LeadScraperService {
                 if (GENERIC_EMAIL_PROVIDERS.includes(emailDomain)) {
                     // Personal email is acceptable ONLY if we have confirmed domain match
                     // (isExactMatch or isSubdomainMatch is already true at this point)
-                    console.log(`[ApolloDomain] ⚠️ Personal email (${emailDomain}) for ${item.firstName} - Allowing due to verified company domain match`);
+                    console.log(`[LeadsScraper] ⚠️ Personal email (${emailDomain}) for ${item.firstName} - Allowing due to verified company domain match`);
                 }
 
                 // STEP 2: Job Title Check
@@ -382,7 +387,7 @@ export class LeadScraperService {
                     });
 
                     if (!matchesWhitelist) {
-                        // console.log(`[ApolloDomain] 🗑️ Disqualified (Title Mismatch): ${title}`);
+                        // console.log(`[LeadsScraper] 🗑️ Disqualified (Title Mismatch): ${title}`);
                         disqualifiedItems.push({ ...item, disqualification_reason: `Title Mismatch: ${title}` });
                         return;
                     }
@@ -402,7 +407,7 @@ export class LeadScraperService {
 
                             // EXCEPTION: Protect "Development" role (Real Estate context) from exclusions like "Engineering"
                             if (isExcluded && title.includes('development')) {
-                                // console.log(`[ApolloDomain] Protected "Development" role from exclusion "${kw}": ${title}`);
+                                // console.log(`[LeadsScraper] Protected "Development" role from exclusion "${kw}": ${title}`);
                                 isExcluded = false;
                             }
 
@@ -410,7 +415,7 @@ export class LeadScraperService {
                             // "Founding Engineer" is NOT protected, but "Co-Founder" and "Founder & CEO" are.
                             const isGenuineFounder = /^(co-?founder|founder)/i.test(title);
                             if (isExcluded && isGenuineFounder) {
-                                console.log(`[ApolloDomain] Protected genuine Founder role from exclusion "${kw}": ${title}`);
+                                console.log(`[LeadsScraper] Protected genuine Founder role from exclusion "${kw}": ${title}`);
                                 isExcluded = false;
                             }
 
@@ -428,7 +433,7 @@ export class LeadScraperService {
                     for (const excluded of filters.excludedIndustries) {
                         const excludedLower = excluded.toLowerCase().trim();
                         if (excludedLower && companyIndustry.includes(excludedLower)) {
-                            console.log(`[ApolloDomain] Excluded by industry "${excluded}": ${item.organizationName} (${companyIndustry})`);
+                            console.log(`[LeadsScraper] Excluded by industry "${excluded}": ${item.organizationName} (${companyIndustry})`);
                             disqualifiedItems.push({ ...item, disqualification_reason: `Excluded Industry: ${excluded}` });
                             return;
                         }
@@ -438,12 +443,12 @@ export class LeadScraperService {
                 validItems.push(item);
             });
 
-            logStep('Lead Finder', `[ApolloDomain] Batch ${batchId}: ${validItems.length} leads found (${disqualifiedItems.length} disqualified).`);
+            logStep('Lead Finder', `[LeadsScraper] Batch ${batchId}: ${validItems.length} leads found (${disqualifiedItems.length} disqualified).`);
 
             return { valid: validItems, disqualified: disqualifiedItems };
 
         } catch (error) {
-            console.error(`[ApolloDomain] Batch ${batchId} failed:`, error.message);
+            console.error(`[LeadsScraper] Batch ${batchId} failed:`, error.message);
             return { valid: [], disqualified: [] }; // Return empty object so other batches can proceed
         }
     }
@@ -453,10 +458,10 @@ export class LeadScraperService {
 
 
     /**
-     * Normalize Apollo Domain Scraper results to Standard Lead format
+     * Normalize Leads Scraper results to Standard Lead format
      * Output format: firstName, lastName, email, position, linkedinUrl, organizationName, organizationWebsite
      */
-    _normalizeApolloDomainResults(rawItems, qualifiedCompanies, filters = {}) {
+    _normalizeLeadsScraperResults(rawItems, qualifiedCompanies, filters = {}) {
         return rawItems.map(item => {
             const scrapedCompany = item.organizationName;
             const companyDomain = item.organizationWebsite
@@ -517,7 +522,7 @@ export class LeadScraperService {
                     else if (p.number) phoneNumbers.push({ type: p.type || 'other', number: p.number });
                 });
             }
-            // Check for direct fields in standard Apify/Apollo schema
+            // Check for direct fields in standard Leads Scraper schema
             if (item.mobile_phone) phoneNumbers.push({ type: 'mobile', number: item.mobile_phone });
             if (item.corporate_phone) phoneNumbers.push({ type: 'work', number: item.corporate_phone });
             if (item.home_phone) phoneNumbers.push({ type: 'home', number: item.home_phone });

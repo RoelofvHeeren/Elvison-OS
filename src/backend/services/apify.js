@@ -101,7 +101,7 @@ export const getDatasetInfo = async (token, datasetId) => {
  * @param {Object} filters - Dynamic filters
  * @returns {Object} - The constructed payload
  */
-export const buildApolloDomainPayload = (domains, filters = {}) => {
+export const buildLeadsScraperPayload = (domains, filters = {}) => {
     // Strict titles - Only C-level and senior decision makers (Real Estate/Investment focus)
     const defaultTitles = [
         "CEO", "President", "Managing Director", "Principal",
@@ -125,7 +125,7 @@ export const buildApolloDomainPayload = (domains, filters = {}) => {
         }).filter(Boolean)
     )];
 
-    // MAPPING: Convert user-friendly labels to valid Apify/Apollo values
+    // MAPPING: Convert user-friendly labels to valid Apify/LeadsScraper values
     // ALLOWED SENIORITY: "Founder", "Chairman", "President", "CEO", "CXO", "Vice President", "Director", "Head", "Manager", "Senior", "Junior", "Entry Level", "Executive"
     let mappedSeniority = filters.seniority;
     if (filters.seniority && filters.seniority.length > 0) {
@@ -175,7 +175,7 @@ export const buildApolloDomainPayload = (domains, filters = {}) => {
         companyDomain: cleanDomains,       // MATCHED USER SUCCESS INPUT (Singular)
         companyDomains: cleanDomains,      // Plural (Legacy/safety)
         organizationDomains: cleanDomains, // Common alias
-        qOrganizationDomains: cleanDomains.join('\n'), // Apollo URL format (newline separated)
+        qOrganizationDomains: cleanDomains.join('\n'), // Leads Scraper format (newline separated)
 
         // Person Filters
         personTitle: (filters.job_titles && filters.job_titles.length > 0) ? filters.job_titles : defaultTitles,
@@ -224,7 +224,7 @@ export const buildApolloDomainPayload = (domains, filters = {}) => {
     // STRICT MODE: If domains are provided, do NOT send broad filters (Country/Employee Size)
     // This prevents the "OR" logic in Apify that returns random companies in the target country
     if (cleanDomains.length > 0) {
-        console.log(`[ApolloDomain] 🔒 STRICT MODE: Omitting country/size filters to enforce valid domain matches.`);
+        console.log(`[LeadsScraper] 🔒 STRICT MODE: Omitting country/size filters to enforce valid domain matches.`);
     } else {
         // Only valid if we were doing a broad search (which this function isn't really for, but as fallback)
         payload.companyCountry = filters.countries || filters.geography || ["United States", "Canada"];
@@ -241,26 +241,26 @@ export const buildApolloDomainPayload = (domains, filters = {}) => {
  * @param {Object} filters - Dynamic filters
  * @returns {Promise<string>} - The Run ID
  */
-export const startApolloDomainScrape = async (token, domains, filters = {}, idempotencyKey = null) => {
+export const startLeadsScraper = async (token, domains, filters = {}, idempotencyKey = null) => {
     try {
         if (!domains || domains.length === 0) {
-            console.warn("[ApolloDomain] No domains provided.");
+            console.warn("[LeadsScraper] No domains provided.");
             return null;
         }
 
-        const input = buildApolloDomainPayload(domains, filters);
-        console.log(`[ApolloDomain] Starting scrape for ${domains.length} domains...`);
+        const input = buildLeadsScraperPayload(domains, filters);
+        console.log(`[LeadsScraper] Starting scrape for ${domains.length} domains...`);
 
         // Leads Scraper (Emails guaranteed - Rental)
         const ACTOR_ID = 'GlxYrQp6f3YAzH2W2';
 
-        console.log(`[ApolloDomain] Sending payload to ${ACTOR_ID}:`, JSON.stringify(input, null, 2));
+        console.log(`[LeadsScraper] Sending payload to ${ACTOR_ID}:`, JSON.stringify(input, null, 2));
 
         // URL construction with optional idempotencyKey
         let url = `${APIFY_API_URL}/acts/${ACTOR_ID}/runs?token=${token}`;
         if (idempotencyKey) {
             url += `&idempotencyKey=${idempotencyKey}`;
-            console.log(`[ApolloDomain] Using idempotencyKey: ${idempotencyKey}`);
+            console.log(`[LeadsScraper] Using idempotencyKey: ${idempotencyKey}`);
         }
 
         const response = await axios.post(
@@ -269,10 +269,10 @@ export const startApolloDomainScrape = async (token, domains, filters = {}, idem
             { headers: { 'Content-Type': 'application/json' }, timeout: 15000 }
         );
 
-        console.log(`[ApolloDomain] Scrape started. Run ID: ${response.data.data.id}`);
+        console.log(`[LeadsScraper] Scrape started. Run ID: ${response.data.data.id}`);
         return response.data.data.id;
     } catch (error) {
-        console.error('[ApolloDomain] Start Error:', error.response?.data || error.message);
+        console.error('[LeadsScraper] Start Error:', error.response?.data || error.message);
         throw new Error(`Failed to start Lead Scrape: ${error.response?.data?.error?.message || error.message}`);
     }
 };
@@ -748,7 +748,8 @@ export const scrapeWebsiteSmart = async (domain) => {
     ).slice(0, 10);
 
     // 3. Scrape Selected
-    const urlsToScrape = [`https://${domain}`, ...keyPages];
+    const homeUrl = domain.startsWith('http') ? domain : `https://${domain}`;
+    const urlsToScrape = [homeUrl, ...keyPages];
     const content = await scrapeSpecificPages(urlsToScrape);
 
     return {

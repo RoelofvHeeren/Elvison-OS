@@ -4,7 +4,7 @@ import { Bot, Save, FileText, Check, AlertCircle, Wrench, Database, MessageSquar
 const AGENTS = [
     { id: 'company_finder', name: 'Company Finder', description: 'Finds companies matching criteria.' },
     { id: 'company_profiler', name: 'Company Profiler', description: 'Filters and profiles companies.' },
-    { id: 'apollo_lead_finder', name: 'Apollo Lead Finder', description: 'Finds contact info for decision makers.' },
+    { id: 'leads_scraper', name: 'Lead Finder Agent', description: 'Finds contact info for decision makers.' },
     { id: 'outreach_creator', name: 'Outreach Creator', description: 'Drafts personalized outreach messages.' },
     { id: 'data_architect', name: 'Data Architect', description: 'Defines CRM structure and data types.' },
 ]
@@ -12,7 +12,6 @@ const AGENTS = [
 const AVAILABLE_TOOLS = [
     { id: 'file_search', name: 'File Search', description: 'Search knowledge base documents', icon: FileText },
     { id: 'web_search', name: 'Web Search', description: 'Search the internet for information', icon: Globe },
-    { id: 'apollo_mcp', name: 'Apollo MCP', description: 'Enrich leads and find contacts', icon: Wrench },
 ]
 
 const AgentConfig = () => {

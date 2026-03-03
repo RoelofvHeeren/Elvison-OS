@@ -53,7 +53,7 @@ export const runEnrichmentWorkflow = async ({ companyIds, icpId, userId, listene
 
         logStep('System', `📋 Loaded details for ${companies.length} companies.`);
 
-        // 2. Run Lead Scraper (Apollo)
+        // 2. Run Lead Scraper (Apify Rental)
         const leadScraper = new LeadScraperService();
         // Use default filters or fetch from ICP? 
         // Ideally we should adhere to ICP filters if available.

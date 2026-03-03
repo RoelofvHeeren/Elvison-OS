@@ -37,7 +37,7 @@ const IcpSettings = () => {
         // To be consistent with Onboarding.jsx `handleLaunch`, we should update both the specific config keys AND the surveys map if we want to be safe,
         // or just rely on `surveys` if the system uses that for re-population.
         // Looking at `Onboarding.jsx`:
-        // It creates `icpConfig` with keys like `job_titles` populated from `surveyAnswers.apollo_lead_finder.job_titles`.
+        // It creates `icpConfig` with keys like `job_titles` populated from `surveyAnswers.leads_scraper.job_titles`.
         // So we should probably update the `surveys` deep structure, and then re-derive the top-level config keys before saving.
 
         setIcpData(prev => {
@@ -65,17 +65,17 @@ const IcpSettings = () => {
             // Re-construct the flat config keys from the updated surveys
             // This mirrors `handleLaunch` logic in Onboarding.jsx
             const surveys = icpData.config.surveys
-            const apolloAnswers = surveys.apollo_lead_finder || {}
+            const leadsScraperAnswers = surveys.leads_scraper || {}
             const companyAnswers = surveys.company_finder || {}
 
             const updatedConfig = {
                 ...icpData.config,
-                // Apollo Lead Finder
-                job_titles: apolloAnswers.job_titles || [],
-                seniority: apolloAnswers.seniority || [],
-                job_functions: apolloAnswers.job_functions || [],
-                excluded_functions: apolloAnswers.excluded_functions || [],
-                max_contacts: parseInt(apolloAnswers.max_contacts || 3),
+                // Lead Finder
+                job_titles: leadsScraperAnswers.job_titles || [],
+                seniority: leadsScraperAnswers.seniority || [],
+                job_functions: leadsScraperAnswers.job_functions || [],
+                excluded_functions: leadsScraperAnswers.excluded_functions || [],
+                max_contacts: parseInt(leadsScraperAnswers.max_contacts || 3),
 
                 // Company Finder
                 geography: companyAnswers.geography || [],

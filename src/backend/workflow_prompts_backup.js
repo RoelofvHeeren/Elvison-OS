@@ -175,7 +175,7 @@ OUTPUT FORMAT (STRICT)
 
 No additional text.`;
 
-export const apolloBackup = `You are Apollo Lead Ops. You receive input.results (company profiles). Identify up to 3 senior capital decision makers per company.
+export const leadScraperBackup = `You are the Lead Finder Agent. You receive input.results (company profiles). Identify up to 3 senior capital decision makers per company.
 
 Tools: organization_search, employees_of_company, people_search, people_enrichment, get_person_email.
 

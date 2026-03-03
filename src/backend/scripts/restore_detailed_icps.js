@@ -103,7 +103,7 @@ async function restoreIcps() {
                     research_framework: {
                         search_keywords: "single family office, multi family office, private investment office, family capital"
                     },
-                    apollo_lead_finder: {
+                    leads_scraper: {
                         job_titles: ["Chief Investment Officer", "CIO", "Principal", "Managing Partner", "Head of Real Estate", "Director of Investments", "President", "Founder"],
                         seniority: ["c_level", "partner", "vp", "director"],
                         job_functions: ["business_development", "finance", "operations"],
@@ -144,7 +144,7 @@ async function restoreIcps() {
                     research_framework: {
                         search_keywords: "private equity real estate, institutional investor, real estate fund"
                     },
-                    apollo_lead_finder: {
+                    leads_scraper: {
                         job_titles: ["Director of Acquisitions", "VP Development", "Partner", "Head of Capital", "Investment Director", "Managing Director", "VP Investments"],
                         seniority: ["c_level", "partner", "vp", "director"],
                         job_functions: ["business_development", "finance"],

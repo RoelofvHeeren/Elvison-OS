@@ -110,8 +110,8 @@ Manual Research Instructions: ${a.manual_research}
 Verify against criteria.`
     },
     {
-        id: 'apollo_lead_finder',
-        name: 'Apollo Lead Finder',
+        id: 'leads_scraper',
+        name: 'Lead Finder Agent',
         description: 'Define the exact Decision Makers to contact.',
         questions: [
             { id: 'seniority', label: 'Allowed Seniority Levels', type: 'multi-select', options: SENIORITY_OPTIONS, helper: 'Who has the authority you need?' },
@@ -126,7 +126,7 @@ Functions: ${Array.isArray(a.job_functions) ? a.job_functions.join(', ') : a.job
 Exclude: ${Array.isArray(a.excluded_functions) ? a.excluded_functions.join(', ') : a.excluded_functions}
 Titles: ${Array.isArray(a.job_titles) ? a.job_titles.join(', ') : a.job_titles}
 Max Contacts: ${a.max_contacts}
-Use Apollo API.`
+Use Lead Finding Tools.`
     },
     {
         id: 'outreach_creator',

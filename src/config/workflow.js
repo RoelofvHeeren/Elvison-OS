@@ -26,7 +26,7 @@ export const WORKFLOW_CONFIG = {
 export const AGENT_MODELS = {
     company_finder: "gemini-2.0-flash",      // Discovery - cheap and fast
     company_profiler: "gemini-2.0-flash",    // TEMP: Gemini until direct Claude runner built
-    apollo_lead_finder: "gemini-2.0-flash",  // Structured queries - simple task
+    leads_scraper: "gemini-2.0-flash",  // Structured queries - simple task
     outreach_creator: "gemini-2.0-flash",    // Copy generation - scales cheaply
     data_architect: "gemini-2.0-flash",      // Data normalization - simple task
     default: "gemini-2.0-flash"

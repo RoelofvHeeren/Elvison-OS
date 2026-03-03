@@ -14,6 +14,10 @@ import { WORKFLOW_CONFIG, getEffectiveMaxLeads, AGENT_MODELS } from "../config/w
 import { CostTracker } from "./services/cost-tracker.js";
 import { enforceAgentContract } from "./utils/agent-contract.js";
 import { runGeminiAgent } from "./services/direct-agent-runner.js";
+import { FORunReporter } from "./services/fo-run-reporter.js";
+// Pipeline V2: Modular orchestrator replaces inline processQualifiedCompanies
+import { processCompanyBatch } from "./pipeline/orchestrator.js";
+import { saveLeadsBatch } from "./pipeline/persist.js";
 
 // --- Schema Definitions ---
 console.log("✅ WORKFLOW.JS - DIRECT SDK MODE (No OpenAI)");
@@ -48,7 +52,7 @@ const CompanyProfilerSchema = z.object({
     }))
 });
 
-const ApolloLeadFinderSchema = z.object({
+const LeadsScraperSchema = z.object({
     leads: z.array(z.object({
         date_added: z.string(),
         first_name: z.string(),
@@ -134,6 +138,7 @@ export const runAgentWorkflow = async (input, config) => {
         if (listeners?.onLog) listeners.onLog({ step, detail });
         else console.log(`[${step}] ${detail}`);
     };
+    const reporter = new FORunReporter(runId);
 
     // --- Safety & Cost Controls ---
     const effectiveMaxLeads = getEffectiveMaxLeads();
@@ -376,8 +381,61 @@ export const runAgentWorkflow = async (input, config) => {
         // Loop through search terms until we hit target or exhaust terms
         // NEW: If manualDomains are provided, we SKIP the search loop and just use those
         const isManualMode = manualDomains && manualDomains.length > 0;
-
         let manualProcessed = false;
+
+        // --- BATCH PROCESSING STATE ---
+        let companyBatchBuffer = [];
+        let allProcessedLeads = []; // Renamed from finalLeads
+        let totalUniqueCompaniesProcessed = 0;
+
+        // --- PIPELINE V2: Delegates to modular orchestrator ---
+        // Replaces the old inline processQualifiedCompanies with:
+        //   Scrape → Normalize → Rank → SAVE (first!) → Outreach → ENRICH
+        // This "save-then-enrich" pattern prevents outreach data loss.
+        const processQualifiedCompanies = async (companies) => {
+            if (!companies || companies.length === 0) return [];
+
+            // Family Office entity gate
+            const isFORun = (companyContext.icpDescription || "").toLowerCase().includes("family office") ||
+                (companyContext.name || "").toLowerCase().includes("family office");
+
+            const PRINCIPAL_APPROVED_TYPES = [
+                'FAMILY_OFFICE_SFO', 'FAMILY_OFFICE_MFO_PRINCIPAL', 'INVESTMENT_FIRM',
+                'PRIVATE_EQUITY', 'PENSION_FUND', 'INSTITUTIONAL_INVESTOR',
+                'FAMILY_OFFICE', 'FAMILY_OFFICE_CAPITAL_VEHICLE'
+            ];
+
+            let validCompanies = [...companies];
+            if (isFORun) {
+                validCompanies = companies.filter(c => {
+                    const type = c.classification?.entity_type;
+                    return PRINCIPAL_APPROVED_TYPES.includes(type);
+                });
+                if (validCompanies.length < companies.length) {
+                    logStep('Lead Finder Gate', `🛡️ Filtered ${companies.length - validCompanies.length} non-principal firms from batch.`);
+                }
+            }
+
+            if (validCompanies.length === 0) return [];
+
+            // Delegate to pipeline orchestrator
+            return processCompanyBatch(validCompanies, {
+                leadScraper,
+                filters,
+                idempotencyKey,
+                googleKey,
+                userId,
+                icpId,
+                runId,
+                logStep,
+                checkCancellation,
+                costTracker,
+                companyContext,
+                maxLeadsPerCompany
+            });
+        };
+
+        // --- END HELPER ---
 
         while (masterQualifiedList.length < targetLeads) {
             if (await checkCancellation()) break;
@@ -879,14 +937,14 @@ export const runAgentWorkflow = async (input, config) => {
                     - 10: Perfect fit(${companyContext.keyAttributes || "Clear match"})
                         - 1: Poor fit(${companyContext.redFlags || "Mismatch"})
 
-                        STRICT ENTITY TYPES(Choose One):
-                    - FAMILY_OFFICE_SFO(Approved)
-                        - FAMILY_OFFICE_MFO_PRINCIPAL(Approved)
-                        - FAMILY_OFFICE_CAPITAL_VEHICLE(Approved)
-                        - WEALTH_MANAGER_MFO(Reject)
-                        - WEALTH_MANAGER(Reject)
-                        - INVESTMENT_FUND(Reject)
-                        - SERVICE_PROVIDER(Reject)
+                        STRICT ENTITY TYPES (Choose One):
+                        - FAMILY_OFFICE_SFO (Approved - Single Family Office)
+                        - FAMILY_OFFICE_MFO_PRINCIPAL (Approved - Multi-Family Office investing PRINCIPAL capital)
+                        - INVESTMENT_FIRM (Recommended - PE, VC, Holding Co, Real Estate Firm)
+                        - FAMILY_OFFICE_CAPITAL_VEHICLE (Approved - Only if explicit vehicle)
+                        - WEALTH_MANAGER (Reject - Advisory only)
+                        - BROKERAGE (Reject - Sales/Leasing)
+                        - SERVICE_PROVIDER (Reject - Law, Tax, Consulting)
                         
                         OUTPUT JSON:
                     { "results": [{ "company_name": "...", "domain": "...", "company_profile": "...", "match_score": 8, "entity_type": "FAMILY_OFFICE_SFO", "entity_subtype": "SFO" }] }
@@ -946,7 +1004,7 @@ export const runAgentWorkflow = async (input, config) => {
                     for (const company of analyzed) {
                         const isHighQuality = (company.match_score || 0) >= scoreThreshold;
 
-                        // Map flatten entity_type to nested structure for Apollo Gate compatibility
+                        // Map flatten entity_type to nested structure for Lead Finder Gate compatibility
                         const enrichedCompany = {
                             ...company,
                             classification: {
@@ -957,8 +1015,28 @@ export const runAgentWorkflow = async (input, config) => {
 
                         if (isHighQuality) {
                             masterQualifiedList.push(enrichedCompany);
+                            companyBatchBuffer.push(enrichedCompany); // Add to current batch
                             scrapedNamesSet.add(company.company_name);
                             logStep('Company Profiler', `✅ Qualified: ${company.company_name} (Type: ${company.entity_type}, Score: ${company.match_score})`);
+
+                            // BATCH TRIGGER: Process leads if buffer is full
+                            if (companyBatchBuffer.length >= minBatchSize) {
+                                logStep('Workflow', `📦 Batch buffer full (${companyBatchBuffer.length} companies). Processing leads now...`);
+
+                                // Process the batch
+                                const newLeads = await processQualifiedCompanies([...companyBatchBuffer]);
+
+                                // Accumulate results
+                                allProcessedLeads.push(...newLeads);
+                                totalUniqueCompaniesProcessed += companyBatchBuffer.length;
+
+                                // Clear buffer
+                                companyBatchBuffer = [];
+
+                                // Check if we have enough leads (optional exit condition)
+                                // Only exit loop if we have enough leads AND enough companies processed?
+                                // For now, stick to targetLeads = company count target, as per original logic.
+                            }
                         } else {
                             totalDisqualified++;
                             logStep('Company Profiler', `🗑️ Dropped: ${company.company_name} (Score: ${company.match_score}, Type: ${company.entity_type})`);
@@ -1015,598 +1093,37 @@ export const runAgentWorkflow = async (input, config) => {
             }
         }
 
-        // --- Phase 1 Check: Data Starvation Protection ---
-        if (masterQualifiedList.length === 0) {
-            logStep('Workflow', '❌ No qualified companies found after discovery. Stopping workflow to prevent hallucination.');
-            return {
-                status: 'failed',
-                leads: [],
-                stats: { total: 0, searchStats, cost: costTracker.getSummary() },
-                error: "Discovery failed: No qualified companies found."
-            };
+        // --- FINAL BATCH FLUSH ---
+        if (companyBatchBuffer.length > 0) {
+            logStep('Workflow', `📦 Processing final batch of ${companyBatchBuffer.length} companies...`);
+            const newLeads = await processQualifiedCompanies(companyBatchBuffer);
+            allProcessedLeads.push(...newLeads);
+            totalUniqueCompaniesProcessed += companyBatchBuffer.length;
+            companyBatchBuffer = [];
         }
 
-        // --- APOLLO GATE: Strict Filtering for Family Offices ---
-        // Only allow APPROVED Entity Types to proceed to Apollo
-        // This prevents Wealth Managers from leaking into the lead pool
+        // --- SELF-HEALING (Moved to end of logic, optional if needed, but Outreach Creator handles retries internally now) ---
+        // For simplicity in this refactor, we rely on the Outreach Creator loop above.
 
-        // Define Approved Types (Must match entity-classifier.js)
-        const APOLLO_APPROVED_TYPES = [
-            'FAMILY_OFFICE_SFO',
-            'FAMILY_OFFICE_MFO_PRINCIPAL',
-            'FAMILY_OFFICE_CAPITAL_VEHICLE',
-            'PRIVATE_EQUITY',
-            'PENSION_FUND',
-            'INSTITUTIONAL_INVESTOR',
-            'FAMILY_OFFICE' // Legacy
-        ];
+        // Populate Reporter Stats
+        if (reporter) {
+            const reviewCount = allProcessedLeads.filter(l => l.status === 'MANUAL_REVIEW').length;
+            reporter.stats.total_discovered = masterQualifiedList?.length || 0;
+            reporter.stats.approved_count = (allProcessedLeads.length || 0) - reviewCount;
+            reporter.stats.review_count = reviewCount;
+            reporter.stats.rejected_count = totalDisqualified || 0;
 
-        // Is this an FO run?
-        const isFORun = (companyContext.icpDescription || "").toLowerCase().includes("family office") ||
-            (companyContext.name || "").toLowerCase().includes("family office");
-
-        if (isFORun) {
-            const originalCount = masterQualifiedList.length;
-
-            // Check if we have entity_type data (might describe if using dummy data or new classifier)
-            // If classification exists, filter. If not (old data), warn but proceed.
-            const hasClassificationData = masterQualifiedList.some(c => c.classification?.entity_type);
-
-            if (hasClassificationData) {
-                logStep('Apollo Gate', `🛡️ Enforcing strict FO filter on ${originalCount} companies...`);
-
-                masterQualifiedList = masterQualifiedList.filter(c => {
-                    const type = c.classification?.entity_type;
-                    const approved = APOLLO_APPROVED_TYPES.includes(type);
-
-                    if (!approved) {
-                        logStep('Apollo Gate', `⛔ Blocking ${c.company_name} (Type: ${type}) - Not a Principal Investor`);
-                        totalDisqualified++;
-                    }
-                    return approved;
-                });
-
-                logStep('Apollo Gate', `✅ Allowed ${masterQualifiedList.length} Principal Investors to proceed (Blocked ${originalCount - masterQualifiedList.length} Wealth Managers/Funds)`);
-            }
+            const costSummary = costTracker.getSummary();
+            reporter.stats.total_cost_usd = costSummary.cost?.total || 0;
         }
-
-        // --- Phase 2: Consolidated Lead Scraping (ONE Pass) ---
-        // Already protected by the check above, but keeping structure
-        if (masterQualifiedList.length > 0) {
-            logStep('Lead Finder', `🚀 Triggering Scraper for ALL ${masterQualifiedList.length} qualified companies...`);
-            try {
-                if (await checkCancellation()) return;
-
-                // --- 4. Lead Scraping with Disqualified Tracking ---
-                // Pass idempotencyKey to prevent duplicate Apify runs on retries
-                // Incremental Save Hook - Save valid leads immediately after each batch
-                const scrapeFilters = {
-                    ...filters,
-                    idempotencyKey: idempotencyKey || `wf_${Date.now()}`,
-                    onBatchComplete: async ({ valid, disqualified }) => {
-                        if (valid?.length > 0) {
-                            try {
-                                // Incremental Discovery results are 'PROFILED', not 'NEW' yet (since no outreach)
-                                await saveLeadsToDB(valid, userId, icpId, logStep, 'PROFILED', runId);
-                            } catch (e) {
-                                logStep('Database', `⚠️ Incremental save failed: ${e.message}`);
-                            }
-                        }
-                        if (disqualified?.length > 0) {
-                            try {
-                                await saveLeadsToDB(disqualified, userId, icpId, logStep, 'DISQUALIFIED', runId);
-                            } catch (e) {
-                                // logStep('Database', `⚠️ Incremental disqualified save failed: ${e.message}`);
-                            }
-                        }
-                    }
-                };
-                const scrapeResult = await leadScraper.fetchLeads(masterQualifiedList, scrapeFilters, logStep, checkCancellation);
-
-                // Handle new return structure { leads, disqualified }
-                const leadsFound = scrapeResult.leads || (Array.isArray(scrapeResult) ? scrapeResult : []);
-                const disqualifiedFound = scrapeResult.disqualified || [];
-
-                logStep('Lead Finder', `Found ${leadsFound.length} valid leads.Saving ${disqualifiedFound.length} disqualified leads for review.`);
-
-                // Save Disqualified Leads Immediately
-                if (disqualifiedFound.length > 0) {
-                    await saveLeadsToDB(disqualifiedFound, userId, icpId, logStep, 'DISQUALIFIED', runId);
-                }
-
-                if (leadsFound.length === 0) {
-                    logStep('Workflow', '❌ No leads found from scraped companies. Stopping before Outreach.');
-                    return {
-                        status: 'failed',
-                        leads: [],
-                        stats: { total: 0, searchStats, cost: costTracker.getSummary() },
-                        error: "Scraping failed: No leads found."
-                    };
-                }
-
-                if (leadsFound.length > 0) {
-                    logStep('Data Architect', `Normalizing ${leadsFound.length} leads...`);
-
-                    // 4. Data Architect: Validation & Normalization
-                    const deterministicLeads = leadsFound.filter(l => l.first_name && l.last_name && l.email);
-                    const ambiguousLeads = leadsFound.filter(l => !l.first_name || !l.last_name || !l.email);
-                    let fixedLeads = [];
-
-                    if (ambiguousLeads.length > 0) {
-                        // CRITICAL: Back up company_profile BEFORE sending to LLM.
-                        // Gemini routinely truncates/drops large string fields.
-                        const profileBackup = new Map();
-                        const leadsForLLM = ambiguousLeads.map(l => {
-                            profileBackup.set(l.email || l.linkedin_url || `${l.first_name}_${l.company_name}`, {
-                                company_profile: l.company_profile,
-                                company_website: l.company_website,
-                                company_domain: l.company_domain,
-                                company_fit_score: l.company_fit_score
-                            });
-                            // Send only the fields the Data Architect needs
-                            const { company_profile, ...lightLead } = l;
-                            return lightLead;
-                        });
-
-                        try {
-                            const architectRes = await runGeminiAgent({
-                                apiKey: googleKey,
-                                modelName: 'gemini-2.0-flash',
-                                agentName: 'Data Architect',
-                                instructions: `You are a data normalization agent. Your job is to fix and validate lead data.
-
-For each lead:
-1. Fix capitalization (FirstName LastName)
-2. Validate email format
-3. Fix broken URLs
-4. Mark is_valid: true if data is usable, false if unsalvageable
-
-OUTPUT FORMAT: Return JSON:
-{ "leads": [{ "first_name": "...", "last_name": "...", "email": "...", "is_valid": true, ...}] }
-Do NOT add or invent any fields. Only fix what's broken.`,
-                                userMessage: `Normalize these ambiguous leads: ${JSON.stringify(leadsForLLM)}`,
-                                tools: [],
-                                maxTurns: 2,
-                                logStep: logStep
-                            });
-
-                            const parsed = enforceAgentContract({
-                                agentName: "Data Architect",
-                                rawOutput: architectRes.finalOutput,
-                                schema: z.object({ leads: z.array(z.any()) })
-                            });
-
-                            // RESTORE backed-up fields that the LLM didn't see
-                            fixedLeads = (parsed.leads || []).filter(l => l.is_valid).map(l => {
-                                const key = l.email || l.linkedin_url || `${l.first_name}_${l.company_name}`;
-                                const backup = profileBackup.get(key) || {};
-                                return {
-                                    ...l,
-                                    company_profile: backup.company_profile || l.company_profile,
-                                    company_website: backup.company_website || l.company_website,
-                                    company_domain: backup.company_domain || l.company_domain,
-                                    company_fit_score: backup.company_fit_score || l.company_fit_score
-                                };
-                            });
-
-                            costTracker.recordCall({
-                                agent: 'Data Architect',
-                                model: 'gemini-2.0-flash',
-                                inputTokens: architectRes.usage?.inputTokens || 0,
-                                outputTokens: architectRes.usage?.outputTokens || 0,
-                                duration: 0,
-                                success: true
-                            });
-                        } catch (e) {
-                            logStep('Data Architect', `Normalization failed: ${e.message}`);
-                            // FALLBACK: Use original ambiguous leads as-is rather than dropping them
-                            fixedLeads = ambiguousLeads.filter(l => l.email);
-                        }
-                    }
-
-                    const validatedLeads = [...deterministicLeads, ...fixedLeads];
-
-                    // 5. Ranking & Deduplication
-                    if (validatedLeads.length > 0) {
-                        try {
-                            const rankRes = await runGeminiAgent({
-                                apiKey: googleKey,
-                                modelName: 'gemini-2.0-flash',
-                                agentName: 'Lead Ranker',
-                                instructions: `You are a lead ranking agent. Score each lead from 1-10 based on fit.
-
-SCORING CRITERIA:
-- 10: Perfect title match, decision maker at target company
-- 7-9: Good title, relevant role
-- 4-6: Related role, might be useful
-- 1-3: Low relevance
-
-GOAL: ${companyContext.goal}
-TARGET TITLES: ${companyContext.baselineTitles?.join(', ') || 'Decision makers'}
-
-OUTPUT FORMAT: Return JSON array with email and match_score:
-{ "leads": [{ "email": "...", "match_score": 8 }] }`,
-                                userMessage: `Rank these leads: ${JSON.stringify(validatedLeads.slice(0, 50).map(l => ({ email: l.email, title: l.title, company: l.company_name })))}`,
-                                tools: [],
-                                maxTurns: 2,
-                                logStep: logStep
-                            });
-
-                            const rankedParsed = enforceAgentContract({
-                                agentName: "Lead Ranker",
-                                rawOutput: rankRes.finalOutput,
-                                schema: z.object({
-                                    leads: z.array(z.object({
-                                        email: z.string(),
-                                        match_score: z.number()
-                                    }))
-                                })
-                            });
-
-                            // MERGE SCORES BACK to validatedLeads (Preserves company_profile)
-                            const scoreMap = new Map((rankedParsed.leads || []).map(l => [l.email, l.match_score]));
-
-                            const ranked = validatedLeads.map(l => ({
-                                ...l,
-                                match_score: scoreMap.get(l.email) || 5 // Default score if ranking fails/skips
-                            }));
-
-                            const sorted = ranked.sort((a, b) => (b.match_score || 0) - (a.match_score || 0));
-
-                            costTracker.recordCall({
-                                agent: 'Lead Ranker',
-                                model: 'gemini-2.0-flash',
-                                inputTokens: rankRes.usage?.inputTokens || 0,
-                                outputTokens: rankRes.usage?.outputTokens || 0,
-                                duration: 0,
-                                success: true
-                            });
-
-                            const perCompany = {};
-                            sorted.forEach(l => {
-                                if (!perCompany[l.company_name]) perCompany[l.company_name] = [];
-                                if (perCompany[l.company_name].length < maxLeadsPerCompany) perCompany[l.company_name].push(l);
-                            });
-
-                            const added = Object.values(perCompany).flat();
-                            globalLeads.push(...added);
-                            logStep('Workflow', `✅ Finalized ${globalLeads.length} leads.`);
-                        } catch (e) {
-                            logStep('Lead Ranker', `Ranking failed: ${e.message}`);
-                            // Fallback: use unranked leads with default score
-                            const fallback = validatedLeads.slice(0, 20).map(l => ({ ...l, match_score: 5 }));
-                            globalLeads.push(...fallback);
-                        }
-                    }
-                }
-
-                // Mark companies as processed
-                masterQualifiedList.forEach(c => scrapedNamesSet.add(c.company_name));
-            } catch (e) {
-                logStep('Lead Finder', `Scraping failed: ${e.message} `);
-            }
-        }
-
-        // --- Outreach Generation ---
-        logStep('Outreach Creator', `Drafting messages for ${globalLeads.length} leads in batches...`);
-        let finalLeads = [];
-        const BATCH_SIZE = 5;
-
-        for (let i = 0; i < globalLeads.length; i += BATCH_SIZE) {
-            if (await checkCancellation()) break;
-            const batch = globalLeads.slice(i, i + BATCH_SIZE);
-            logStep('Outreach Creator', `Processing batch ${Math.floor(i / BATCH_SIZE) + 1} of ${Math.ceil(globalLeads.length / BATCH_SIZE)}...`);
-
-            let retryCount = 0;
-            const MAX_RETRIES = 2;
-            let batchProcessedLeads = [];
-
-            while (retryCount <= MAX_RETRIES) {
-                try {
-                    const outreachRes = await runGeminiAgent({
-                        apiKey: googleKey,
-                        modelName: 'gemini-2.0-flash',
-                        agentName: 'Outreach Creator',
-                        instructions: companyContext.outreachPromptInstructions || `You are Roelof van Heeren, a Principal at Fifth Avenue Properties, a Canadian residential real estate development firm.
-Your goal is to write direct, fact-based outreach messages to potential Investment Partners (LPs/Co-GPs) or Peers in the industry.
-
-CRITICAL: The user HATES generic messages. 
-- NEVER use "Assets Under Management" (AUM) as the hook.
-- NEVER use "Number of Offices" or "Transaction Volume" as the hook.
-- NEVER mention "Sales Volume" (that sounds like a brokerage).
-
-HARD LIMITS (CRITICAL):
-- LinkedIn Message Max Length: 300 characters (Strictly enforced).
-- Mention EXACTLY ONE researched fact from the company profile.
-- Mention COMPANY FACTS ONLY (No personal details, no "20 years experience").
-- NO FLATTERY (No "Impressive career", "Great work").
-- NO BUZZWORDS (No "synergies", "unlock value", "disrupting").
-- NO CALLS TO ACTION (No "hop on a call", no "meeting").
-- MAXIMUM GENERALITY RULE: Prefer specific facts, but if none are found, use a general professional statement about their residential focus. DO NOT FAIL.
-
-MANDATORY PRIORITY ORDER (Stop at the FIRST match):
-
-1. SPECIFIC DEALS / NAMED PROJECTS (Highest Priority)
-   - Fact: A specific project name, asset, or recent acquisition.
-   - Alignment Line: "We frequently develop similar projects at Fifth Avenue Properties" OR "We develop similar residential projects at Fifth Avenue Properties"
-   - Example: "Hi Sarah, I came across Alpine Start’s Alpine Village project in North Texas. We frequently develop similar projects at Fifth Avenue Properties and thought connecting could be worthwhile."
-
-2. INVESTMENT THESIS / STRATEGY (Focus on ASSET CLASS)
-   - Fact: Specific strategy like "ground-up multifamily", "purpose-built rental", "residential-led mixed use".
-   - Alignment Line: "We work on similar residential strategies at Fifth Avenue Properties"
-   - Example: "Hi Michael, I came across Morguard’s long-standing focus on multi-suite residential across North America. We work on similar residential strategies at Fifth Avenue Properties and thought connecting could be worthwhile."
-
-3. RESIDENTIAL FOCUS / MARKET PRESENCE
-   - Fact: A clear statement of residential focus (e.g. "Owning 50,000 apartments", "Developing master-planned communities").
-   - DO NOT USE AUM or GENERIC SCALE ("$5B AUM"). Use unit count or specific market presence if available.
-   - Alignment Line: "We focus on similar residential markets at Fifth Avenue Properties"
-   - Example: "Hi John, I noticed Choice Properties' significant portfolio of residential assets in major Canadian markets. We focus on similar residential development strategies at Fifth Avenue Properties and thought connecting could be worthwhile."
-
-BAD FACTS (DO NOT USE THESE):
-- "Closed $700M in sales" -> REJECT (Brokerage signal).
-- "45 offices worldwide" -> REJECT (Generic).
-- "$4.1B AUM" -> REJECT (Unless tied to specific "residential assets").
-- "Advice on vineyards" -> REJECT (Irrelevant).
-
-LINKEDIN MESSAGE STRUCTURE (Fixed):
-Sentence 1: Greeting + Researched Company Fact (e.g. "Hi [Name], I came across [Company] and [Specific Fact].")
-Sentence 2: Fifth Avenue Properties alignment (Use mandatory alignment line from above) + Soft close ("and thought connecting could be worthwhile.")
-
-EMAIL STRUCTURE:
-Subject: Introduction | [Specific Asset Class/Strategy]
-Body:
-"Hi [Name],
-
-I came across [Company] and your [Specific Fact used in LinkedIn msg].
-
-At Fifth Avenue Properties, [Alignment Line used in LinkedIn msg], which is why I thought it could make sense to connect.
-
-If it makes sense, I'm happy to share more information about our current projects.
-
-Best regards,
-Roelof van Heeren
-Fifth Avenue Properties"
-
-OUTPUT JSON:
-{ "leads": [{ "email": "...", "connection_request": "...", "email_subject": "...", "email_message": "..." }] }
-If no specific fact is found, craft a polite, relevant generic message about their residential investment focus. NEVER return null.`,
-                        userMessage: `Draft outreach for these leads based on their 'company_profile' (Intelligence Report).\n\nLEADS:\n${JSON.stringify(batch.map(l => ({
-                            email: l.email,
-                            first_name: l.first_name,
-                            company_name: l.company_name,
-                            title: l.title,
-                            company_profile: (l.company_profile || "").substring(0, 3000)
-                        })))}`,
-                        tools: [],
-                        maxTurns: 1,
-                        logStep: logStep
-                    });
-
-                    // HARD CONTRACT ENFORCEMENT
-                    const normalizedOutreach = enforceAgentContract({
-                        agentName: "Outreach Creator",
-                        rawOutput: outreachRes.finalOutput,
-                        schema: OutreachCreatorSchema
-                    });
-
-                    costTracker.recordCall({
-                        agent: 'Outreach Creator',
-                        model: 'gemini-2.0-flash',
-                        inputTokens: outreachRes.usage?.inputTokens || 0,
-                        outputTokens: outreachRes.usage?.outputTokens || 0,
-                        duration: 0,
-                        success: true
-                    });
-
-                    const batchResponses = normalizedOutreach.leads || [];
-                    const outreachMap = new Map(batchResponses.map(l => [(l.email || '').toLowerCase(), l]));
-
-                    batchProcessedLeads = batch.map(original => {
-                        let processedLead = { ...original };
-                        const update = outreachMap.get((original.email || '').toLowerCase());
-
-                        if (update && (update.connection_request || update.email_message)) {
-                            const connReq = update.connection_request || update.linkedin_message || original.connection_request || original.linkedin_message;
-                            const emailMsg = update.email_message || update.email_body || original.email_message || original.email_body;
-
-                            processedLead = {
-                                ...original,
-                                email_message: emailMsg,
-                                email_body: emailMsg,
-                                email_subject: update.email_subject || original.email_subject,
-                                connection_request: connReq,
-                                linkedin_message: connReq,
-                                status: 'NEW' // Explicitly set to NEW since it has outreach
-                            };
-                        } else {
-                            // AI failed to generate message for THIS lead -> Flag for Manual Review
-                            processedLead.status = 'MANUAL_REVIEW';
-                            processedLead.disqualification_reason = 'AI Generation Failed - No message returned for this lead';
-                            console.warn(`[Outreach] AI missed message for ${original.email}. Target status: MANUAL_REVIEW`);
-                        }
-
-                        // SAFETY: Enforce 300-char hard limit
-                        if (processedLead.connection_request && processedLead.connection_request.length > 300) {
-                            processedLead.connection_request = processedLead.connection_request.substring(0, 295) + '...';
-                        }
-                        return processedLead;
-                    });
-
-                    // SUCCESS! Break retry loop
-                    break;
-
-                } catch (e) {
-                    retryCount++;
-                    if (retryCount > MAX_RETRIES) {
-                        // GRACEFUL DEGRADATION: Don't halt the workflow.
-                        // Mark the entire batch as MANUAL_REVIEW — the self-healing pass will retry individually.
-                        logStep('Outreach Creator', `⚠️ Batch failed after ${MAX_RETRIES} retries: ${e.message}. Marking for self-healing...`);
-                        batchProcessedLeads = batch.map(l => ({
-                            ...l,
-                            status: 'MANUAL_REVIEW',
-                            disqualification_reason: `Batch outreach failed: ${e.message}`
-                        }));
-                        break; // Exit retry loop with MANUAL_REVIEW leads
-                    }
-                    logStep('Outreach Creator', `Batch failed (Try ${retryCount}): ${e.message}. Retrying...`);
-                    await delay(3000);
-                }
-            }
-
-            // ATOMIC SAVE: Save this batch immediately so we don't lose work if process crashes later
-            if (batchProcessedLeads.length > 0) {
-                await saveLeadsToDB(batchProcessedLeads, userId, icpId, logStep, 'NEW', runId);
-                finalLeads.push(...batchProcessedLeads);
-            }
-        }
-
-        // --- SELF-HEALING PASS: Retry failed outreach individually ---
-        // The company_profile data is already there — generating a message from it is trivial.
-        // Instead of punting to MANUAL_REVIEW, we retry each failed lead with a focused single-lead call.
-        const failedLeads = finalLeads.filter(l => l.status === 'MANUAL_REVIEW' && l.company_profile);
-
-        if (failedLeads.length > 0) {
-            logStep('Outreach Creator', `🔄 Self-healing: Retrying ${failedLeads.length} leads that missed outreach...`);
-
-            for (const lead of failedLeads) {
-                try {
-                    const singleRes = await runGeminiAgent({
-                        apiKey: googleKey,
-                        modelName: 'gemini-2.0-flash',
-                        agentName: 'Outreach Creator',
-                        instructions: companyContext.outreachPromptInstructions || `You are Roelof van Heeren, a Principal at Fifth Avenue Properties, a Canadian residential real estate development firm.
-Your goal is to write direct, fact-based outreach messages to potential Investment Partners (LPs/Co-GPs) or Peers in the industry.
-
-CRITICAL: The user HATES generic messages. 
-- NEVER use "Assets Under Management" (AUM) as the hook.
-- NEVER use "Number of Offices" or "Transaction Volume" as the hook.
-- NEVER mention "Sales Volume" (that sounds like a brokerage).
-
-HARD LIMITS (CRITICAL):
-- LinkedIn Message Max Length: 300 characters (Strictly enforced).
-- Mention EXACTLY ONE researched fact from the company profile.
-- Mention COMPANY FACTS ONLY (No personal details, no "20 years experience").
-- NO FLATTERY (No "Impressive career", "Great work").
-- NO BUZZWORDS (No "synergies", "unlock value", "disrupting").
-- NO CALLS TO ACTION (No "hop on a call", no "meeting").
-- MAXIMUM GENERALITY RULE: Prefer specific facts, but if none are found, use a general professional statement about their residential focus. DO NOT FAIL.
-
-MANDATORY PRIORITY ORDER (Stop at the FIRST match):
-
-1. SPECIFIC DEALS / NAMED PROJECTS (Highest Priority)
-   - Fact: A specific project name, asset, or recent acquisition.
-   - Alignment Line: "We frequently develop similar projects at Fifth Avenue Properties" OR "We develop similar residential projects at Fifth Avenue Properties"
-   - Example: "Hi Sarah, I came across Alpine Start’s Alpine Village project in North Texas. We frequently develop similar projects at Fifth Avenue Properties and thought connecting could be worthwhile."
-
-2. INVESTMENT THESIS / STRATEGY (Focus on ASSET CLASS)
-   - Fact: Specific strategy like "ground-up multifamily", "purpose-built rental", "residential-led mixed use".
-   - Alignment Line: "We work on similar residential strategies at Fifth Avenue Properties"
-   - Example: "Hi Michael, I came across Morguard’s long-standing focus on multi-suite residential across North America. We work on similar residential strategies at Fifth Avenue Properties and thought connecting could be worthwhile."
-
-3. RESIDENTIAL FOCUS / MARKET PRESENCE
-   - Fact: A clear statement of residential focus (e.g. "Owning 50,000 apartments", "Developing master-planned communities").
-   - DO NOT USE AUM or GENERIC SCALE ("$5B AUM"). Use unit count or specific market presence if available.
-   - Alignment Line: "We focus on similar residential markets at Fifth Avenue Properties"
-   - Example: "Hi John, I noticed Choice Properties' significant portfolio of residential assets in major Canadian markets. We focus on similar residential development strategies at Fifth Avenue Properties and thought connecting could be worthwhile."
-
-BAD FACTS (DO NOT USE THESE):
-- "Closed $700M in sales" -> REJECT (Brokerage signal).
-- "45 offices worldwide" -> REJECT (Generic).
-- "$4.1B AUM" -> REJECT (Unless tied to specific "residential assets").
-- "Advice on vineyards" -> REJECT (Irrelevant).
-
-LINKEDIN MESSAGE STRUCTURE (Fixed):
-Sentence 1: Greeting + Researched Company Fact (e.g. "Hi [Name], I came across [Company] and [Specific Fact].")
-Sentence 2: Fifth Avenue Properties alignment (Use mandatory alignment line from above) + Soft close ("and thought connecting could be worthwhile.")
-
-EMAIL STRUCTURE:
-Subject: Introduction | [Specific Asset Class/Strategy]
-Body:
-"Hi [Name],
-
-I came across [Company] and your [Specific Fact used in LinkedIn msg].
-
-At Fifth Avenue Properties, [Alignment Line used in LinkedIn msg], which is why I thought it could make sense to connect.
-
-If it makes sense, I'm happy to share more information about our current projects.
-
-Best regards,
-Roelof van Heeren
-Fifth Avenue Properties"
-
-OUTPUT JSON:
-{ "leads": [{ "email": "...", "connection_request": "...", "email_subject": "...", "email_message": "..." }] }
-CRITICAL: You MUST return a message. Use the company profile facts. Never return null or empty.`,
-                        userMessage: `Generate outreach for this single lead. Use any fact from the company profile.\n\nLEAD: ${JSON.stringify({
-                            email: lead.email,
-                            first_name: lead.first_name,
-                            company_name: lead.company_name,
-                            title: lead.title,
-                            company_profile: (lead.company_profile || "").substring(0, 3000)
-                        })}`,
-                        tools: [],
-                        maxTurns: 1,
-                        logStep: logStep
-                    });
-
-                    const parsed = enforceAgentContract({
-                        agentName: "Outreach Creator (Self-Heal)",
-                        rawOutput: singleRes.finalOutput,
-                        schema: OutreachCreatorSchema
-                    });
-
-                    const msg = (parsed.leads || [])[0];
-
-                    if (msg && (msg.connection_request || msg.email_message)) {
-                        // SUCCESS: Upgrade from MANUAL_REVIEW to NEW
-                        lead.connection_request = msg.connection_request || msg.linkedin_message || '';
-                        lead.linkedin_message = lead.connection_request;
-                        lead.email_message = msg.email_message || msg.email_body || '';
-                        lead.email_body = lead.email_message;
-                        lead.email_subject = msg.email_subject || lead.email_subject || '';
-                        lead.status = 'NEW';
-                        lead.disqualification_reason = null;
-
-                        // Enforce 300-char limit
-                        if (lead.connection_request.length > 300) {
-                            lead.connection_request = lead.connection_request.substring(0, 295) + '...';
-                            lead.linkedin_message = lead.connection_request;
-                        }
-
-                        // Persist the fix immediately
-                        await saveLeadsToDB([lead], userId, icpId, logStep, 'NEW', runId);
-                        logStep('Outreach Creator', `✅ Self-healed: ${lead.first_name} ${lead.last_name || ''} (${lead.company_name})`);
-
-                        costTracker.recordCall({
-                            agent: 'Outreach Creator (Self-Heal)',
-                            model: 'gemini-2.0-flash',
-                            inputTokens: singleRes.usage?.inputTokens || 0,
-                            outputTokens: singleRes.usage?.outputTokens || 0,
-                            duration: 0,
-                            success: true
-                        });
-                    } else {
-                        logStep('Outreach Creator', `⚠️ Self-heal failed for ${lead.email} — keeping as MANUAL_REVIEW`);
-                    }
-                } catch (healErr) {
-                    logStep('Outreach Creator', `⚠️ Self-heal error for ${lead.email}: ${healErr.message}`);
-                    // Don't throw — keep the lead as MANUAL_REVIEW and continue to the next one
-                }
-            }
-
-            const healed = failedLeads.filter(l => l.status === 'NEW').length;
-            const remaining = failedLeads.length - healed;
-            logStep('Outreach Creator', `🔄 Self-healing complete: ${healed}/${failedLeads.length} recovered${remaining > 0 ? `, ${remaining} still need manual review` : ''}`);
-        }
-
-        // All batches processed and saved incrementally.
 
         return {
-            status: finalLeads.length >= targetLeads ? 'success' : 'partial',
-            leads: finalLeads,
+            status: allProcessedLeads.length > 0 ? 'success' : 'partial', // Consider partial even if not hitting target
+            leads: allProcessedLeads,
+            report: reporter.toMarkdown(),
             stats: {
-                leads_returned: finalLeads.length,
-                qualified: finalLeads.length,
+                leads_returned: allProcessedLeads.length,
+                qualified: allProcessedLeads.length,
                 leadsDisqualified: totalDisqualified,
                 companies_discovered: masterQualifiedList.length,
                 searchStats,
@@ -1653,12 +1170,9 @@ const validateLeadForCRM = (lead, status) => {
         return { pass: false, reason: 'Missing or invalid company_name' };
     }
 
-    // Rule 4: For NEW status, outreach messages are MANDATORY
-    if (status === 'NEW') {
-        if (!lead.connection_request && !lead.email_message) {
-            return { pass: false, reason: 'Outreach messages are mandatory for NEW status' };
-        }
-    }
+    // Rule 4: REMOVED — Never block leads for missing outreach.
+    // Outreach is an enrichment step, not a save prerequisite.
+    // Leads without outreach are saved with status NEEDS_OUTREACH.
 
     // Rule 5: Must have some company association data
     if (!lead.company_profile && !lead.company_website && !lead.company_domain) {
@@ -1687,6 +1201,15 @@ export const saveLeadsToDB = async (leads, userId, icpId, logStep, forceStatus =
 
             // If lead.status was set (e.g. to MANUAL_REVIEW), we use it.
             // If not, we use forceStatus.
+
+            // DEBUG: Outreach Data Check
+            if (currentStatus === 'NEW') { // Check against currentStatus which allows override
+                if (!lead.connection_request && !lead.email_message) {
+                    console.warn(`[saveLeadsToDB] ⚠️ Lead ${lead.email} is marked NEW but missing outreach data! Status may be downgraded.`);
+                } else {
+                    console.log(`[saveLeadsToDB] ✅ Saving outreach for ${lead.email} (Len: ${lead.email_message?.length || 0} / ${lead.connection_request?.length || 0})`);
+                }
+            }
 
             const gateResult = validateLeadForCRM(lead, currentStatus);
 
@@ -1719,23 +1242,27 @@ export const saveLeadsToDB = async (leads, userId, icpId, logStep, forceStatus =
                         VALUES($1, $2, $3, $4, $5, $6, 'Outbound Agent', $7, $8, $9, $10, 
                         $11, $12, $13, $14, $15, $16, $17, $18, $19) 
                         ON CONFLICT (email) DO UPDATE SET
-                            company_name = EXCLUDED.company_name,
-                            person_name = EXCLUDED.person_name,
-                            job_title = EXCLUDED.job_title,
-                            linkedin_url = EXCLUDED.linkedin_url,
-                            status = EXCLUDED.status,
-                            icp_id = EXCLUDED.icp_id,
-                            custom_data = EXCLUDED.custom_data,
-                            run_id = EXCLUDED.run_id,
-                            company_website = EXCLUDED.company_website,
-                            company_domain = EXCLUDED.company_domain,
-                            match_score = EXCLUDED.match_score,
-                            email_message = EXCLUDED.email_message,
-                            email_body = EXCLUDED.email_body,
-                            email_subject = EXCLUDED.email_subject,
-                            linkedin_message = EXCLUDED.linkedin_message,
-                            connection_request = EXCLUDED.connection_request,
-                            disqualification_reason = EXCLUDED.disqualification_reason,
+                            company_name = COALESCE(EXCLUDED.company_name, leads.company_name),
+                            person_name = COALESCE(EXCLUDED.person_name, leads.person_name),
+                            job_title = COALESCE(EXCLUDED.job_title, leads.job_title),
+                            linkedin_url = COALESCE(EXCLUDED.linkedin_url, leads.linkedin_url),
+                            status = CASE
+                                WHEN EXCLUDED.connection_request IS NOT NULL OR EXCLUDED.email_message IS NOT NULL
+                                    THEN EXCLUDED.status
+                                ELSE COALESCE(leads.status, EXCLUDED.status)
+                            END,
+                            icp_id = COALESCE(EXCLUDED.icp_id, leads.icp_id),
+                            custom_data = COALESCE(EXCLUDED.custom_data, leads.custom_data),
+                            run_id = COALESCE(EXCLUDED.run_id, leads.run_id),
+                            company_website = COALESCE(EXCLUDED.company_website, leads.company_website),
+                            company_domain = COALESCE(EXCLUDED.company_domain, leads.company_domain),
+                            match_score = COALESCE(EXCLUDED.match_score, leads.match_score),
+                            email_message = COALESCE(EXCLUDED.email_message, leads.email_message),
+                            email_body = COALESCE(EXCLUDED.email_body, leads.email_body),
+                            email_subject = COALESCE(EXCLUDED.email_subject, leads.email_subject),
+                            linkedin_message = COALESCE(EXCLUDED.linkedin_message, leads.linkedin_message),
+                            connection_request = COALESCE(EXCLUDED.connection_request, leads.connection_request),
+                            disqualification_reason = COALESCE(EXCLUDED.disqualification_reason, leads.disqualification_reason),
                             updated_at = NOW()
                         RETURNING id`,
                 [

@@ -214,18 +214,18 @@ const AgentRunner = () => {
             filters = selectedIcp.config
         } else {
             const onboardingState = JSON.parse(localStorage.getItem('onboarding_state') || '{}')
-            const apolloAnswers = onboardingState.surveyAnswers?.apollo_lead_finder || {}
+            const leadsScraperAnswers = onboardingState.surveyAnswers?.leads_scraper || {}
             const companyAnswers = onboardingState.surveyAnswers?.company_finder || {}
             filters = {
-                job_titles: apolloAnswers.job_titles || [],
-                seniority: apolloAnswers.seniority || [],
-                job_functions: apolloAnswers.job_functions || [],
-                excluded_functions: apolloAnswers.excluded_functions || [],
-                max_contacts: parseInt(apolloAnswers.max_contacts || 3),
+                job_titles: leadsScraperAnswers.job_titles || [],
+                seniority: leadsScraperAnswers.seniority || [],
+                job_functions: leadsScraperAnswers.job_functions || [],
+                excluded_functions: leadsScraperAnswers.excluded_functions || [],
+                max_contacts: parseInt(leadsScraperAnswers.max_contacts || 3),
                 countries: companyAnswers.geography || [],
                 org_types: companyAnswers.org_types || [],
                 intent: companyAnswers.intent,
-                ...apolloAnswers
+                ...leadsScraperAnswers
             }
         }
 
