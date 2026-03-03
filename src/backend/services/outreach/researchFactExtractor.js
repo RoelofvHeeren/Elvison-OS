@@ -40,9 +40,10 @@ export class ResearchFactExtractor {
         'condos', 'condo', 'residences', 'residence', 'apartments', 'apartment',
         'centre', 'center', 'tower', 'towers', 'village', 'villages',
         'lofts', 'loft', 'development', 'developments', 'project',
-        'estate', 'estates', 'complex', 'complexes', 'complex',
+        'estate', 'estates', 'complex', 'complexes',
         'community', 'communities', 'residential', 'residential complex',
-        'mixed use', 'mixed-use', 'urban residential'
+        'mixed use', 'mixed-use', 'urban residential', 'multi-family', 'multifamily',
+        'affordable housing', 'senior living', 'student housing', 'built-to-rent', 'BTR'
     ];
 
     /**
@@ -66,7 +67,9 @@ export class ResearchFactExtractor {
         'specializes in', 'specialise in', 'specialty',
         'expertise in', 'expert in',
         'platform for', 'platforms for',
-        'enable', 'enables'
+        'enable', 'enables',
+        'residential development', 'multi-family investment', 'multifamily development',
+        'housing projects', 'apartment portfolio'
     ];
 
     /**

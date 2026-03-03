@@ -197,7 +197,19 @@ async function rankBatch(leads, googleKey, logStep, costTracker, companyContext)
             apiKey: googleKey,
             modelName: 'gemini-2.0-flash',
             agentName: 'Lead Ranker',
-            instructions: `Rank leads 1-10 based on fit for: ${companyContext?.goal || 'Expand client base'}. Target titles: ${(companyContext?.baselineTitles || []).join(', ')}. Return JSON { "leads": [{ "email": "...", "match_score": 8 }] }`,
+            instructions: `
+            Rank leads 1-10 based on seniority and decision-making power for the user's goal: ${companyContext?.goal || 'Expand residential real estate partnerships'}.
+            
+            **SCORING RULES (STRICT):**
+            - **9-10 (High Priority)**: C-Level (CEO, CIO), Owner, Founder, Partner, Principal, Managing Director.
+            - **7-8 (Priority)**: VP, Senior Director, Head of [Real Estate/Acquisitions/Investments].
+            - **5-6 (Secondary)**: Director, Associate Director.
+            - **1-4 (REJECT/LOW)**: Analyst, Associate, Assistant, HR, Marketing, Operations, Entry-level.
+            
+            **PENALIZE EXTREMELY LOW**: "Intern", "Student", "Support", "Admin".
+            
+            Target Titles: ${(companyContext?.baselineTitles || []).join(', ')}.
+            Return JSON { "leads": [{ "email": "...", "match_score": 8 }] }.`,
             userMessage: `Rank: ${JSON.stringify(leads.slice(0, 50).map(l => ({ email: l.email, title: l.title, company: l.company_name })))}`,
             tools: [],
             maxTurns: 2,

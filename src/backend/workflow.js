@@ -891,10 +891,12 @@ export const runAgentWorkflow = async (input, config) => {
                     SECTOR EXCLUSIONS:
                     - IF the company is primarily an "Infrastructure Fund", "Energy Investor", or "Operating Company" (non-real estate) -> DISQUALIFY (Score 2) unless Real Estate is explicitly a major vertical.
 
-                    GLOBAL PREFERENCE: RESIDENTIAL / MULTI-FAMILY REAL ESTATE
-                    - The user is a Residential Developer.
-                    - BOOOST SCORE (+1-2 points) for: "Residential", "Multi-Family", "Apartments", "Condos", "Mixed-Use", "Housing", "BTR".
-                    - PENALIZE SCORE (-2 points) for: Exclusively "Commercial", "Office", "Industrial", "Retail" UNLESS they are large diversified players with a residential arm.
+                    CRITICAL SPECIALIZATION: RESIDENTIAL / MULTI-FAMILY REAL ESTATE
+                    - The user is a Residential Developer (Fifth Avenue Properties).
+                    - We ONLY want to work with firms that have a HIGH APPETITE for RESIDENTIAL / MULTI-FAMILY assets.
+                    - **SCORE 9-10**: Explicitly focuses on "Residential", "Multi-Family", "Apartments", "Mixed-Use (with Resi focus)", or "Affordable Housing".
+                    - **SCORE 6-7**: Generalist PE firms that mention Real Estate as a pillar but don't specify asset class.
+                    - **SCORE 1-4**: Exclusively "Commercial", "Office", "Industrial", "Retail", or "Self-Storage" with NO residential mention.
                     `;
 
 
@@ -913,22 +915,23 @@ export const runAgentWorkflow = async (input, config) => {
                         Structure the company_profile into a "Proper Report" using these Markdown headers:
                         
                         # Summary
-                    (2 - 3 sentences about core business and scale.Explicitly state if SFO or MFO.)
+                        (2 - 3 sentences about core business and scale. Explicitly state if SFO, MFO, or Institutional.)
                         
-                        # Investment Strategy
+                        # Residential Portfolio & Strategy
+                        (CRITICAL: Detail their specific history, volume, or appetite for residential/multi-family assets. List specific projects if found.)
+                        
+                        # Investment Thesis
                         (Detailed breakdown of their approach, target asset classes, and GP / LP status)
                         
                         # Entity Classification
                         (Rationale for why this is a Principal Investor and not a Wealth Manager)
 
-                        # Portfolio Highlights
-                        (List specific recent deals, acquisitions, or assets mentioned. "See 'Featured' or 'Portfolio' sections".)
-
                         # Geographic Focus
-                        (Where do they invest ? e.g. "North America", "Global", "UK & Europe")
+                        (Where do they invest? e.g. "North America", "Global", "UK & Europe")
 
                         # Key Highlights
                         - Use bullet points for critical stats or unique edges.
+                        - Mention specific recent deals.
 
                         USER REQUIREMENTS:
                         ${companyContext.profileContent || "Extract key stats and focus."}

@@ -22,6 +22,7 @@ function CRM() {
   const [isReviewOpen, setIsReviewOpen] = useState(false)
   const [reviewLead, setReviewLead] = useState(null)
   const [activeTab, setActiveTab] = useState('all') // 'all', 'review', 'ready'
+  const [includeAll, setIncludeAll] = useState(false)
 
   // Selection state
   const [selectedLeads, setSelectedLeads] = useState(new Set())
@@ -52,7 +53,8 @@ function CRM() {
         page,
         pageSize,
         icpId: filters.icpId,
-        runId: filters.runId
+        runId: filters.runId,
+        includeAll: includeAll ? 'true' : 'false'
       })
 
       // Handle both old (array) and new (paginated) response formats
@@ -367,7 +369,7 @@ function CRM() {
   useEffect(() => {
     refreshAll()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [includeAll])
 
   const filteredRows = useMemo(() => {
     return (rows || []).filter((row) => {
@@ -436,6 +438,18 @@ function CRM() {
               >
                 <Check className={`h-4 w-4 ${selectAll ? 'text-teal-400' : 'text-gray-500'}`} />
                 {selectAll ? 'Deselect All' : 'Select Page'}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIncludeAll(!includeAll)}
+                className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-xl transition-all ${includeAll
+                    ? 'text-teal-400 bg-teal-500/10 border border-teal-500/20'
+                    : 'text-gray-400 border border-white/10 hover:bg-white/5'
+                  }`}
+              >
+                <Filter className="h-4 w-4" />
+                {includeAll ? 'Showing All' : 'High Quality Only'}
               </button>
 
               <button

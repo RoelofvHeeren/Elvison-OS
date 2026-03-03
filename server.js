@@ -2567,7 +2567,7 @@ app.get('/api/leads/all-ids', requireAuth, async (req, res) => {
 
 // Get Leads with filtering
 app.get('/api/leads', requireAuth, async (req, res) => {
-    const { status, page = 1, pageSize = 50, icpId, runId } = req.query
+    const { status, page = 1, pageSize = 50, icpId, runId, includeAll } = req.query
     const offset = (page - 1) * pageSize
     const pageSizeNum = parseInt(pageSize)
     const pageNum = parseInt(page)
@@ -2596,10 +2596,14 @@ app.get('/api/leads', requireAuth, async (req, res) => {
             countQuery += statusClause;
             queryStr += statusClause;
             params.push(status);
+        } else if (includeAll === 'true') {
+            // Show everything including DISQUALIFIED
         } else {
-            const excludeClause = " AND l.status != 'DISQUALIFIED'";
-            countQuery += excludeClause;
-            queryStr += excludeClause;
+            // DEFAULT: Only show leads with outreach (ready to push)
+            // Excludes: DISQUALIFIED, SCRAPED, NEEDS_OUTREACH
+            const readyClause = " AND l.status NOT IN ('DISQUALIFIED', 'SCRAPED', 'NEEDS_OUTREACH')";
+            countQuery += readyClause;
+            queryStr += readyClause;
         }
 
         if (icpId) {
