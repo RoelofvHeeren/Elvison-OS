@@ -90,6 +90,23 @@ export class ResearchFactExtractor {
             const profile = profileText.replace(/^#+\s+.*$/gm, '').trim();
             const profileLower = profile.toLowerCase();
 
+            // === Priority 0: Residential-Specific Section (New) ===
+            // We specifically look for content under the '# Residential Portfolio & Strategy' header
+            const resiMatch = profileText.match(/# Residential Portfolio & Strategy\s*([\s\S]*?)(?=#|$)/i);
+            if (resiMatch && resiMatch[1].trim().length > 20) {
+                const resiContent = resiMatch[1].trim();
+                // Try to extract a specific project from this section
+                const project = this._extractNamedDeal(resiContent, resiContent.toLowerCase());
+                if (project) {
+                    return { ...project, reason: 'Residential project found in specialized section' };
+                }
+                // Or a scale fact
+                const scale = this._extractScale(resiContent, resiContent.toLowerCase());
+                if (scale) {
+                    return { ...scale, reason: 'Residential scale found in specialized section' };
+                }
+            }
+
             // === Priority 1: Named Deals/Projects ===
             const namedDeal = this._extractNamedDeal(profile, profileLower);
             if (namedDeal) {
@@ -97,7 +114,6 @@ export class ResearchFactExtractor {
             }
 
             // === Priority 2: Scale Facts ===
-            // Specific numbers ("178 units") are highly credible
             const scale = this._extractScale(profile, profileLower);
             if (scale) {
                 return scale;
@@ -113,6 +129,19 @@ export class ResearchFactExtractor {
             const general = this._extractGeneralFocus(profile, profileLower, companyName);
             if (general) {
                 return general;
+            }
+
+            // === Priority 5: FINAL STRATEGY FALLBACK (No Nulls Allowed) ===
+            // If we are here, we have a profile but no specific hooks found.
+            // We extract the first 1-2 meaningful sentences as the "Global Thesis".
+            const fallback = profile.split(/[.!?]+/)[0].trim();
+            if (fallback.length > 20) {
+                return {
+                    fact: this._trimFact(fallback, 120, companyName),
+                    fact_type: 'THESIS',
+                    confidence: 0.6,
+                    reason: 'Fallback to general strategy (no specific hook found)'
+                };
             }
 
             // === No usable fact found ===

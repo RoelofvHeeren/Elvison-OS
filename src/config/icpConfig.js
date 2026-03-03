@@ -1,7 +1,8 @@
 
 export const JOB_TITLE_SUGGESTIONS = [
-    "CEO", "Founder", "Co-Founder", "CTO", "CIO", "VP of Sales", "VP of Engineering",
-    "Director of Marketing", "Product Manager", "Head of Growth", "Sales Director"
+    "VP of Acquisitions", "Director of Investments", "Acquisitions Manager",
+    "Principal", "Managing Director", "Head of Real Estate", "Partner",
+    "VP of Development", "Director of Acquisitions", "Asset Manager"
 ]
 
 export const COUNTRY_SUGGESTIONS = [

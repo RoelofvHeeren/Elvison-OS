@@ -138,7 +138,7 @@ export class OutreachService {
                 icp_type
             );
 
-            // If fact extraction failed or returned nothing
+            // If fact extraction failed or returned nothing (though my fallback should prevent this)
             if (!factResult.fact) {
                 return this._createGatedResponse(
                     'NEEDS_RESEARCH',
@@ -194,120 +194,6 @@ export class OutreachService {
                 `Unexpected error: ${error.message}`
             );
         }
-    }
-
-    /**
-     * Gate 1: Check for disqualified ICP types
-     */
-    static _checkDisqualifiedICP(icp_type) {
-        const SKIP_TYPES = [
-            'BROKERAGE', 'ADVISORY', 'CONSULTING', 'AGENCY',
-            'SERVICE', 'TECH', 'VENDOR', 'PROPERTY_MANAGEMENT'
-        ];
-
-        if (icp_type && SKIP_TYPES.some(t => icp_type.toUpperCase().includes(t))) {
-            const reason = `icp_type_disqualified`;
-            return this._createGatedResponse(
-                'SKIP',
-                reason,
-                `ICP Type '${icp_type}' is disqualified (Brokerage/Service/Advisory).`
-            );
-        }
-
-        return null;
-    }
-
-    /**
-     * Gates 3 & 4: Check tier requirements
-     */
-    static _checkTierGates(profile, icp_type) {
-        const profileLower = profile.toLowerCase();
-        const hasTier1 = TIER_1_KEYWORDS.some(k => profileLower.includes(k.toLowerCase()));
-        const hasTier2 = TIER_2_KEYWORDS.some(k => profileLower.includes(k.toLowerCase()));
-        const hasTier3 = TIER_3_KEYWORDS.some(k => profileLower.includes(k.toLowerCase()));
-
-        // Tier 2 is MANDATORY - no residential keywords = SKIP
-        if (!hasTier2) {
-            const reason = 'tier_2_missing';
-            METRICS.skip_reasons[reason] = (METRICS.skip_reasons[reason] || 0) + 1;
-            METRICS.skip_count++;
-            return {
-                outreach_status: 'SKIP',
-                outreach_reason: 'No residential keywords found (Tier 2)',
-                research_fact: null,
-                research_fact_type: null,
-                message_version: 'v5',
-                profile_quality_score: null,
-                linkedin_message: null,
-                email_subject: null,
-                email_body: null
-            };
-        }
-
-        // Tier 1 depends on ICP type
-        // Ticket 1: Fix Family Office detection bug - normalize ICP type properly
-        const icp = (icp_type || '').toUpperCase().replace(/\s|-/g, '_');
-        const isFamilyOffice =
-            icp.includes('FAMILYOFFICE') ||
-            icp.includes('FAMILY_OFFICE') ||
-            (icp.includes('FAMILY') && icp.includes('OFFICE'));
-
-        if (!hasTier1) {
-            if (isFamilyOffice) {
-                // Family offices: missing investor keywords = NEEDS_RESEARCH (not SKIP)
-                const reason = 'tier_1_missing_family_office';
-                METRICS.needs_research_reasons[reason] = (METRICS.needs_research_reasons[reason] || 0) + 1;
-                METRICS.needs_research_count++;
-                return {
-                    outreach_status: 'NEEDS_RESEARCH',
-                    outreach_reason: 'Family office with vague investor language - needs manual research',
-                    research_fact: null,
-                    research_fact_type: null,
-                    message_version: 'v5',
-                    profile_quality_score: null,
-                    linkedin_message: null,
-                    email_subject: null,
-                    email_body: null
-                };
-            } else {
-                // Investment firms: missing investor keywords = SKIP
-                const reason = 'tier_1_missing';
-                METRICS.skip_reasons[reason] = (METRICS.skip_reasons[reason] || 0) + 1;
-                METRICS.skip_count++;
-                return {
-                    outreach_status: 'SKIP',
-                    outreach_reason: 'No investor keywords found (Tier 1)',
-                    research_fact: null,
-                    research_fact_type: null,
-                    message_version: 'v5',
-                    profile_quality_score: null,
-                    linkedin_message: null,
-                    email_subject: null,
-                    email_body: null
-                };
-            }
-        }
-
-        // Tier 3: If missing, route to NEEDS_RESEARCH (not SKIP)
-        if (!hasTier3) {
-            const reason = 'tier_3_missing';
-            METRICS.needs_research_reasons[reason] = (METRICS.needs_research_reasons[reason] || 0) + 1;
-            METRICS.needs_research_count++;
-            return {
-                outreach_status: 'NEEDS_RESEARCH',
-                outreach_reason: 'No direct investing evidence found - needs deeper research',
-                research_fact: null,
-                research_fact_type: null,
-                message_version: 'v5',
-                profile_quality_score: null,
-                linkedin_message: null,
-                email_subject: null,
-                email_body: null
-            };
-        }
-
-        // All tiers passed
-        return null;
     }
 
     /**

@@ -10,7 +10,7 @@ import { normalizeLinkedInUrl } from "../utils/linkedin-utils.js";
 
 
 // --- DEFAULTS ---
-const defaultTitles = ["ceo", "founder", "owner", "partner", "president", "director", "vp", "head", "principal", "executive"];
+const defaultTitles = ["vp of acquisitions", "director of investments", "principal", "managing director", "head of real estate", "partner", "vp of development", "ceo", "founder", "owner"];
 const defaultSeniorities = ["c_suite", "executive", "owner", "partner", "vp", "director"];
 
 /**
